@@ -48,6 +48,7 @@ import {
   FabOrchRequestError,
   foChat,
   foConnectedMcpIds,
+  foErrorTextOf,
 } from "@/lib/faborch/client";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
 import { FabInsightRequestSchema } from "@/lib/validation";
@@ -137,7 +138,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
       // generic failure would throw away the only useful part.
       return fail(
         "faborch_unavailable",
-        await messageOf(upstream, `${agent.name} could not answer that.`),
+        await foErrorTextOf(upstream, `${agent.name} could not answer that.`),
         upstream.status === 429 ? 429 : 502,
       );
     }
@@ -169,11 +170,3 @@ function fail(code: FabInsightErrorCode, error: string, status: number): NextRes
   return NextResponse.json({ code, error }, { status });
 }
 
-async function messageOf(res: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await res.json()) as { error?: string; userMessage?: string };
-    return body?.userMessage || body?.error || fallback;
-  } catch {
-    return fallback;
-  }
-}

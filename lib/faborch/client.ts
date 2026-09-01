@@ -111,7 +111,7 @@ export async function foLogin(email: string, password: string): Promise<FoSessio
 
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) {
-    throw new FabOrchRequestError(await errorTextOf(res, "FabOrchestrator rejected the sign-in"), res.status);
+    throw new FabOrchRequestError(await foErrorTextOf(res, "FabOrchestrator rejected the sign-in"), res.status);
   }
 
   const data = (await res.json()) as FoSession;
@@ -237,11 +237,55 @@ async function fetchFo(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
-/** FO's error envelope varies by route; take its message if there is one. */
-async function errorTextOf(res: Response, fallback: string): Promise<string> {
+/**
+ * Reduce any FabOrchestrator error body to one displayable string.
+ *
+ * FO answers with **two** shapes, and the difference is not cosmetic:
+ *
+ *   1. The canonical envelope from `handleApiError`
+ *      (`lib/errors/api-error-handler.ts`):
+ *      `{ error: { errorId, type, priority, message } }`
+ *   2. A bare string from routes that answer directly, e.g. the Master Data
+ *      Load Agent's 403 `{ error: "…is not enabled for your role." }` and
+ *      `{ error: "Invalid request body" }`.
+ *
+ * Reading `body.error` and hoping is the defect this function exists to
+ * prevent: against shape 1 it yields an **object**, which reaches the screen
+ * as `[object Object]` and, if a React child, throws instead of rendering.
+ * Every value returned here is a string, whatever FO sent — including
+ * `null`, an array, a number, or a body that is not JSON at all.
+ *
+ * The `errorId` is appended when present. It is the only handle support has
+ * for finding the row in `error_audit_logs`, so dropping it costs a user the
+ * ability to be helped.
+ */
+export function foErrorMessage(body: unknown, fallback: string): string {
+  const asText = (v: unknown): string => (typeof v === "string" && v.trim() ? v.trim() : "");
+
+  if (!body || typeof body !== "object") return fallback;
+  const b = body as Record<string, unknown>;
+
+  // Shape 2, and FO's occasional top-level `userMessage`.
+  const flat = asText(b.userMessage) || asText(b.error) || asText(b.message);
+  if (flat) return flat;
+
+  // Shape 1 — the nested envelope.
+  const nested = b.error;
+  if (nested && typeof nested === "object") {
+    const e = nested as Record<string, unknown>;
+    const text = asText(e.message) || asText(e.userMessage) || asText(e.type);
+    const id = asText(e.errorId);
+    if (text) return id ? `${text} (errorId=${id})` : text;
+    if (id) return `${fallback} (errorId=${id})`;
+  }
+
+  return fallback;
+}
+
+/** As above, but reading the body off a `Response`. Never throws. */
+export async function foErrorTextOf(res: Response, fallback: string): Promise<string> {
   try {
-    const body = (await res.json()) as { error?: string; userMessage?: string };
-    return body?.userMessage || body?.error || fallback;
+    return foErrorMessage(await res.json(), fallback);
   } catch {
     return fallback;
   }

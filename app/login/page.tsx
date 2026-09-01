@@ -68,11 +68,5 @@ export default async function Page({
   const params = await searchParams;
   const next = safeReturnPath(params.next);
 
-  // `?upgrade=1` — the visitor holds a session here and wants a FabOrchestrator
-  // one as well. Read on the server beside `next`, for the same reason `next` is
-  // (`useSearchParams` would force a Suspense boundary). It needs no validating:
-  // it is a boolean that only ever suppresses a redirect, never supplies one.
-  const upgrade = (Array.isArray(params.upgrade) ? params.upgrade[0] : params.upgrade) === "1";
-
-  return <LoginPage defaultEmail={prefill} next={next} upgrade={upgrade} />;
+  return <LoginPage defaultEmail={prefill} next={next} />;
 }

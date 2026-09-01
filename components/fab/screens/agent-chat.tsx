@@ -405,17 +405,8 @@ function NoFabOrchSession({ agent }: { agent: FoAgent }) {
 /**
  * One card, two reasons to see it: never signed in to FO, or no longer.
  *
- * ── Why the link carries `upgrade=1` ────────────────────────────────────────
- * This card is shown **only** to somebody already signed in to this app — with
- * the demo credential, or with an FO session FO has since dropped. Without the
- * flag, `components/login-page.tsx` sees their existing token, concludes they
- * are signed in already, and `router.replace`s them straight back here. The
- * form appeared for one frame and vanished, so the single control that leads to
- * FabInsight could never be used (reported 2026-08-25).
- *
- * The flag means "yes, I know who you are — I am here to add a *FabOrchestrator*
- * session on top". Both callers route through this component, so the
- * expired-session path is fixed by the same line.
+ * The link carries only `next`, so signing in returns to this agent. The
+ * form is always usable, even when a session already exists.
  */
 function SignInCard({
   next,
@@ -440,7 +431,7 @@ function SignInCard({
         {body}
       </p>
       <Link
-        href={`/login?next=${encodeURIComponent(next)}&upgrade=1`}
+        href={`/login?next=${encodeURIComponent(next)}`}
         className="mt-[2px] w-fit px-[18px] py-[10px] text-[12px] font-bold text-white no-underline"
         style={{
           borderRadius: "var(--r-control)",

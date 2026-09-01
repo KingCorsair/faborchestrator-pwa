@@ -35,23 +35,11 @@ export interface LoginPageProps {
    * it does no checking of its own.
    */
   next?: string;
-  /**
-   * The visitor is signed in here already and has come to add a
-   * **FabOrchestrator** session on top — the agent screens' "Sign in to
-   * FabOrchestrator" card sets it.
-   *
-   * Without it the guard below bounces them back before they can type, which is
-   * what made that card a dead control: it is only ever shown to somebody who
-   * has a token, so its own audience was exactly the audience the guard turned
-   * away. See `components/fab/screens/agent-chat.tsx`.
-   */
-  upgrade?: boolean;
 }
 
 export function LoginPage({
   defaultEmail = "",
   next = DEFAULT_RETURN_PATH,
-  upgrade = false,
 }: LoginPageProps) {
   const router = useRouter();
   const [email, setEmail] = React.useState(defaultEmail);
@@ -60,15 +48,79 @@ export function LoginPage({
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
-  // An operator who is already signed in should never see this form — unless
-  // they came here on purpose to add a FabOrchestrator session, which is the
-  // one case where "already signed in" and "has the session they need" are
-  // different things. There are two kinds of session now; this guard predates
-  // the second.
+  /**
+   * Whether a session already exists on this device, once checked.
+   * `null` while unknown — the notice must not flash before we know.
+   */
+  const [existing, setExisting] = React.useState<{ email: string; faborch: boolean } | null>(null);
+
+  /**
+   * A visitor who already holds a session is **told**, never bounced.
+   *
+   * ── The defect this replaces ────────────────────────────────────────────────
+   * This used to be `if (localStorage.getItem(AUTH_TOKEN_KEY)) router.replace(next)`
+   * — a silent redirect away from the form the moment any token was present.
+   * Three ways that trapped somebody, all of them reported as "sign-in does not
+   * work":
+   *
+   *  1. `AUTH_TOKEN_KEY` is `llmatscale_auth_token`, the key FabOrchestrator
+   *     itself uses and the one every earlier build of this app used. On a
+   *     shared origin — `localhost:3002` across rebuilds, or a deployment that
+   *     replaced an older one — a leftover token from a different app bounced
+   *     the visitor off a form they had every right to use.
+   *  2. A **demo-credential** session is a real session here, so the guard
+   *     fired, but it carries no FabOrchestrator access. The visitor was
+   *     returned to the app, opened an agent, and found the composer disabled
+   *     with no way back to sign-in. A `?upgrade=1` escape hatch existed for
+   *     exactly this, but only the agent screen's card set it: typing `/login`
+   *     did not. It is gone with the redirect that made it necessary.
+   *  3. An expired token still satisfies `getItem`, so the redirect fired, the
+   *     destination bounced them back here, and the form vanished again.
+   *
+   * The guard's intent was sound — do not show a sign-in form to somebody who
+   * does not need one — but a silent redirect is the wrong shape for it: it is
+   * invisible, it cannot be argued with, and it fails closed on the one person
+   * who needs the form most. Now the form always works, and an existing session
+   * is surfaced as a notice offering to continue.
+   */
   React.useEffect(() => {
-    if (upgrade) return;
-    if (localStorage.getItem(AUTH_TOKEN_KEY)) router.replace(next);
-  }, [router, next, upgrade]);
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    if (!token) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          // Stale or expired — including a token left by a different app on
+          // this origin. Clear it rather than reasoning about it, so the form
+          // below is the clean sign-in it looks like.
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          localStorage.removeItem(AUTH_SESSION_KEY);
+          return;
+        }
+        const data = (await res.json()) as {
+          user?: { email?: string };
+          faborch?: boolean;
+        };
+        setExisting({
+          email: data.user?.email ?? "this device",
+          faborch: data.faborch === true,
+        });
+      } catch {
+        // Offline, or the server is down. Say nothing rather than claim a
+        // session state we could not check; the form still works.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -159,6 +211,53 @@ export function LoginPage({
           </span>
 
           <h1 className="text-[26px]">Sign in to FabOrchestrator</h1>
+
+          {/*
+            An existing session, surfaced rather than acted on. The two states
+            differ in what the visitor most likely came here to do:
+
+            - no FabOrchestrator session: they are almost certainly here to add
+              one, because that is the only thing this form gives them that they
+              do not already have. Lead with that.
+            - a full session: they may have arrived by habit or by a stale
+              bookmark. Offer to continue, but never take the decision for them.
+
+            Either way the form below stays usable, which is the whole point of
+            the change: signing in as somebody else must always be possible.
+          */}
+          {existing ? (
+            <div
+              className="flex flex-col gap-[10px] px-[15px] py-[13px] text-[13px]"
+              style={{
+                borderRadius: 12,
+                background: existing.faborch ? "var(--brand-indigo-bg)" : "var(--cockpit-warn-bg, #FFF6E5)",
+                color: "var(--text-ink)",
+              }}
+            >
+              <span>
+                {existing.faborch ? (
+                  <>
+                    You are already signed in as <strong>{existing.email}</strong>, with
+                    FabOrchestrator access.
+                  </>
+                ) : (
+                  <>
+                    You are signed in as <strong>{existing.email}</strong>, but this session has
+                    no FabOrchestrator access — agents will not accept a question. Sign in
+                    below with your FabOrchestrator account to add it.
+                  </>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => router.replace(next)}
+                className="w-fit cursor-pointer border-0 bg-transparent p-0 text-[13px] font-bold underline"
+                style={{ color: "var(--cockpit-indigo)" }}
+              >
+                Continue without signing in again
+              </button>
+            </div>
+          ) : null}
 
           {/*
             Says which credential to use, on the screen where it is typed.

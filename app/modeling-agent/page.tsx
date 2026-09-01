@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import { AgentChatClient } from "../fabinsight/agent-chat-client";
 
 /**
- * `/modeling-agent` — FabOrchestrator's Modeling Agent, opened from the PWA.
+ * `/modeling-agent` — FabOrchestrator's Master Data Load Agent (the cockpit's
+ * name for what the code calls the modeling agent), opened from the PWA.
  *
  * The conversation is forwarded to FO's own `/api/modeling-agent/chat`. Nothing
  * about MES modelling is implemented here.
@@ -26,9 +27,10 @@ import { AgentChatClient } from "../fabinsight/agent-chat-client";
  */
 
 export const metadata: Metadata = {
-  title: "Modeling Agent — FabOrchestrator",
+  title: "Master Data Load Agent — FabOrchestrator",
   description:
-    "Prepare MES master-data files with FabOrchestrator's Modeling Agent. Answers " +
+    "Prepare MES master-data files with FabOrchestrator's Master Data Load " +
+    "Agent. Answers " +
     "come from the FabOrchestrator application and its agent.",
 };
 

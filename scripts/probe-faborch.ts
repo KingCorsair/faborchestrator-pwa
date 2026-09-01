@@ -5,8 +5,10 @@
  * source, each mapped to a contingency driver in the plan:
  *
  *   P1  Can the probe account sign in?            (account provisioning)
- *   P2  Does the deployment serve the Back-end    (deployment currency —
- *       Agent API?                                 404 observed 2026-08-24)
+ *   P2  Does the deployment serve the Master      (deployment currency —
+ *       Data Load Agent API?                        the one non-/chat agent;
+ *                                                   verified vs e5a5abd there
+ *                                                   is no backend-agent API)
  *   P3  Do answers STREAM progressively through   (SSE through the hosting
  *       the hosting layers, or arrive in a block?  layers — broke once before)
  *   P4  Does the account have connected data      (plant data availability —
@@ -76,12 +78,14 @@ async function main() {
   }
   const auth = { Authorization: `Bearer ${token}` };
 
-  // ── P2: Back-end Agent deployed? ──────────────────────────────────────────
-  // Only the status code matters. Abort as soon as headers are back so a 200
-  // does not run a full agent turn.
+  // ── P2: Master Data Load Agent API deployed? ─────────────────────────────
+  // The only agent endpoint that is not /api/chat (upstream e5a5abd: the
+  // Back-end Agent card routes to /chat; no backend-agent API exists in any
+  // branch). Only the status code matters. Abort as soon as headers are back
+  // so a 200 does not run a full agent turn.
   try {
     const ac = new AbortController();
-    const r = await fetch(`${BASE}/api/backend-agent/chat`, {
+    const r = await fetch(`${BASE}/api/modeling-agent/chat`, {
       method: "POST",
       headers: { ...auth, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -94,16 +98,16 @@ async function main() {
     const status = r.status;
     ac.abort();
     if (status === 404)
-      record("P2", "Back-end Agent API present", "FAIL", "404 — deployment predates the route");
+      record("P2", "Master Data Load Agent API present", "FAIL", "404 — deployment predates the route");
     else
       record(
         "P2",
-        "Back-end Agent API present",
+        "Master Data Load Agent API present",
         status < 500 ? "PASS" : "WARN",
         `HTTP ${status} — route exists${status >= 500 ? " but errored" : ""}`,
       );
   } catch (e) {
-    record("P2", "Back-end Agent API present", "WARN", `request failed: ${(e as Error).message}`);
+    record("P2", "Master Data Load Agent API present", "WARN", `request failed: ${(e as Error).message}`);
   }
 
   // ── P4: connected data connections ────────────────────────────────────────

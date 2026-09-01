@@ -4,7 +4,7 @@
  *
  * ```
  * agent screen → this route → FabOrchestrator /api/{chat,modeling-agent/chat,
- *              ←            ←   backend-agent/chat} → FO's agent
+ *              ←            ←   modeling-agent/chat} → FO's agent
  *                                    (streamed back, untouched)
  * ```
  *
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
 
     if (!upstream.ok || !upstream.body) {
       // FO's own message, verbatim where there is one: a role model restriction,
-      // a daily quota, and the Modeling Agent's `modeling_agent` permission gate
+      // a daily quota, and the Master Data Load Agent's `modeling_agent` permission gate
       // (403, "The Modeling Agent is not enabled for your role.") all arrive
       // here, and all are things the operator can act on. Replacing them with a
       // generic failure would throw away the only useful part.

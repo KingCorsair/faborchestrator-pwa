@@ -12,7 +12,7 @@
  * against FO's data.
  *
  * ── One screen, three agents ────────────────────────────────────────────────
- * FabInsight, the Modeling Agent and the Back-end Agent are the same screen
+ * FabInsight, the Master Data Load Agent and the Back-end Agent are the same screen
  * with a different `agent` prop, because all three FO endpoints take
  * `{ messages }` and answer with the same stream. What differs is the name, the
  * chips and the endpoint — `lib/faborch/agents.ts`. Three copies of a

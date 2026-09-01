@@ -181,7 +181,7 @@ export async function foChat(options: {
   activeMcpIds: string[] | null;
   /**
    * The agent's endpoint — `/api/chat`, `/api/modeling-agent/chat` or
-   * `/api/backend-agent/chat`. Comes from `FO_AGENTS`, never from a request.
+   * `/api/modeling-agent/chat`. Comes from `FO_AGENTS`, never from a request.
    */
   path?: string;
   signal?: AbortSignal;

@@ -194,13 +194,13 @@ interface Agent {
  * categories, one-line descriptions and metrics the product's cockpit ships.
  *
  * **All four open, and all four stay in this app.** The product's routes are
- * `/chat`, `/chat`, `/modeling-agent` and `/backend-agent` — note that AGENT ·
- * 02 shares FabInsight's `/chat` there, so it is the same conversation and
- * points at `/fabinsight` here too, rather than being given a screen the
- * product does not have.
+ * `/chat`, `/chat`, `/modeling-agent` and `/chat` (verified against upstream
+ * `e5a5abd`, 2026-09-01) — AGENT · 02 and AGENT · 04 both share FabInsight's
+ * `/chat` there. Each still gets its own door here, with its own framing and
+ * suggested prompts, because that is how the cockpit presents them.
  *
- * The other two are screens in this PWA that forward to FO's own agent
- * endpoints, exactly as `/fabinsight` forwards to `/api/chat` — see
+ * Every card forwards to FO's own endpoints through the registry, exactly as
+ * `/fabinsight` forwards to `/api/chat` — see
  * `lib/faborch/agents.ts` and `app/api/faborch/[agent]/chat/route.ts`. No
  * prompt, model or manufacturing logic is added by this app for any of them.
  *
@@ -239,7 +239,7 @@ const AGENTS: Agent[] = [
   {
     num: "AGENT · 03",
     icon: ModelIcon,
-    name: "Modeling Agent",
+    name: "Master Data Load Agent",
     cat: "Enterprise Configuration",
     desc: "AI-guided MES rollouts at scale.",
     metricLabel: "Sites",
@@ -252,7 +252,7 @@ const AGENTS: Agent[] = [
     icon: CodeIcon,
     name: "Back-end Agent",
     cat: "Workflow Integration",
-    desc: "Describe a dashboard and it builds it for you.",
+    desc: "Connectors and code for any system.",
     metricLabel: "Dashboards",
     metric: "87",
     delta: "3x",
@@ -408,7 +408,7 @@ const KPIS = [
 const ACTIVITY = [
   { name: "FabInsight™", desc: "Yield anomaly flagged on Line 4", ago: "2 min" },
   { name: "AI Support", desc: "42 escalations resolved", ago: "18 min" },
-  { name: "Modeling Agent", desc: "Fab West Phase 2 live", ago: "1 hr" },
+  { name: "Master Data Load Agent", desc: "Fab West Phase 2 live", ago: "1 hr" },
   { name: "Back-end Agent", desc: "6 connectors deployed", ago: "3 hr" },
 ];
 

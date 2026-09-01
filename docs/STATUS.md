@@ -1,7 +1,6 @@
 # Where this project stands
 
-**As of 1 September 2026, commit `c7b9b04`.** Working tree clean, nine commits,
-all pushed to `KingCorsair/faborchestrator-pwa` (private).
+**As of 1 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
@@ -135,17 +134,18 @@ it; nothing in Phase 3 does.
 
 ## Known debt
 
-**The four planning documents in `docs/planning/` are out of date.** They do not
-yet record:
+**The planning documents are current as of 1 September 2026.** Both decisions
+they asked the review for are now recorded as taken — the production-order
+workflow is removed, and the demo runs against the live deployment — along with
+the manifest-`id` call. **No estimate changed**: the plan always assumed the
+workflow went, so the 3 days quoted were the cost of keeping it.
 
-- the production-order workflow removal — the delivery plan still lists its
-  scope as an *open decision* in §08, which is now decided
-- WP8 and component C7, which still describe rendering mock-MES tables
-- the nav change, and WP2 making FabOrchestrator the only identity
+One earlier entry here was wrong and is corrected: WP8 and component C7 were
+never stale. They describe FabOrchestrator's own MES data reached over MCP, not
+the removed mock workflow, and needed no change.
 
-They remain correct on estimates, phases and milestones. Bringing them in line
-is roughly half a session and should happen before anyone outside the team reads
-them again.
+Still not reflected in the plans, because they are plans rather than status:
+progress against each work package lives in this file, not in them.
 
 **Not verified by a person.** Everything above was checked by tests, probe
 scripts and a headless browser. The app has not yet been confirmed working in a

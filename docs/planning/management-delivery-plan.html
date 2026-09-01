@@ -777,16 +777,18 @@ tbody tr:last-child td{border-bottom:0}
   </table></div>
 
   <div class="callout warnbox">
-    <h3>Two decisions we need from this review</h3>
-    <p><strong>1. Scope of the app.</strong> The current codebase also carries a separate production-order
-    review workflow that runs on sample data and does not connect to FabOrchestrator. The estimate above
-    assumes it is set aside so the app is one clear thing: a mobile front door to the platform. Keeping
-    it adds roughly <strong>3 days</strong> and leaves two different sign-in routes to secure, test and
-    explain.</p>
-    <p><strong>2. Which platform the demo runs against.</strong> The live deployment gives us real plant
-    data but is behind the current code. A local instance gives us the newest code but may not reach
-    plant data at all. These cannot both be the answer, and the choice affects what we can promise to
-    show.</p>
+    <h3>Two decisions &mdash; both now taken</h3>
+    <p><strong>1. Scope of the app &mdash; decided 1 September 2026.</strong> The codebase also carried
+    a separate production-order review workflow that ran on sample data and did not connect to
+    FabOrchestrator. It has been <strong>removed</strong>, along with the second sign-in route it needed,
+    so the app is one clear thing: a mobile front door to the platform. <strong>The estimate does not
+    change</strong> &mdash; it already assumed this; the 3 days quoted were the cost of keeping the
+    workflow, and are not incurred.</p>
+    <p><strong>2. Which platform the demo runs against &mdash; decided 1 September 2026.</strong> The
+    <strong>live deployment</strong>. Every environment check and the end-to-end architecture proof have
+    run against it. The concern that it lagged the current code is largely spent: the one service
+    believed to be missing turned out not to exist in the platform at all, so its absence was correct
+    behaviour rather than drift.</p>
   </div>
 
   <p style="font-size:15px;color:var(--ink-3)">Two optional half-day improvements to FabOrchestrator

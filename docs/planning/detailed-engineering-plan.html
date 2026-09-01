@@ -617,14 +617,16 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
   </div>
 
   <div class="callout">
-    <h4>Scope decision this plan asks the review to confirm</h4>
-    <p>The PWA today carries a <b>second product</b>: a production-order review workflow on a mock MES,
-    with its own login credential (<code>DEMO_USER_*</code>), decision log, barcode scanner, activity
-    feed and rules engine. None of it touches FabOrchestrator. If the goal is &ldquo;a mobile front door to
-    FO&rdquo;, that workflow and the demo credential branch in
-    <span class="fp">app/api/auth/login/route.ts</span> should be removed &mdash; it roughly doubles the
-    surface to be tested, secured and explained. WP2 assumes removal. If the order workflow must stay,
-    add <b>3 days</b> to the estimate for keeping both credential paths coherent.</p>
+    <h4>Scope decision &mdash; taken 1 September 2026: the workflow is removed</h4>
+    <p>The PWA carried a <b>second product</b>: a production-order review workflow on a mock MES, with
+    its own login credential (<code>DEMO_USER_*</code>), decision log, barcode scanner, activity feed and
+    rules engine. None of it touched FabOrchestrator. It is <b>gone</b>, along with the demo credential
+    branch in <span class="fp">app/api/auth/login/route.ts</span> &mdash; 76 paths, including the app&rsquo;s
+    only model call, which is what makes the &sect;21 boundary line verifiable rather than merely
+    intended.</p>
+    <p><b>No estimate change.</b> This plan always assumed removal; the 3 days quoted here were the cost
+    of <em>keeping</em> it, and are not incurred. The nav now mirrors the product&rsquo;s own cockpit, with
+    the sections neither side implements shown greyed rather than invented.</p>
   </div>
 </section>
 
@@ -696,10 +698,11 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         44 px minimum touch targets.</li>
         <li>Wide-content containment: a GFM table from FabInsight must scroll inside its own
         <code>overflow-x:auto</code> box, never scroll the page sideways.</li>
-        <li><code>manifest.id</code> and <code>start_url</code> reconciliation &mdash; the manifest
-        currently declares <code>id:"/orders"</code> with <code>start_url:"/"</code>. If the order
-        workflow is removed (&sect;05), <code>id</code> must change, which <b>orphans every already
-        installed copy</b>. Decide and do it once, before anyone installs.</li>
+        <li><code>manifest.id</code> &mdash; <b>decided 1 September 2026: leave it at
+        <code>id:"/orders"</code>.</b> The route is gone, but <code>id</code> is an opaque identifier
+        rather than a destination: it never has to resolve, and changing it <b>orphans every already
+        installed copy</b>. <code>start_url</code> stays <code>"/"</code>, which is now the cockpit.
+        The mismatch reads oddly and costs nothing; the alternative costs every install.</li>
         <li>A Lighthouse installability pass on both Chrome/Android and Safari/iOS.</li></ul></dd></dl>
       <dl class="f"><dt>Reused files</dt><dd><span class="fp">app/layout.tsx</span>,
         <span class="fp">public/sw.js</span>, <span class="fp">components/register-sw.tsx</span>,
@@ -2330,10 +2333,13 @@ last week alone), so the deployment&rsquo;s behaviour can still drift mid-projec
 
   <h3>20.2 Questions for the review</h3>
   <ol>
-    <li><b>Does the mock-MES order workflow stay?</b> The estimate assumes it goes. Keeping it adds
-    ~3 days and keeps a second credential path alive.</li>
-    <li><b>Which FabOrchestrator does the demo run against?</b> Deployed CloudFront (real MES, version
-    drift) or a local instance (current code, possibly no MES reach)? They cannot both be the answer.</li>
+    <li><b>Does the mock-MES order workflow stay?</b> <span class="chip c-have">Answered</span>
+    No &mdash; removed 1 September 2026, with the demo credential. No estimate change: the plan already
+    assumed it went.</li>
+    <li><b>Which FabOrchestrator does the demo run against?</b> <span class="chip c-have">Answered</span>
+    The deployed CloudFront instance. Every probe, the E1 gate and all live verification have run against
+    it. The version-drift worry it carried is largely spent: the one service thought missing turned out
+    not to exist upstream at all.</li>
     <li><b>Is the AI Support Engineer card in scope?</b> The landing page shows four agents; three have
     screens.</li>
     <li><b>Should PWA sign-out end the FO session?</b> It is cleaner, but it signs the operator out of any

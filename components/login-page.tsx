@@ -25,11 +25,6 @@ const AUTH_SESSION_KEY = "llmatscale_auth_session";
 
 export interface LoginPageProps {
   /**
-   * Prefills the email field. Empty unless the deployment opts in — see
-   * `app/page.tsx` for why that is a switch and not a default.
-   */
-  defaultEmail?: string;
-  /**
    * Where to go once signed in. Validated by the route before it reaches here —
    * this component never sees a value it should not navigate to, which is why
    * it does no checking of its own.
@@ -37,12 +32,9 @@ export interface LoginPageProps {
   next?: string;
 }
 
-export function LoginPage({
-  defaultEmail = "",
-  next = DEFAULT_RETURN_PATH,
-}: LoginPageProps) {
+export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
   const router = useRouter();
-  const [email, setEmail] = React.useState(defaultEmail);
+  const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -68,12 +60,12 @@ export function LoginPage({
    *     shared origin — `localhost:3002` across rebuilds, or a deployment that
    *     replaced an older one — a leftover token from a different app bounced
    *     the visitor off a form they had every right to use.
-   *  2. A **demo-credential** session is a real session here, so the guard
-   *     fired, but it carries no FabOrchestrator access. The visitor was
+   *  2. A **demo-credential** session was a real session here, so the guard
+   *     fired, but it carried no FabOrchestrator access. The visitor was
    *     returned to the app, opened an agent, and found the composer disabled
-   *     with no way back to sign-in. A `?upgrade=1` escape hatch existed for
-   *     exactly this, but only the agent screen's card set it: typing `/login`
-   *     did not. It is gone with the redirect that made it necessary.
+   *     with no way back to sign-in. That credential has since been removed
+   *     entirely (WP2) - but the trap was this redirect, not only the
+   *     credential: a stale token from any earlier build does the same thing.
    *  3. An expired token still satisfies `getItem`, so the redirect fired, the
    *     destination bounced them back here, and the form vanished again.
    *
@@ -262,14 +254,13 @@ export function LoginPage({
           {/*
             Says which credential to use, on the screen where it is typed.
 
-            The route accepts two (`app/api/auth/login/route.ts`) and a
-            FabOrchestrator one opens **everything** — the four agents and the
-            production order workflow — while the demo credential opens the
-            workflow alone. Until 2026-08-24 the screen said only "Sign in" and,
-            on the deployed app, prefilled the demo address, so people signed in
-            with the credential that cannot reach the agents and met a second
-            sign-in the moment they opened one. Being asked to sign in twice for
-            one journey is the complaint this line exists to prevent.
+            There is only one now (WP2, 2026-09-01): a FabOrchestrator account,
+            which opens the agents and the production order workflow alike. The
+            line stays because the app is not FabOrchestrator and the field does
+            not say whose password it wants — and because the demo credential
+            that used to be accepted here produced a session that met a second
+            sign-in the moment an agent was opened. That credential is gone;
+            this sentence is what stops somebody looking for it.
           */}
           <p
             className="m-0 -mt-[6px] max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"

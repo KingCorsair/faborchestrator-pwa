@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { authenticate, sessionFor, type LoginResult } from "@/lib/auth";
+import { sessionFor } from "@/lib/auth";
 import { foLogin, isFabOrchConfigured, FabOrchRequestError } from "@/lib/faborch/client";
 import { setFoTokenCookie } from "@/lib/faborch/session";
 import { LoginSchema } from "@/lib/validation";
@@ -11,25 +11,35 @@ import {
 } from "@/lib/rate-limit";
 
 /**
- * Sign in — **two credentials, in a deliberate order.**
+ * What this app calls its operators in the top bar.
  *
- * 1. **The demo credential** (`DEMO_USER_*`). Opens the production order
- *    workflow, which runs entirely on this app's mock MES. No network call.
- * 2. **A FabOrchestrator account**, checked against FO's own
- *    `/api/auth/login`. Opens the same workflow *and* FabInsight, because
- *    FabInsight is FO's agent and answers with that operator's tools, role,
- *    quota and audit trail.
+ * FabOrchestrator's login response carries no role — that lives on its
+ * `/api/auth/me` — and a second round trip to label a nav item is not worth
+ * making a person wait for. Previously this read `DEMO_USER_ROLE`, which
+ * outlived the demo credential it belonged to.
+ */
+const DEFAULT_ROLE_LABEL = "Supervisor";
+
+/**
+ * Sign in — **FabOrchestrator is the only identity.**
  *
- * Demo first because it is local and free, and because trying it second would
- * put a network round trip in front of the credential this demo has always
- * used. Neither shadows the other: they are different passwords.
+ * One credential: a FabOrchestrator account, checked against FO's own
+ * `/api/auth/login`. It opens everything this app offers — the agents, and the
+ * production order workflow that runs on the local mock MES.
  *
- * ── What a demo-credential session cannot do, and why that is right ─────────
- * It gets no FO token, so FabInsight refuses and says so. The alternative was a
- * shared service account in the environment — one FO identity for every visitor
- * — which would have made every prompt in FO's `prompt_audit_logs` attributable
- * to a machine rather than a person, and would have handed whoever holds the
- * demo URL somebody else's MES access. A demo is not a reason to build that.
+ * ── Why the demo credential was removed (WP2, 2026-09-01) ───────────────────
+ * This route used to try a local `DEMO_USER_*` pair first. It authenticated
+ * with no network call and issued a session with **no FO token**, so the
+ * operator reached the app, opened an agent, and found the composer disabled —
+ * a session that looks signed in and cannot ask a single question. That is
+ * indistinguishable from a broken app, and it was reported as one.
+ *
+ * The alternative that was rejected at the same time is worth recording:
+ * carrying a shared FO service account in the environment so any visitor gets
+ * agent access. It would make every row in FO's `prompt_audit_logs`
+ * attributable to a machine rather than a person, and hand whoever holds the
+ * demo URL somebody else's MES access. A demo is not a reason to build that;
+ * asking each person for their own FO credential is.
  *
  * ── The FO token never reaches the browser ─────────────────────────────────
  * It is set as an httpOnly cookie (`lib/faborch/session.ts`) and read only by
@@ -37,8 +47,8 @@ import {
  * session, exactly as it did before.
  *
  * ── Wrong guesses are throttled, and that is new ───────────────────────────
- * Because branch 2 forwards to a **real** FabOrchestrator, this route is the
- * only thing between a public URL and a production identity store. Eight wrong
+ * Because this route forwards to a **real** FabOrchestrator, it is the only
+ * thing between a public URL and a production identity store. Eight wrong
  * guesses from one address buys a ten-minute wait — see `lib/rate-limit.ts`,
  * including what that does and does not protect against. A correct password is
  * never throttled: success clears the counter.
@@ -64,25 +74,16 @@ export async function POST(req: NextRequest) {
 
   const { email, password } = parsed.data;
 
-  let demoResult: LoginResult | null;
-  try {
-    demoResult = authenticate(email, password);
-  } catch (error) {
-    // A missing SESSION_SIGNING_SECRET is a deployment fault, not a bad
-    // password, and must not read as one to the operator standing at the line.
-    console.error("[auth] login failed to run:", error);
-    return NextResponse.json({ error: "Sign-in is not configured on this server" }, { status: 500 });
-  }
-
-  if (demoResult) {
-    clearLoginFailures(address);
-    return NextResponse.json({ ...demoResult, faborch: false });
-  }
-
-  // Not the demo credential. It may still be a FabOrchestrator one.
+  // No FabOrchestrator, no sign-in. This is a **deployment fault, not a bad
+  // password**, and saying "incorrect email or password" here — as this route
+  // did while a local demo credential still existed — would send an operator
+  // to retype a password that was never going to be checked by anything.
   if (!isFabOrchConfigured()) {
-    recordLoginFailure(address);
-    return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 });
+    console.error("[auth] FABORCH_BASE_URL is not set; sign-in cannot work");
+    return NextResponse.json(
+      { error: "Sign-in is not configured on this server: FabOrchestrator is not reachable." },
+      { status: 503 },
+    );
   }
 
   let fo;
@@ -109,12 +110,19 @@ export async function POST(req: NextRequest) {
   // not read from FO: its `/api/auth/login` response carries no role (that is
   // on `/api/auth/me`), and a second round trip to label the top nav is not
   // worth it. The label is what this app calls its operators.
-  const session = sessionFor({
-    id: fo.user.id,
-    email: fo.user.email,
-    name: fo.user.name || fo.user.email,
-    roleName: process.env.DEMO_USER_ROLE ?? "Supervisor",
-  });
+  //
+  // `fo.expiresAt` caps this session at FabOrchestrator's own expiry, so the
+  // PWA can never hold a session that outlives the token behind it — see
+  // `sessionFor`.
+  const session = sessionFor(
+    {
+      id: fo.user.id,
+      email: fo.user.email,
+      name: fo.user.name || fo.user.email,
+      roleName: DEFAULT_ROLE_LABEL,
+    },
+    fo.expiresAt,
+  );
 
   clearLoginFailures(address);
   const res = NextResponse.json({ ...session, faborch: true });

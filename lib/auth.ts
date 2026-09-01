@@ -1,36 +1,43 @@
 /**
- * Demo authentication.
+ * This app's session, for an operator **FabOrchestrator has authenticated**.
  *
- * ⚠ **This is not the product's authentication.** FabOrchestrator authenticates
- * against a `users` table with scrypt hashes and issues opaque session tokens
- * stored in PostgreSQL (`claudeai_athena/lib/auth-middleware.ts` +
- * `lib/storage.ts`). This demo has no database, so it does the smallest thing
- * that keeps the *shape* identical — a bearer token, an `Authorization` header
- * on every request, `requireAuth` in front of every route — without pulling
- * Prisma and a schema into a Tier 0 demo.
+ * ── There is no credential here, and that is the point (WP2) ────────────────
+ * Until 2026-09-01 this file also held a demo credential read from
+ * `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD`, checked locally with no network
+ * call. It was removed because it produced a session that looked signed in and
+ * could not use FabOrchestrator: the login route issued it happily, then every
+ * agent screen refused it, which reads as a broken app rather than as the wrong
+ * credential. **FabOrchestrator is now the only identity.** The only way to
+ * obtain a session is for FO to verify the password against its own `users`
+ * table, and this file mints the shell session for whoever FO vouched for.
  *
- * What that costs, stated plainly so nobody ships it by accident:
+ * ⚠ **This is still not the product's session store.** FO issues opaque tokens
+ * recorded in PostgreSQL (`claudeai_athena/lib/auth-middleware.ts`); this app
+ * issues a **stateless HMAC**, so nothing server-side records that a session
+ * exists and sign-out cannot revoke one — it clears the client and drops the FO
+ * cookie. What that is worth is bounded now that FO is the only identity: this
+ * token alone reaches the order workflow's mock data and `/api/auth/me`, and
+ * nothing in FabOrchestrator, because every FO call needs the httpOnly cookie
+ * that sign-out removes.
  *
- *  - One credential pair, from the environment. No user table, no registration.
- *  - Tokens are **stateless HMACs**. Nothing server-side records that a session
- *    exists, so logout cannot revoke one — it only clears the client. A stolen
- *    token is valid until it expires.
- *  - No rate limiting, no lockout, no password reset, no audit trail.
- *
- * Replacing this with the real thing means swapping this file and
- * `auth-middleware.ts` for the product's; nothing else imports either.
+ * Replacing the HMAC with a revocable server-side session is the remaining WP2
+ * item; it needs a database, which this app deliberately does not yet require.
  */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-export interface DemoUser {
+/**
+ * The operator, as this app labels them. Every field except `roleName` comes
+ * from FabOrchestrator's own login response.
+ */
+export interface SessionUser {
   id: string;
   email: string;
   name: string;
   roleName: string;
 }
 
-export interface SessionPayload extends DemoUser {
+export interface SessionPayload extends SessionUser {
   /** Expiry, epoch milliseconds. */
   exp: number;
 }
@@ -72,53 +79,45 @@ function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-/** The single configured operator, or null when the environment is incomplete. */
-function configuredUser(): { user: DemoUser; password: string } | null {
-  const email = process.env.DEMO_USER_EMAIL;
-  const password = process.env.DEMO_USER_PASSWORD;
-  if (!email || !password) return null;
-  return {
-    user: {
-      id: "USR-DEMO-1",
-      email,
-      name: process.env.DEMO_USER_NAME ?? "Supervisor",
-      roleName: process.env.DEMO_USER_ROLE ?? "Supervisor",
-    },
-    password,
-  };
-}
-
 export interface LoginResult {
   token: string;
   expiresAt: string;
-  user: DemoUser;
-}
-
-/** Null on bad credentials — the caller must not distinguish which half was wrong. */
-export function authenticate(email: string, password: string): LoginResult | null {
-  const configured = configuredUser();
-  if (!configured) return null;
-
-  const emailOk = safeEqual(email.trim().toLowerCase(), configured.user.email.trim().toLowerCase());
-  const passwordOk = safeEqual(password, configured.password);
-  if (!emailOk || !passwordOk) return null;
-
-  return sessionFor(configured.user);
+  user: SessionUser;
 }
 
 /**
- * Mint a session for a user who has **already** been authenticated elsewhere.
+ * Mint a session for a user **FabOrchestrator has already authenticated**.
  *
- * Extracted from `authenticate` on 2026-08-23, unchanged, so the login route
- * can issue this app's session to somebody FabOrchestrator vouched for. FO owns
- * a real user table with scrypt hashes; this app owns the shell those users see
- * in the PWA. Nothing here checks a password, and the one caller that does not
- * is `app/api/auth/login/route.ts` immediately after `foLogin` returned a
- * session — so a caller reaching this function with an unverified user is the
- * bug to look for if this file is ever changed.
+ * This file checks no passwords. It never has one to check: since the demo
+ * credential was removed (WP2), the only way to obtain a session is to present
+ * FabOrchestrator credentials that FO itself verifies against its own user
+ * table. The single caller is `app/api/auth/login/route.ts`, immediately after
+ * `foLogin()` returned an FO session — a caller reaching this function with an
+ * unverified user is the bug to look for if this file is ever changed.
+ *
+ * ── `notAfter` reconciles two clocks ────────────────────────────────────────
+ * FabOrchestrator's own session carries an absolute expiry, and this app's
+ * session must not outlive it: a PWA session that is still valid after FO has
+ * dropped its token leaves the operator holding a session that looks signed in
+ * and cannot answer a single question. Passing FO's `expiresAt` here caps this
+ * session at the earlier of the two.
+ *
+ * It does **not** cover FO's 30-minute *idle* eviction, which is not a clock
+ * that can be predicted at sign-in — that is handled where it becomes
+ * observable, in the chat proxy's 401 path, which drops the cookie and asks for
+ * a fresh sign-in (`app/api/faborch/[agent]/chat/route.ts`).
  */
-export function sessionFor(user: DemoUser): LoginResult {
-  const exp = Date.now() + ttlMs();
+export function sessionFor(user: SessionUser, notAfter?: string): LoginResult {
+  let exp = Date.now() + ttlMs();
+
+  if (notAfter) {
+    const foExpiry = new Date(notAfter).getTime();
+    // An unparseable expiry is ignored rather than trusted: capping to NaN
+    // would mint a session that is already dead, which reads as a broken app
+    // rather than as the bad input it is.
+    if (Number.isFinite(foExpiry)) exp = Math.min(exp, foExpiry);
+  }
+
   const payload: SessionPayload = { ...user, exp };
   const body = b64url(JSON.stringify(payload));
 

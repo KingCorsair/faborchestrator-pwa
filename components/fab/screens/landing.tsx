@@ -56,9 +56,10 @@
  */
 
 import Link from "next/link";
-import { ArrowRight, ClipboardList } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
+import { NAV } from "@/components/fab/nav-items";
 import { SignOutLink } from "@/components/fab/sign-out-link";
 import { Label } from "@/components/fab/primitives";
 import { Ask } from "@/components/fab/screens/landing-ask";
@@ -93,33 +94,58 @@ function CockpitNav() {
         <BrandLockup size="nav" />
       </Link>
 
+      {/*
+        The same `NAV` the app shell renders, not a copy of it. This page does
+        not use AppShell — it is the cockpit and carries its own sticky header —
+        and that is precisely how the two drifted: this header went on listing
+        the demo's own screens after the shell had stopped.
+      */}
       <nav className="hidden items-center gap-1.5 md:flex" aria-label="Sections">
-        <span
-          aria-current="page"
-          className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
-          style={{
-            borderRadius: "var(--r-chip)",
-            background: "var(--nav-active)",
-            color: "var(--pure-white)",
-          }}
-        >
-          Cockpit
-        </span>
-        {[
-          { href: "/fabinsight", label: "FabInsight" },
-          { href: "/orders", label: "Orders" },
-          { href: "/decisions", label: "Decisions" },
-          { href: "/activity", label: "Activity" },
-        ].map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold no-underline"
-            style={{ borderRadius: "var(--r-chip)", color: "var(--text-muted-cool)" }}
-          >
-            {item.label}
-          </Link>
-        ))}
+        {NAV.map((item) => {
+          if (item.unavailable) {
+            return (
+              <span
+                key={item.href}
+                title={item.unavailable}
+                aria-disabled="true"
+                className="flex cursor-not-allowed items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
+                style={{
+                  borderRadius: "var(--r-chip)",
+                  color: "var(--text-subtle)",
+                  opacity: 0.55,
+                }}
+              >
+                {item.label}
+              </span>
+            );
+          }
+
+          // This screen *is* the cockpit, so its own entry is the current page
+          // rather than a link back to where the reader already stands.
+          return item.href === "/" ? (
+            <span
+              key={item.href}
+              aria-current="page"
+              className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
+              style={{
+                borderRadius: "var(--r-chip)",
+                background: "var(--nav-active)",
+                color: "var(--pure-white)",
+              }}
+            >
+              {item.label}
+            </span>
+          ) : (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold no-underline"
+              style={{ borderRadius: "var(--r-chip)", color: "var(--text-muted-cool)" }}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </nav>
     </div>
   );
@@ -477,22 +503,6 @@ function FooterStats() {
 
 /* ── This demo's own workflow ────────────────────────────────────────────── */
 
-/**
- * The one workflow built in this app, and the only card below the cockpit that
- * is a door.
- *
- * It is **not** in the Nucleus, because it is not one of FabOrchestrator's four
- * agents — it is this demo, and adding a fifth card there would invent an agent
- * the product does not have. It keeps the three signals this app uses for
- * *pressable*: a 2px accent border, the live icon tile, and an arrow.
- */
-const DEMO_WORKFLOW = {
-  href: "/orders",
-  icon: ClipboardList,
-  title: "Review and approve production orders",
-  line: "Search or scan an order, see the problems detected from MES data, ask the AI to explain them with evidence you can check, then approve, reject or escalate.",
-};
-
 function ThisDemo() {
   return (
     <section className="mt-[58px] flex flex-col gap-[14px]" aria-label="In this demo">
@@ -502,50 +512,13 @@ function ThisDemo() {
           className="m-0 max-w-[var(--measure)] text-[12px] font-normal"
           style={{ color: "var(--text-subtle)" }}
         >
-          FabInsight above is FabOrchestrator&rsquo;s, reached from this app. The production
-          order workflow below is built here, end to end, on mock MES data. The rest name
-          what the platform does and are not part of this demo.
+          The agents above are FabOrchestrator&rsquo;s, reached from this app. The
+          capabilities below name what the platform does; they are not screens in this
+          app and are not links.
         </p>
       </div>
 
       <ul className="grid list-none grid-cols-1 gap-[10px] p-0 sm:grid-cols-2 lg:grid-cols-3">
-        <li className="flex">
-          <Link
-            href={DEMO_WORKFLOW.href}
-            className="fab-card fab-card-link flex w-full flex-col gap-[10px] px-[18px] py-[16px] no-underline sm:px-[20px] sm:py-[18px]"
-            style={{ border: "2px solid var(--brand-indigo)" }}
-          >
-            <span
-              className="grid flex-none place-items-center"
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: "var(--r-control)",
-                background: "var(--brand-indigo-bg)",
-                color: "var(--cockpit-indigo)",
-              }}
-              aria-hidden="true"
-            >
-              <DEMO_WORKFLOW.icon size={17} strokeWidth={2} />
-            </span>
-            <h3 className="text-[16px] leading-[1.3]" style={{ color: "var(--text-ink)" }}>
-              {DEMO_WORKFLOW.title}
-            </h3>
-            <p
-              className="m-0 text-[12px] font-normal leading-[1.6]"
-              style={{ color: "var(--text-muted-cool)" }}
-            >
-              {DEMO_WORKFLOW.line}
-            </p>
-            <span
-              className="mt-auto flex items-center gap-[8px] pt-[4px] text-[12px] font-bold"
-              style={{ color: "var(--cockpit-indigo)" }}
-            >
-              Open workflow
-              <ArrowRight size={15} strokeWidth={2.4} aria-hidden="true" />
-            </span>
-          </Link>
-        </li>
 
         {PLATFORM_CAPABILITIES.map((capability) => (
           <CapabilityCard key={capability.id} {...capability} />

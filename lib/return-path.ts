@@ -22,7 +22,7 @@
  */
 
 /** Where sign-in goes when nothing better is asked for. */
-export const DEFAULT_RETURN_PATH = "/orders";
+export const DEFAULT_RETURN_PATH = "/";
 
 /**
  * The path to return to after signing in, or `fallback` if the value cannot be

@@ -13,34 +13,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  ClipboardCheck,
-  ClipboardList,
-  History,
-  LogOut,
-  RefreshCw,
-  Sparkles,
-} from "lucide-react";
+import { LogOut, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
+import { NAV } from "./nav-items";
 import { logout, type SessionUser } from "./use-session";
-
-/**
- * FabInsight is first, and it is not one of this demo's screens.
- *
- * It is FabOrchestrator's own agent — AGENT · 01 on the product's cockpit —
- * reached through `/fabinsight`, which forwards to the running FO application.
- * It leads because that is where it sits in the product: the cockpit opens on
- * the ask bar and the Nucleus, and the production order workflow is one thing
- * you do afterwards. The three that follow are this demo's screens, in the
- * order they always were.
- */
-const NAV = [
-  { href: "/fabinsight", label: "FabInsight", icon: Sparkles },
-  { href: "/orders", label: "Orders", icon: ClipboardList },
-  { href: "/decisions", label: "Decisions", icon: ClipboardCheck },
-  { href: "/activity", label: "Activity", icon: History },
-];
 
 export function AppShell({
   user,
@@ -109,8 +86,38 @@ export function AppShell({
           aria-label="Sections"
         >
           {NAV.map((item) => {
-            const active = pathname?.startsWith(item.href);
             const Icon = item.icon;
+
+            // Rendered as a <span>, not a disabled <a>: a link with no
+            // destination is still focusable and still looks pressable, which
+            // is the "dead control" this app has already been reported for
+            // once. `title` carries the reason on hover, and aria-disabled
+            // tells a screen reader what the colour alone says to everyone
+            // else.
+            if (item.unavailable) {
+              return (
+                <span
+                  key={item.href}
+                  title={item.unavailable}
+                  aria-disabled="true"
+                  className="flex cursor-not-allowed items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold transition-colors"
+                  style={{
+                    borderRadius: "var(--r-chip)",
+                    background: "transparent",
+                    color: "var(--text-subtle)",
+                    opacity: 0.55,
+                  }}
+                >
+                  <Icon size={16} strokeWidth={2} aria-hidden="true" />
+                  {item.label}
+                </span>
+              );
+            }
+
+            // "/" would match every path with startsWith, so the cockpit is
+            // active only on exactly itself.
+            const active =
+              item.href === "/" ? pathname === "/" : (pathname?.startsWith(item.href) ?? false);
             return (
               <Link
                 key={item.href}

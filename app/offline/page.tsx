@@ -77,7 +77,7 @@ const RECOVERY_SCRIPT = `
 
   // Served in place of /orders, the address bar still says /orders — so reload
   // where we are. Only a bookmark that literally points here needs sending on.
-  var target = location.pathname === "/offline" ? "/orders" : location.href;
+  var target = location.pathname === "/offline" ? "/" : location.href;
 
   function recover() {
     // Cache-busted and same-origin: a captive portal answering from cache would
@@ -151,7 +151,7 @@ export default function OfflinePage() {
             the network again. */}
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a
-          href="/orders"
+          href="/"
           className="mt-1 inline-flex items-center justify-center px-[16px] py-[11px] text-[14px] font-bold no-underline"
           style={{
             borderRadius: "var(--r-control)",

@@ -48,7 +48,7 @@ function fail(message: string): never {
 
 const input = process.argv[2];
 if (!input) {
-  fail("Usage: npm run qr -- https://your-app.fly.dev/orders");
+  fail("Usage: npm run qr -- https://your-app.fly.dev/");
 }
 
 let url: URL;

@@ -2,7 +2,7 @@
   "id": "/orders",
   "name": "FabOrchestrator",
   "short_name": "FabOrch",
-  "description": "An enterprise AI platform for manufacturing operations, with AI-assisted production order review.",
+  "description": "An enterprise AI platform for manufacturing operations, reached from a phone.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "/",
@@ -11,7 +11,10 @@
   "orientation": "any",
   "background_color": "#f6f7fc",
   "theme_color": "#10153a",
-  "categories": ["productivity", "business"],
+  "categories": [
+    "productivity",
+    "business"
+  ],
   "icons": [
     {
       "src": "/icon-192.png",

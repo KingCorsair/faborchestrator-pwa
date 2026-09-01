@@ -5,6 +5,11 @@ work completes, its operational documentation. The code and the plans live in
 one repository on purpose: a plan that cannot drift silently away from the
 commit history it describes.
 
+## STATUS.md
+
+**Start here.** Where the project stands, what is proved and how, what is left,
+and what is blocked on somebody outside the team. Updated as work lands.
+
 ## planning/
 
 The four current planning documents, in order of altitude:

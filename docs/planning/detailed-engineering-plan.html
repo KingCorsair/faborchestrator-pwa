@@ -1,0 +1,2403 @@
+<title>FabOrchestrator PWA Build Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+:root{
+  --ground:#f6f7fa; --panel:#ffffff; --panel-2:#f0f2f7;
+  --ink:#171b28; --ink-2:#454d66; --ink-3:#6d7590;
+  --rule:#e0e3ee; --rule-2:#cdd2e2;
+  --accent:#5b54e8; --accent-ink:#4038c9; --accent-wash:#eeedfd;
+  --ok:#1c6f4e; --ok-wash:#e2f2ea;
+  --warn:#8a5a00; --warn-wash:#fbf0d9;
+  --stop:#a52b23; --stop-wash:#fbe8e6;
+  --new:#1d5c94; --new-wash:#e3eff9;
+  --shadow:0 1px 2px rgba(23,27,40,.05),0 8px 24px rgba(23,27,40,.05);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+    --ink:#e7e9f2; --ink-2:#a7aec6; --ink-3:#7d859e;
+    --rule:#282e40; --rule-2:#39415a;
+    --accent:#9a94ff; --accent-ink:#b6b1ff; --accent-wash:#22203f;
+    --ok:#67d3a3; --ok-wash:#12291f;
+    --warn:#e2b35c; --warn-wash:#2d2415;
+    --stop:#f08d84; --stop-wash:#331b19;
+    --new:#7cbdf0; --new-wash:#132433;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.28);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+  --ink:#e7e9f2; --ink-2:#a7aec6; --ink-3:#7d859e;
+  --rule:#282e40; --rule-2:#39415a;
+  --accent:#9a94ff; --accent-ink:#b6b1ff; --accent-wash:#22203f;
+  --ok:#67d3a3; --ok-wash:#12291f;
+  --warn:#e2b35c; --warn-wash:#2d2415;
+  --stop:#f08d84; --stop-wash:#331b19;
+  --new:#7cbdf0; --new-wash:#132433;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.28);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1140px;margin:0 auto;padding:0 22px 120px}
+h1,h2,h3,h4,.ui{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+code,kbd,.mono{font-family:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,monospace}
+code{font-size:.83em;background:var(--panel-2);border:1px solid var(--rule);
+  padding:.08em .34em;border-radius:4px;word-break:break-word}
+a{color:var(--accent-ink);text-decoration-thickness:1px;text-underline-offset:2px}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+header.mast{border-bottom:1px solid var(--rule);background:var(--panel)}
+.mast-in{max-width:1140px;margin:0 auto;padding:46px 22px 34px}
+.eyebrow{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+h1{font-size:clamp(30px,5.2vw,46px);font-weight:700;letter-spacing:-.022em;
+  line-height:1.08;margin:12px 0 14px}
+.dek{font-size:18px;color:var(--ink-2);max-width:64ch}
+.meta{display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:24px;
+  font-family:Archivo,sans-serif;font-size:12px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+section{padding-top:52px;scroll-margin-top:16px}
+.sechead{display:flex;gap:14px;align-items:baseline;border-top:2px solid var(--ink);
+  padding-top:12px;margin-bottom:22px}
+.secno{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent-ink);padding-top:6px;flex:none}
+h2{font-size:clamp(21px,3vw,27px);font-weight:700;letter-spacing:-.015em}
+h3{font-size:18px;font-weight:600;letter-spacing:-.01em;margin:30px 0 10px}
+h4{font-size:14px;font-weight:600;letter-spacing:.02em;margin:22px 0 8px;color:var(--ink-2)}
+p{margin:0 0 14px;max-width:74ch}
+ul,ol{margin:0 0 14px;padding-left:22px;max-width:74ch}
+li{margin-bottom:6px}
+.lead{font-size:17.5px;color:var(--ink-2)}
+.chip{display:inline-block;font-family:Archivo,sans-serif;font-size:10.5px;font-weight:600;
+  letter-spacing:.07em;text-transform:uppercase;padding:2.5px 7px;border-radius:4px;
+  border:1px solid transparent;white-space:nowrap;vertical-align:2px}
+.c-have{background:var(--ok-wash);color:var(--ok);border-color:var(--ok)}
+.c-reuse{background:var(--accent-wash);color:var(--accent-ink);border-color:var(--accent)}
+.c-mod{background:var(--warn-wash);color:var(--warn);border-color:var(--warn)}
+.c-new{background:var(--new-wash);color:var(--new);border-color:var(--new)}
+.c-risk{background:var(--stop-wash);color:var(--stop);border-color:var(--stop)}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;
+  padding:20px 22px;box-shadow:var(--shadow);margin:0 0 18px}
+.callout{border-left:3px solid var(--accent);background:var(--accent-wash);
+  border-radius:0 8px 8px 0;padding:15px 18px;margin:0 0 18px}
+.callout.warnbox{border-left-color:var(--stop);background:var(--stop-wash)}
+.callout p:last-child{margin-bottom:0}
+.callout h4{margin-top:0}
+.grid2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.grid3{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.tw{overflow-x:auto;margin:0 0 20px;border:1px solid var(--rule);border-radius:9px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-family:Archivo,sans-serif;font-size:13px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:9px 13px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{background:var(--panel-2);font-weight:600;font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td code{font-size:11.5px}
+.num{text-align:right;white-space:nowrap}
+.flow{font-family:"JetBrains Mono",monospace;font-size:12.5px;line-height:1.75;
+  background:var(--panel-2);border:1px solid var(--rule);border-radius:9px;
+  padding:16px 18px;overflow-x:auto;white-space:pre;margin:0 0 18px;color:var(--ink-2)}
+.wp{background:var(--panel);border:1px solid var(--rule-2);border-radius:11px;
+  margin:0 0 26px;overflow:hidden;box-shadow:var(--shadow)}
+.wp-h{padding:16px 22px;border-bottom:1px solid var(--rule);background:var(--panel-2);
+  display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline}
+.wp-h .id{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;color:var(--accent-ink)}
+.wp-h .nm{font-family:Archivo,sans-serif;font-size:17px;font-weight:700;letter-spacing:-.01em}
+.wp-h .est{margin-left:auto;font-family:Archivo,sans-serif;font-size:12px;color:var(--ink-3)}
+.wp-b{padding:18px 22px 6px}
+.f{display:grid;grid-template-columns:172px 1fr;gap:4px 20px;margin-bottom:13px;
+  padding-bottom:13px;border-bottom:1px dashed var(--rule)}
+.f:last-child{border-bottom:0}
+.f>dt{font-family:Archivo,sans-serif;font-size:10.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3);padding-top:4px}
+.f>dd{margin:0;font-size:15px}
+.f>dd p{margin:0 0 8px;max-width:none}
+.f>dd ul{margin:0;padding-left:19px;max-width:none}
+.f>dd li{margin-bottom:4px;font-size:14.5px}
+@media(max-width:640px){.f{grid-template-columns:1fr;gap:2px}.f>dt{padding-top:8px}}
+.legend{display:flex;flex-wrap:wrap;gap:10px 22px;padding:14px 18px;border:1px dashed var(--rule-2);
+  border-radius:9px;margin:0 0 22px;background:var(--panel)}
+.legend div{font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-2)}
+.toc{columns:2;column-gap:34px;font-family:Archivo,sans-serif;font-size:13.5px}
+@media(max-width:620px){.toc{columns:1}}
+.toc a{display:block;padding:4px 0;border-bottom:1px solid var(--rule);
+  text-decoration:none;color:var(--ink-2);break-inside:avoid}
+.toc a:hover{color:var(--accent-ink)}
+.toc a span{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-3);margin-right:9px}
+.kpi{border:1px solid var(--rule);border-radius:9px;padding:14px 16px;background:var(--panel)}
+.kpi .k{font-family:Archivo,sans-serif;font-size:10.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-family:Archivo,sans-serif;font-size:26px;font-weight:700;letter-spacing:-.02em;
+  margin:5px 0 2px;color:var(--ink)}
+.kpi .s{font-size:13px;color:var(--ink-2);line-height:1.45}
+hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
+.fp{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--ink-2);word-break:break-all}
+</style>
+
+<header class="mast">
+  <div class="mast-in">
+    <div class="eyebrow">Engineering implementation plan &middot; derived from source</div>
+    <h1>FabOrchestrator PWA Build Plan</h1>
+    <p class="dek">A code-level plan for the installable mobile client that fronts FabOrchestrator.
+    Every claim below was read out of the working tree; the exploratory plan is treated as the
+    baseline and corrected where the repository disagrees with it.</p>
+    <div class="meta">
+      <div><b>Product repo</b> <span class="fp">FabOrchestrator_product_code/</span></div>
+      <div><b>Upstream</b> <span class="fp">LLM-AT-SCALE/FabOrchestrator_product_code</span></div>
+      <div><b>Client repo</b> <span class="fp">progressive_web_app_demo/</span></div>
+      <div><b>Inspected</b> 2026-08-29</div>
+      <div><b>Status</b> Draft for technical review</div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="toc">
+  <div class="sechead"><div class="secno">&sect;00</div><h2>Contents</h2></div>
+  <nav class="toc">
+    <a href="#s1"><span>01</span>Executive technical summary</a>
+    <a href="#s2"><span>02</span>Current system findings</a>
+    <a href="#s3"><span>03</span>Architecture confirmed from code</a>
+    <a href="#s4"><span>04</span>Existing functionality to reuse</a>
+    <a href="#s5"><span>05</span>New functionality required</a>
+    <a href="#s6"><span>06</span>Work packages WP1&ndash;WP12</a>
+    <a href="#s7"><span>07</span>File-by-file change plan</a>
+    <a href="#s8"><span>08</span>End-to-end request flow</a>
+    <a href="#s9"><span>09</span>Authentication &amp; session flow</a>
+    <a href="#s10"><span>10</span>SSE / streaming flow</a>
+    <a href="#s11"><span>11</span>Agent routing plan</a>
+    <a href="#s12"><span>12</span>FabInsight / MES plan</a>
+    <a href="#s13"><span>13</span>Dashboard &amp; artifact rendering</a>
+    <a href="#s14"><span>14</span>Error &amp; progress handling</a>
+    <a href="#s15"><span>15</span>Testing plan</a>
+    <a href="#s16"><span>16</span>Dependency order &amp; smallest experiment</a>
+    <a href="#s17"><span>17</span>Milestones &amp; deliverables</a>
+    <a href="#s18"><span>18</span>Engineering timeline</a>
+    <a href="#s19"><span>19</span>Contingency</a>
+    <a href="#s20"><span>20</span>Risks &amp; unresolved questions</a>
+    <a href="#s21"><span>21</span>Definition of done</a>
+  </nav>
+</section>
+<section id="s1">
+  <div class="sechead"><div class="secno">&sect;01</div><h2>Executive technical summary</h2></div>
+
+  <p class="lead">The architecture in the exploratory plan is correct. The scope is not: most of it
+  is already built, sitting uncommitted in the working tree, and the two things it gets wrong about
+  FabOrchestrator&rsquo;s wire format and agent topology are exactly the two things that would have
+  cost a week to discover during implementation.</p>
+
+  <div class="grid3" style="margin:24px 0 28px">
+    <div class="kpi"><div class="k">Client codebases found</div><div class="v">3</div>
+      <div class="s">One near-complete, one skeleton, plus FO itself being made installable. All three uncommitted.</div></div>
+    <div class="kpi"><div class="k">FO agent endpoints</div><div class="v">3</div>
+      <div class="s">Not one. <code>/api/chat</code>, <code>/api/modeling-agent/chat</code>, <code>/api/backend-agent/chat</code>.</div></div>
+    <div class="kpi"><div class="k">Remaining core work</div><div class="v">21 d</div>
+      <div class="s">Engineer-days, one engineer, excluding contingency.</div></div>
+  </div>
+
+  <h3>What the repository actually contains</h3>
+  <p>Three separate attempts at this exist side by side, none of them committed:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Codebase</th><th>Last touched</th><th>State</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td><span class="fp">progressive_web_app_demo/</span></td><td>2026-08-25</td>
+        <td>Full Next 16 app. Working FO login, httpOnly FO-token cookie, agent proxy for all three
+        FO agents, hand-written SSE parser with 10 unit tests, manifest, service worker, iOS install
+        hint, Fly deployment pointing at FO&rsquo;s CloudFront URL.</td>
+        <td><span class="chip c-reuse">Base for this plan</span></td></tr>
+      <tr><td><span class="fp">faborch_pwa/</span></td><td>2026-08-26</td>
+        <td>Clean-room restart. Four <code>lib/</code> files only &mdash; no <code>app/</code>, no UI,
+        no tests. Uses an opaque server-side session map instead of a cookie-borne FO token.</td>
+        <td><span class="chip c-mod">Harvest 2 ideas, then retire</span></td></tr>
+      <tr><td><span class="fp">claudeai_athena/</span> (FO itself)</td><td>2026-08-24</td>
+        <td><code>app/manifest.ts</code>, <code>public/sw.js</code>,
+        <code>components/register-service-worker.tsx</code>, <code>install-app-hint.tsx</code>,
+        a mobile <code>SidebarTrigger</code>. FabOrchestrator is <em>already installable</em>.</td>
+        <td><span class="chip c-have">Complementary track, keep</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout">
+    <h4>Recommendation</h4>
+    <p>Consolidate on <span class="fp">progressive_web_app_demo/</span>. It is the only one with a
+    proven end-to-end path, a test suite, a design system and a deployment. Retire
+    <span class="fp">faborch_pwa/</span> after lifting its two better ideas (the opaque server-side
+    session id, and not sending <code>model</code> at all so FO picks its own default). Keep FO&rsquo;s
+    own installability work &mdash; it answers a different question (&ldquo;install the real product on a
+    desktop&rdquo;) and does not compete with a phone-shaped client.</p>
+    <p>The first engineering act is a decision, not code: <strong>commit or discard</strong>. Roughly
+    3,500 lines of integration work currently exist only in one working tree with no branch, no
+    review and no backup.</p>
+  </div>
+
+  <h3>Where the exploratory plan and the code disagree</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:22%">Topic</th><th>Plan assumed</th><th>Repository does</th><th>Change &amp; why</th></tr></thead>
+    <tbody>
+      <tr><td><b>SSE event format</b></td>
+        <td><code>data: {"type":"text","text":"…"}</code>, <code>{"type":"done"}</code> &mdash; as
+        documented in <span class="fp">app/api/CLAUDE.md</span>.</td>
+        <td>Vercel AI SDK v6 <b>UI Message Stream</b>. Frames are
+        <code>text-delta</code>/<code>delta</code>, <code>text-start</code>/<code>text-end</code>,
+        <code>tool-input-start</code>/<code>toolName</code>, <code>error</code>/<code>errorText</code>,
+        <code>data-keepalive</code>, terminated by <code>data: [DONE]</code>.
+        <span class="fp">app/api/chat/route.ts:1145</span> &rarr; <code>createUIMessageStreamResponse</code>.</td>
+        <td>Parse the real union. <span class="fp">app/api/CLAUDE.md</span> is stale and must not be
+        used as the contract. A parser written to the doc would render nothing at all.</td></tr>
+      <tr><td><b>Single integration point</b></td>
+        <td>All agents go to <code>POST /api/chat</code>.</td>
+        <td>Three endpoints. The cockpit&rsquo;s four cards
+        (<span class="fp">components/cockpit/agent-cards.tsx:28</span>) route to
+        <code>/chat</code>, <code>/chat</code>, <code>/modeling-agent</code>, <code>/backend-agent</code>;
+        the last two POST to their own routes with different bodies and different gates.</td>
+        <td>Keep one parameterised proxy but a per-agent registry of
+        <code>foPath</code> + whether <code>activeMcpIds</code> applies.
+        <span class="fp">lib/faborch/agents.ts</span> already does this.</td></tr>
+      <tr><td><b>Frontend route shape</b></td>
+        <td><code>POST /api/faborch/insight/chat</code>.</td>
+        <td><code>POST /api/faborch/[agent]/chat</code> already exists and is the same idea
+        generalised.</td>
+        <td>Adopt the existing dynamic segment. Hard-coding <code>insight</code> would mean three
+        copies of the token, expiry and no-buffering handling.</td></tr>
+      <tr><td><b>&ldquo;FabInsight logic&rdquo;</b></td>
+        <td>A system FO owns, with its own code path.</td>
+        <td>FabInsight has <b>no code of its own</b>. It is a card that opens <code>/chat</code>.
+        Its entire data reach is the MCP tools loaded from the caller-supplied
+        <code>activeMcpIds</code> at <span class="fp">app/api/chat/route.ts:454</span>.
+        Confirmed in <span class="fp">docs/11-mcp-server-catalog.md</span>.</td>
+        <td>The PWA must fetch and forward <code>activeMcpIds</code> server-side, or FabInsight
+        answers with no data access at all. This is the single highest-risk detail in the build.</td></tr>
+      <tr><td><b>Dashboard / artifact format</b></td>
+        <td>One artifact mechanism, likely <code>&lt;antArtifact&gt;</code>.</td>
+        <td>Two, unrelated. (a) <code>&lt;antArtifact&gt;</code> HTML inline in <code>/api/chat</code>
+        text, parsed by <span class="fp">lib/artifact-parser.ts</span>. (b) The Back-end Agent
+        publishes a <b>UiView JSON spec</b> fetched from <code>/api/views/[key]</code> and rendered by
+        <span class="fp">components/ui-runtime/renderer.tsx</span> at <code>/v/[key]</code> &mdash; never HTML.</td>
+        <td>Build (a) in the PWA; deep-link to FO for (b). Re-implementing the spec renderer is a
+        second copy of a screen FO owns.</td></tr>
+      <tr><td><b>Session expiry</b></td>
+        <td>A session is valid until it expires.</td>
+        <td>Two clocks. 30-day absolute (<span class="fp">app/api/auth/login/route.ts:55</span>)
+        <em>and</em> a 30-minute idle eviction that <b>deletes the session row</b>
+        (<span class="fp">lib/session-audit.ts:23</span>, <code>IDLE_TIMEOUT_MS</code>).</td>
+        <td>A PWA session that outlives 30 idle minutes will start 401-ing. The PWA&rsquo;s own TTL is
+        currently 12 h, so it will regularly hold a dead FO token.</td></tr>
+      <tr><td><b>Keeping FO credentials server-side</b></td>
+        <td>A constraint to design toward.</td>
+        <td>Already satisfied: <span class="fp">lib/faborch/session.ts</span> puts the FO token in an
+        <code>httpOnly</code>, <code>sameSite=lax</code> cookie whose <code>secure</code> flag is
+        derived from <code>x-forwarded-proto</code>, not <code>NODE_ENV</code>.</td>
+        <td>No change. This is the strongest part of the existing implementation.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout warnbox">
+    <h4>One live defect found during inspection</h4>
+    <p>FO&rsquo;s canonical error envelope is <b>nested</b>:
+    <code>{ error: { errorId, type, priority, message } }</code>
+    (<span class="fp">lib/errors/api-error-handler.ts:115</span>). The PWA proxy&rsquo;s
+    <code>messageOf()</code> returns <code>body.userMessage || body.error</code> &mdash; which for that
+    envelope is an <em>object</em>. It is typed <code>string</code>, passed to
+    <code>fail(code, error, status)</code>, and rendered as a React child in
+    <span class="fp">components/fab/screens/agent-chat.tsx</span>. Any FO error that goes through
+    <code>handleApiError</code> &mdash; a role-restricted model, an invalid parameter, a 400 &mdash;
+    produces a render crash or <code>[object Object]</code> instead of the message. Fixed in
+    <a href="#s6">WP4</a>.</p>
+  </div>
+</section>
+
+<section id="s2">
+  <div class="sechead"><div class="secno">&sect;02</div><h2>Current system findings</h2></div>
+
+  <h3>2.1 Which FabOrchestrator this plan assumes</h3>
+  <p>The directory named <span class="fp">FabOrchestrator_LLM-AT-SCALE/</span> holds <b>documentation
+  only</b> &mdash; no <code>claudeai_athena/</code>, no <code>admin_athena/</code>. Its nested
+  <code>.git</code> is broken (objects pruned; <code>git ls-files</code> fails), but
+  <span class="fp">.git/config</span> names the real upstream
+  <code>https://github.com/LLM-AT-SCALE/FabOrchestrator_product_code</code> on branch
+  <code>pwa-install</code>. The working copy of that same repository is
+  <span class="fp">FabOrchestrator_product_code/</span>: identical <code>README.md</code>, and a
+  <code>CLAUDE.md</code> that differs only in its working-rules preamble.</p>
+  <p><b>This plan is written against <span class="fp">FabOrchestrator_product_code/claudeai_athena/</span>.</b>
+  The sibling <span class="fp">admin_athena/</span> is out of scope: the two apps integrate only
+  through the shared PostgreSQL database and there is no app-to-app API call.</p>
+
+  <h3>2.2 What FabOrchestrator already provides</h3>
+  <div class="tw"><table>
+    <thead><tr><th>Capability</th><th>Where</th><th>Contract</th></tr></thead>
+    <tbody>
+      <tr><td>Login</td><td><span class="fp">app/api/auth/login/route.ts</span></td>
+        <td><code>POST {email,password}</code> &rarr; <code>{user,token,expiresAt}</code>.
+        401 wrong password, 403 suspended/deleted.</td></tr>
+      <tr><td>Who-am-I</td><td><span class="fp">app/api/auth/me/route.ts</span></td>
+        <td><code>GET</code> + Bearer &rarr; <code>{user:{id,email,name,avatarUrl,preferences,role,…}}</code>.
+        Runs through <code>requireAuth</code>, so it also <em>triggers</em> idle eviction.</td></tr>
+      <tr><td>Logout</td><td><span class="fp">app/api/auth/logout/route.ts</span></td>
+        <td><code>POST</code> + Bearer &rarr; <code>{success:true}</code>. Deletes the session row.</td></tr>
+      <tr><td>Chat (FabInsight, Support Engineer)</td><td><span class="fp">app/api/chat/route.ts</span></td>
+        <td><code>POST {messages, model?, enableReasoning?, conversationId?, webSearch?, activeMcpIds?}</code>
+        &rarr; AI SDK UI message stream. <code>maxDuration = 300</code>.</td></tr>
+      <tr><td>Model list</td><td><span class="fp">app/api/chat/route.ts</span> (GET)</td>
+        <td><code>{models:[…], defaultModel:"claude-opus-4-8"}</code> &mdash; FabOrchestrator 1.0 / 1.1 / 2.0.</td></tr>
+      <tr><td>MCP connections</td><td><span class="fp">app/api/mcp/connections/route.ts</span></td>
+        <td><code>GET</code> &rarr; personal + role-level connections, each with <code>status</code>.</td></tr>
+      <tr><td>Modeling Agent</td><td><span class="fp">app/api/modeling-agent/chat/route.ts</span></td>
+        <td><code>POST {messages, conversationId?}</code>. <b>403</b> unless admin or role carries
+        <code>modeling_agent</code>. Same stream shape.</td></tr>
+      <tr><td>Modeling access probe</td><td><span class="fp">app/api/modeling-agent/access/route.ts</span></td>
+        <td><code>GET</code> &rarr; <code>{enabled:boolean}</code>.</td></tr>
+      <tr><td>Back-end Agent</td><td><span class="fp">app/api/backend-agent/chat/route.ts</span></td>
+        <td><code>POST {messages}</code>. Tools built server-side from the user id
+        (<code>buildUiAgentTools(user.id)</code>). Same stream shape.</td></tr>
+      <tr><td>Published dashboards</td><td><span class="fp">app/api/views/[key]/route.ts</span>, <span class="fp">/data</span></td>
+        <td>UiView spec + binding data, rendered at <code>/v/[key]</code>.</td></tr>
+      <tr><td>Artifact CRUD</td><td><span class="fp">app/api/artifacts/</span></td>
+        <td>Persisted HTML/code artifacts, keyed to a conversation.</td></tr>
+      <tr><td>Installability</td><td><span class="fp">app/manifest.ts</span>, <span class="fp">public/sw.js</span></td>
+        <td>Manifest, no-op service worker, iOS/Chrome install hint. Untracked.</td></tr>
+      <tr><td><s>Health check</s></td><td>&mdash;</td>
+        <td><span class="chip c-risk">Does not exist</span> There is no <code>/api/health</code>
+        route anywhere in <span class="fp">app/api/</span>.
+        <span class="fp">faborch_pwa/lib/faborch.ts</span> calls it and would 404.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>2.3 What the PWA already provides</h3>
+  <p>Everything in this table is in the working tree of <span class="fp">progressive_web_app_demo/</span>
+  and <b>untracked</b> &mdash; it appears under <code>??</code> in <code>git status</code>, not under
+  <code>M</code>.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Piece</th><th>File</th><th>Lines</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td>Agent registry</td><td><span class="fp">lib/faborch/agents.ts</span></td><td class="num">102</td><td><span class="chip c-reuse">Reuse</span></td></tr>
+      <tr><td>FO HTTP client</td><td><span class="fp">lib/faborch/client.ts</span></td><td class="num">247</td><td><span class="chip c-mod">Modify</span></td></tr>
+      <tr><td>FO token cookie</td><td><span class="fp">lib/faborch/session.ts</span></td><td class="num">91</td><td><span class="chip c-reuse">Reuse</span></td></tr>
+      <tr><td>SSE parser</td><td><span class="fp">lib/faborch/stream.ts</span></td><td class="num">145</td><td><span class="chip c-mod">Modify</span></td></tr>
+      <tr><td>Agent proxy route</td><td><span class="fp">app/api/faborch/[agent]/chat/route.ts</span></td><td class="num">179</td><td><span class="chip c-mod">Modify</span></td></tr>
+      <tr><td>Conversation screen</td><td><span class="fp">components/fab/screens/agent-chat.tsx</span></td><td class="num">586</td><td><span class="chip c-mod">Modify</span></td></tr>
+      <tr><td>Agent pages &times;3</td><td><span class="fp">app/{fabinsight,modeling-agent,backend-agent}/</span></td><td class="num">~150</td><td><span class="chip c-reuse">Reuse</span></td></tr>
+      <tr><td>Login route (dual-credential)</td><td><span class="fp">app/api/auth/login/route.ts</span></td><td class="num">123</td><td><span class="chip c-mod">Modify</span></td></tr>
+      <tr><td>Session hook</td><td><span class="fp">components/fab/use-session.ts</span></td><td class="num">~150</td><td><span class="chip c-mod">Modify</span></td></tr>
+      <tr><td>Login throttle</td><td><span class="fp">lib/rate-limit.ts</span></td><td class="num">&mdash;</td><td><span class="chip c-reuse">Reuse</span></td></tr>
+      <tr><td>Manifest + SW + iOS hint</td><td><span class="fp">public/manifest.webmanifest</span>, <span class="fp">public/sw.js</span></td><td class="num">~250</td><td><span class="chip c-reuse">Reuse</span></td></tr>
+      <tr><td>SSE parser tests</td><td><span class="fp">__tests__/faborch/stream.test.ts</span></td><td class="num">10 tests</td><td><span class="chip c-reuse">Reuse</span></td></tr>
+      <tr><td>Artifact rendering</td><td>&mdash;</td><td class="num">0</td><td><span class="chip c-new">Missing entirely</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>2.4 Findings against the seventeen questions asked</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:30%">Question</th><th>Finding</th></tr></thead>
+    <tbody>
+      <tr><td>How authentication works</td><td>Scrypt password hash, opaque 32-byte session token in the
+        <code>sessions</code> table, <code>Authorization: Bearer</code> on every route via
+        <code>requireAuth</code>. FO&rsquo;s own browser client keeps the token in
+        <code>localStorage</code> under <code>llmatscale_auth_token</code>
+        (<span class="fp">components/full-chat-app.tsx:130</span>). The PWA deliberately does not.</td></tr>
+      <tr><td>How sessions work</td><td>30-day absolute expiry, plus a single-clock idle model:
+        every authenticated request calls <code>checkAndRecordActivity</code>; a gap &gt; 30 min closes
+        the audit row as <code>CLOSED_IDLE</code>, deletes the live session, and returns the canonical
+        <code>SESSION_TIMEOUT</code> envelope with HTTP 401.</td></tr>
+      <tr><td>How chat requests work</td><td><code>useChat</code> + <code>DefaultChatTransport</code>
+        on FO&rsquo;s side; a plain <code>fetch</code> + hand-written reader on the PWA&rsquo;s. Body is a
+        UI-message array; FO rebuilds model context from the request body, not from its database, so
+        follow-ups work with no server state.</td></tr>
+      <tr><td>How SSE works</td><td>See <a href="#s10">&sect;10</a>. AI SDK v6 stream, 15-second
+        <code>data-keepalive</code> frames, <code>X-Accel-Buffering: no</code> and
+        <code>Cache-Control: no-cache, no-transform</code> already set by FO.</td></tr>
+      <tr><td>How agents are represented</td><td>A hard-coded four-item array in
+        <span class="fp">components/cockpit/agent-cards.tsx</span>. There is no agent registry in the
+        database and no agent field on any request. Agent identity is a route, not a parameter.</td></tr>
+      <tr><td>How FabInsight works</td><td>It is <code>/api/chat</code> with MCP tools attached. No
+        metric detection, no query planner, no FabInsight module.</td></tr>
+      <tr><td>How MES-backed requests work</td><td>Ten MCP servers on AWS API Gateway + Lambda,
+        <code>authType: 'none'</code>, seeded at
+        <span class="fp">admin_athena/prisma/seed.ts:145</span>. Each exposes one read-only T-SQL
+        executor, six schema-introspection tools and ~10 topic guides. The model writes its own SQL.</td></tr>
+      <tr><td>How tables are produced</td><td>The model emits GFM markdown. FO renders it with
+        <code>react-markdown</code> + <code>remark-gfm</code>
+        (<span class="fp">components/prompt-kit/markdown.tsx</span>); the PWA already uses the same two.</td></tr>
+      <tr><td>How dashboards are transported</td><td>Two mechanisms &mdash; see
+        <a href="#s13">&sect;13</a>.</td></tr>
+      <tr><td>How errors are represented</td><td>A ten-type catalog
+        (<span class="fp">lib/errors/error-catalog-defaults.ts</span>) backed by an
+        <code>error_catalog</code> table, surfaced as
+        <code>{error:{errorId,type,priority,message}}</code> with a per-type HTTP status. Stream-time
+        failures arrive as an <code>error</code> frame carrying
+        <code>"&lt;message&gt; (errorId=&lt;uuid&gt;)"</code>.</td></tr>
+      <tr><td>Config the integration depends on</td><td>See <a href="#s7">&sect;07</a>.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="s3">
+  <div class="sechead"><div class="secno">&sect;03</div><h2>Architecture confirmed from code</h2></div>
+
+  <p>The proposed topology is correct and is already implemented. What follows is the same picture
+  with the real file names on it.</p>
+
+  <div class="flow">Phone (installed PWA, standalone window)
+  │  fetch POST /api/faborch/{insight|modeling|backend}/chat
+  │  Authorization: Bearer &lt;PWA HMAC session&gt;      ← localStorage
+  │  Cookie: faborch_token=&lt;FO session token&gt;      ← httpOnly, never in JS
+  ▼
+PWA backend  ── Next 16 route handler, Node runtime
+  │  app/api/faborch/[agent]/chat/route.ts
+  │    1. requireAuth(req)              lib/auth-middleware.ts
+  │    2. foTokenFrom(req)              lib/faborch/session.ts
+  │    3. FabInsightRequestSchema       lib/validation.ts
+  │    4. foConnectedMcpIds(token)      → GET  {FO}/api/mcp/connections
+  │    5. foChat({...})                 lib/faborch/client.ts
+  ▼
+FabOrchestrator  ── Next 16, AWS Elastic Beanstalk behind CloudFront
+  │  app/api/chat/route.ts
+  │    requireAuth → model allow-list → role quota → MCP tool load
+  │    → streamText(anthropic(model), tools, system-prompt)
+  ▼
+Anthropic API ─┬─ Claude (opus-4-8 default)
+               ├─ code_execution container (+ pptx/docx/pdf/xlsx skills)
+               └─ MCP tools → API Gateway → Lambda → MES SQL Server
+  ▲
+  │  AI SDK v6 UI message stream (text/event-stream)
+  │  X-Accel-Buffering: no · Cache-Control: no-cache, no-transform
+  │
+PWA backend  ── returns upstream.body unread, headers copied
+  ▲
+  │  same stream, byte for byte
+  │
+Phone  ── readFoStream() → text | tool | error → React state → markdown</div>
+
+  <h3>3.1 Load-bearing facts</h3>
+  <ul>
+    <li><b>The proxy hop is mandatory, not stylistic.</b> There is no
+    <code>Access-Control-Allow-Origin</code> anywhere in FO&rsquo;s <code>app/</code>,
+    <code>lib/</code> or <code>next.config.ts</code>. A browser call from the PWA origin to FO&rsquo;s is
+    blocked before it is sent.</li>
+    <li><b>FO is stateless per turn.</b> <code>convertToModelMessages(uiMessages)</code> builds
+    context from the request body. <code>conversationId</code> only adds FO-side persistence and S3
+    file refs. The PWA can hold conversation state client-side with no server store on either end.</li>
+    <li><b>Streaming survives client disconnect.</b> <code>result.consumeStream()</code> at
+    <span class="fp">app/api/chat/route.ts:757</span> means FO finishes the turn and writes its audit
+    rows even if the phone drops. Aborting on the PWA side is safe.</li>
+    <li><b>Deployment reality.</b> FO production is Elastic Beanstalk behind CloudFront
+    (<code>https://d7y8a8whrch88.cloudfront.net</code>), ALB idle timeout 600 s, Nginx :80 &rarr;
+    container :3000. App Runner was <em>decommissioned precisely because its 120 s hard request
+    timeout broke SSE</em> (<span class="fp">DEPLOYMENT.md &sect;12</span>). The PWA deploys to Fly with
+    <code>FABORCH_BASE_URL</code> already set to that CloudFront URL in
+    <span class="fp">fly.toml:49</span>.</li>
+  </ul>
+
+  <div class="callout warnbox">
+    <h4>Cannot be proven from source</h4>
+    <p>Whether the <em>deployed</em> CloudFront build carries <code>/api/backend-agent/chat</code>,
+    whether CloudFront buffers the SSE response, and whether the MCP Lambdas are reachable from the
+    EB security group are all runtime properties. <span class="fp">app/backend-agent/page.tsx</span>
+    records that as of 2026-08-24 <code>GET /backend-agent</code> returned Next&rsquo;s own 404 on the
+    deployed build &mdash; the deployment predates that page. Each of these must be settled by the
+    probes in <a href="#s16">&sect;16</a> before the estimate in <a href="#s18">&sect;18</a> holds.</p>
+  </div>
+</section>
+<section id="s4">
+  <div class="sechead"><div class="secno">&sect;04</div><h2>Existing functionality to reuse</h2></div>
+
+  <div class="legend">
+    <div><span class="chip c-have">Already implemented</span> works today, no change planned</div>
+    <div><span class="chip c-reuse">Reuse</span> taken as-is into the build</div>
+    <div><span class="chip c-mod">Modify</span> exists but must change</div>
+    <div><span class="chip c-new">New</span> does not exist yet</div>
+    <div><span class="chip c-risk">Risk</span> a blocking unknown</div>
+  </div>
+
+  <h3>4.1 From FabOrchestrator &mdash; consumed over HTTP, never copied</h3>
+  <ul>
+    <li><span class="chip c-have">Already implemented</span> Claude integration, prompt caching,
+    adaptive thinking, container skills, model registry, role-based model allow-list, rolling 24 h
+    request/token quotas &mdash; all inside <span class="fp">app/api/chat/route.ts</span>.</li>
+    <li><span class="chip c-have">Already implemented</span> MCP tool loading and authorisation
+    (<code>loadActiveMcpToolsWithDescriptions</code>, personal-vs-role filtering at
+    <span class="fp">route.ts:429&ndash;454</span>).</li>
+    <li><span class="chip c-have">Already implemented</span> The audience-and-failure system prompt
+    at <span class="fp">lib/system-prompts.ts</span>, including the rules that keep table names, SQL
+    and error ids out of the answer. The PWA inherits all of it for free and must not add a prompt
+    of its own.</li>
+    <li><span class="chip c-have">Already implemented</span> REQ-01&ndash;REQ-04 audit trails: error
+    catalog, session audit, prompt audit with token and USD cost. Every PWA turn lands in
+    <code>prompt_audit_logs</code> attributed to the real operator.</li>
+    <li><span class="chip c-have">Already implemented</span> Modeling Agent permission gate; Back-end
+    Agent dashboard publication and <code>/v/[key]</code> rendering.</li>
+  </ul>
+
+  <h3>4.2 From the PWA &mdash; carried forward</h3>
+  <ul>
+    <li><span class="chip c-reuse">Reuse</span> <span class="fp">lib/faborch/session.ts</span> &mdash;
+    the httpOnly cookie, and specifically its <code>isHttps()</code> which reads
+    <code>x-forwarded-proto</code> rather than <code>NODE_ENV</code>. The file documents the exact
+    Safari failure the naive version caused.</li>
+    <li><span class="chip c-reuse">Reuse</span> <span class="fp">lib/faborch/agents.ts</span> &mdash;
+    the registry, and the rule that <code>[agent]</code> <em>selects</em> from a fixed set and never
+    <em>becomes</em> a URL.</li>
+    <li><span class="chip c-reuse">Reuse</span> <span class="fp">public/sw.js</span> &mdash; navigation
+    preload, two retries at 300/600 ms, an inline recovery page, and a hard rule that nothing under
+    <code>/api/</code> is ever cached or intercepted. This worker has already been through two
+    reported field failures (a false offline screen on iOS cold launch, and a self-poisoned cache).</li>
+    <li><span class="chip c-reuse">Reuse</span> <span class="fp">lib/rate-limit.ts</span> &mdash; eight
+    failures per address buys ten minutes. Load-bearing, because the login route forwards to a real
+    identity store.</li>
+    <li><span class="chip c-reuse">Reuse</span> <span class="fp">app/layout.tsx</span> &mdash; the
+    chunk-recovery script, <code>viewportFit: cover</code>, <code>maximumScale: 5</code> (zoom stays
+    enabled), <code>appleWebApp.statusBarStyle: "default"</code>, and self-hosted Plus Jakarta Sans
+    so a factory network that cannot reach <code>fonts.googleapis.com</code> still renders.</li>
+    <li><span class="chip c-reuse">Reuse</span> <code>react-markdown</code> + <code>remark-gfm</code>
+    with the <code>.fab-md</code> type scale &mdash; the same two plugins FO uses, which is what makes
+    a yield table render.</li>
+  </ul>
+
+  <h3>4.3 From <span class="fp">faborch_pwa/</span> &mdash; harvest then retire</h3>
+  <ul>
+    <li><span class="chip c-reuse">Reuse the idea</span> <b>Opaque server-side session id.</b>
+    <span class="fp">lib/session.ts</span> keeps the FO token in a process map and gives the phone a
+    32-byte id. Strictly better than a token-bearing cookie <em>if</em> the store is durable; its own
+    header admits the in-memory map dies on restart. Adopt in WP2 with Postgres behind it &mdash; the
+    PWA already has a <code>pg</code> dependency and a <code>DATABASE_URL</code> path for the decision log.</li>
+    <li><span class="chip c-reuse">Reuse the idea</span> <b>Do not send <code>model</code> at all.</b>
+    <span class="fp">lib/config.ts</span> omits the field so FO picks its own default, avoiding an
+    <code>INVALID_PARAMETER</code> on a deployment whose registry allows a different set.</li>
+    <li><span class="chip c-risk">Do not carry over</span> Its <code>health()</code> calls a
+    non-existent <code>/api/health</code>; its agent catalog says the Back-end Agent posts to
+    <code>/api/chat</code> and describes it as &ldquo;connectors and code&rdquo;, both wrong.</li>
+  </ul>
+</section>
+
+<section id="s5">
+  <div class="sechead"><div class="secno">&sect;05</div><h2>New functionality required</h2></div>
+
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">Genuinely new</h4>
+      <ul>
+        <li><span class="chip c-new">New</span> Artifact detection, extraction and sandboxed
+        rendering in the chat stream (WP9).</li>
+        <li><span class="chip c-new">New</span> Durable PWA session store, replacing the stateless
+        HMAC that cannot be revoked (WP2).</li>
+        <li><span class="chip c-new">New</span> An FO-session liveness probe so the PWA knows the FO
+        token is still honoured, not merely present (WP2).</li>
+        <li><span class="chip c-new">New</span> A normalised error contract between proxy and screen
+        &mdash; one <code>{code, message}</code> shape for every failure path (WP10).</li>
+        <li><span class="chip c-new">New</span> Per-agent availability gating on the landing page,
+        driven by <code>/api/modeling-agent/access</code> rather than by a 403 mid-conversation (WP7).</li>
+        <li><span class="chip c-new">New</span> A deep link from a Back-end Agent answer to FO&rsquo;s
+        <code>/v/[key]</code> dashboard (WP9).</li>
+        <li><span class="chip c-new">New</span> Proxy, agent-routing, artifact-parser and error-path
+        test suites (WP11).</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">Deliberately not built</h4>
+      <ul>
+        <li>Any MES query, yield calculation, metric detection or SQL. FO owns it.</li>
+        <li>A UiView spec renderer. FO owns <code>/v/[key]</code>; the PWA links to it.</li>
+        <li>A second system prompt, model picker or MCP picker. Both are decided server-side.</li>
+        <li>File upload into the Modeling Agent&rsquo;s S3 staging &mdash; a separate piece of work with
+        its own storage and access decisions.</li>
+        <li>Offline caching of any <code>/api/</code> response. A cached downtime figure is a wrong
+        downtime figure.</li>
+        <li>A service worker on the FO path. The constraint holds and the current worker already
+        obeys it.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h4>Scope decision this plan asks the review to confirm</h4>
+    <p>The PWA today carries a <b>second product</b>: a production-order review workflow on a mock MES,
+    with its own login credential (<code>DEMO_USER_*</code>), decision log, barcode scanner, activity
+    feed and rules engine. None of it touches FabOrchestrator. If the goal is &ldquo;a mobile front door to
+    FO&rdquo;, that workflow and the demo credential branch in
+    <span class="fp">app/api/auth/login/route.ts</span> should be removed &mdash; it roughly doubles the
+    surface to be tested, secured and explained. WP2 assumes removal. If the order workflow must stay,
+    add <b>3 days</b> to the estimate for keeping both credential paths coherent.</p>
+  </div>
+</section>
+
+<section id="s6">
+  <div class="sechead"><div class="secno">&sect;06</div><h2>Work packages</h2></div>
+  <p class="lead">Twelve packages, in dependency order. Estimates are engineer-days for one engineer
+  and cover <em>remaining</em> work only &mdash; what already exists is named under &ldquo;What already
+  exists&rdquo; and not re-estimated.</p>
+
+  <!-- WP0 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP0</span><span class="nm">Consolidation &amp; baseline</span><span class="est">0.5 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Put the three parallel client codebases and the untracked FO
+        changes onto one reviewable branch, and pin the FO commit the plan is written against.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>~3,500 lines of integration exist only in one working tree,
+        untracked, unbacked-up and unreviewed. Everything downstream depends on it.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd>The code. Nothing else &mdash; no branch, no PR, no CI.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li>Branch <code>pwa/fo-integration</code>; stage the untracked FabInsight files selectively
+        (<span class="fp">FabOrchestrator_product_code/CLAUDE.md</span> warns against
+        <code>git add .</code> &mdash; unrelated generated Prisma output and lockfiles share the tree).</li>
+        <li>Record <code>git rev-parse HEAD</code> of FO as the pinned contract commit.</li>
+        <li>Decide: adopt <span class="fp">progressive_web_app_demo/</span>, retire
+        <span class="fp">faborch_pwa/</span>.</li>
+        <li>Confirm the FO installability track is kept and owned separately.</li></ul></dd></dl>
+      <dl class="f"><dt>Files touched</dt><dd>Git metadata only. No source change.</dd></dl>
+      <dl class="f"><dt>Contracts</dt><dd>Out: a branch name, a pinned FO SHA, a one-page decision note.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>Check <span class="fp">.env</span> is not staged. The PWA
+        <span class="fp">.env</span> holds a real FO-adjacent config; <span class="fp">.gitignore</span>
+        covers it &mdash; verify, do not assume.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Fresh clone of the branch builds and boots:
+        <code>npm ci &amp;&amp; npm run build &amp;&amp; npm start</code>.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>A clean clone reproduces the app; the FO SHA is written down;
+        no untracked integration files remain.</dd></dl>
+      <dl class="f"><dt>Risk</dt><dd>The working tree may not build cleanly today &mdash; it has never been
+        built from a clean checkout. Discovering that here is the point.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP1 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP1</span><span class="nm">PWA application foundation</span><span class="est">1.5 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>An installable, phone-shaped Next 16 shell whose agent screens
+        are usable one-handed, and which degrades honestly when the network is gone.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>Installability and the standalone window are the whole reason
+        this is a PWA rather than a bookmark; the QR-code entry path means the first launch is a cold
+        one on an unknown handset.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><ul>
+        <li><span class="chip c-have">Already implemented</span> <span class="fp">public/manifest.webmanifest</span>
+        &mdash; explicit <code>id</code>, <code>start_url: "/"</code>, <code>display: standalone</code>,
+        192/512/maskable-512 icons, theme <code>#10153a</code>.</li>
+        <li><span class="chip c-have">Already implemented</span> <span class="fp">public/sw.js</span> &mdash;
+        navigation-only handler, preload + 2 retries, offline page, inline recovery page,
+        <code>/api/</code> never intercepted.</li>
+        <li><span class="chip c-have">Already implemented</span> <span class="fp">app/layout.tsx</span> &mdash;
+        viewport, apple-touch-icon, chunk recovery, self-hosted font.</li>
+        <li><span class="chip c-have">Already implemented</span>
+        <span class="fp">components/fab/ios-install-hint.tsx</span>,
+        <span class="fp">components/register-sw.tsx</span>,
+        <span class="fp">app/offline/page.tsx</span>.</li>
+        <li><span class="chip c-have">Already implemented</span>
+        <span class="fp">next.config.ts:89</span> sends <code>Cache-Control: no-cache, must-revalidate</code>
+        on every non-static path &mdash; the fix for the stale-document / dead-chunk failure.</li></ul></dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li>Audit the agent conversation screen at 360&times;640 and 390&times;844: composer above the
+        keyboard, safe-area insets on the composer, sticky scroll that survives the iOS keyboard,
+        44 px minimum touch targets.</li>
+        <li>Wide-content containment: a GFM table from FabInsight must scroll inside its own
+        <code>overflow-x:auto</code> box, never scroll the page sideways.</li>
+        <li><code>manifest.id</code> and <code>start_url</code> reconciliation &mdash; the manifest
+        currently declares <code>id:"/orders"</code> with <code>start_url:"/"</code>. If the order
+        workflow is removed (&sect;05), <code>id</code> must change, which <b>orphans every already
+        installed copy</b>. Decide and do it once, before anyone installs.</li>
+        <li>A Lighthouse installability pass on both Chrome/Android and Safari/iOS.</li></ul></dd></dl>
+      <dl class="f"><dt>Reused files</dt><dd><span class="fp">app/layout.tsx</span>,
+        <span class="fp">public/sw.js</span>, <span class="fp">components/register-sw.tsx</span>,
+        <span class="fp">components/fab/app-shell.tsx</span>,
+        <span class="fp">components/fab/primitives.tsx</span></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">public/manifest.webmanifest</span>
+        (<code>id</code>), <span class="fp">components/fab/screens/agent-chat.tsx</span> (composer,
+        safe area), <span class="fp">app/globals.css</span> (<code>.fab-md table</code> wrapper)</dd></dl>
+      <dl class="f"><dt>New files</dt><dd>None expected.</dd></dl>
+      <dl class="f"><dt>Reusing FO&rsquo;s components?</dt><dd><b>No.</b> FO&rsquo;s chat is Radix + shadcn +
+        <code>full-chat-app.tsx</code> at 2,451 lines with artifacts, file parts, reasoning panels,
+        conversation reload and message editing. The PWA needs three of those. Importing the tree means
+        importing <code>ai</code>, <code>@ai-sdk/react</code>, Sandpack, four document viewers and the
+        sidebar system. The one thing worth copying verbatim is the markdown component&rsquo;s plugin
+        choice, which is already done.</dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP0.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>The worker must keep its hands off <code>/api/</code>. Add a
+        regression test asserting <code>respondWith</code> is never called for an API path &mdash;
+        <span class="fp">__tests__/platform/service-worker.test.ts</span> already exists as the place
+        for it.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Lighthouse PWA audit; manual install on one iPhone and one
+        Android; airplane-mode navigation shows <code>/offline</code>, not a dinosaur; a 40-row table
+        scrolls in its box.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>Install control appears on both platforms, launches into a
+        standalone window with the right icon, and the conversation screen is operable one-handed at
+        360 px.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>iOS install is manual (Share &rarr; Add to Home Screen); Safari
+        never fires <code>beforeinstallprompt</code>. Home-screen icon and status-bar behaviour cannot
+        be verified without a physical device.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP2 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP2</span><span class="nm">Authentication &amp; session architecture</span><span class="est">2.5 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>One credential &mdash; the operator&rsquo;s own FabOrchestrator
+        account &mdash; exchanged for a revocable PWA session, with the FO token never reaching the
+        handset and the two expiry clocks reconciled.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>Every FO call is authorised as a specific person: their role,
+        their model allow-list, their MCP connections, their quota, their audit row. A shared service
+        account would hand whoever holds the QR code somebody else&rsquo;s MES access and make every
+        <code>prompt_audit_logs</code> row attributable to a machine.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><ul>
+        <li><span class="chip c-have">Already implemented</span> FO login forwarding
+        (<span class="fp">app/api/auth/login/route.ts</span>), including the distinction between
+        &ldquo;wrong password&rdquo; (401) and &ldquo;FO unreachable&rdquo; (503) &mdash; a real trap, since
+        an operator told their correct password is wrong will spend the demo retyping it.</li>
+        <li><span class="chip c-have">Already implemented</span> httpOnly FO-token cookie with
+        scheme-derived <code>secure</code> (<span class="fp">lib/faborch/session.ts</span>).</li>
+        <li><span class="chip c-have">Already implemented</span> Login throttling
+        (<span class="fp">lib/rate-limit.ts</span>).</li>
+        <li><span class="chip c-have">Already implemented</span> Cookie drop on sign-out, and on FO 401
+        inside the chat proxy.</li></ul></dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><b>Remove the demo-credential branch.</b> Delete
+        <code>authenticate()</code>/<code>configuredUser()</code> from <span class="fp">lib/auth.ts</span>
+        and the first branch of the login route. FO becomes the only identity.</li>
+        <li><b>Replace the stateless HMAC with an opaque session id.</b> Today
+        <code>verifyToken</code> validates a signed payload with no server record, so logout cannot
+        revoke and a stolen token is valid until <code>exp</code>. New: a
+        <code>pwa_sessions(id, fo_token, user_json, created_at, expires_at)</code> row keyed by a
+        32-byte id in a second httpOnly cookie. This also lets the FO token move out of the browser
+        entirely &mdash; the phone then holds no FO material at all.</li>
+        <li><b>Reconcile the clocks.</b> PWA TTL currently 12 h; FO idle-evicts at 30 min. Set the PWA
+        session&rsquo;s expiry to <code>min(FO expiresAt, now + TTL)</code> and treat any FO 401 as
+        terminal for the PWA session, not just for the request.</li>
+        <li><b>Liveness, not presence.</b> <span class="fp">app/api/auth/me/route.ts</span> currently
+        reports <code>faborch: foTokenFrom(req) !== null</code> &mdash; whether a cookie exists, not
+        whether FO honours it. Call <code>GET {FO}/api/auth/me</code> and report the answer. Cache it
+        briefly so a page-heavy screen does not fan out.</li>
+        <li><b>Sign-out.</b> Call <code>POST {FO}/api/auth/logout</code>, best-effort, then delete the
+        PWA row and both cookies. The current code deliberately skips FO&rsquo;s logout to avoid killing a
+        parallel FO browser tab; with a PWA-only identity that reasoning no longer applies, but it is a
+        product call &mdash; flag it for the review.</li>
+        <li><b>Expiry UX.</b> On any 401, clear local state and route to <code>/login?next=…</code>
+        preserving the destination (<span class="fp">lib/return-path.ts</span> already does this).</li></ul></dd></dl>
+      <dl class="f"><dt>Reused files</dt><dd><span class="fp">lib/faborch/session.ts</span>,
+        <span class="fp">lib/rate-limit.ts</span>, <span class="fp">lib/return-path.ts</span>,
+        <span class="fp">lib/validation.ts</span> (<code>LoginSchema</code>)</dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">lib/auth.ts</span>,
+        <span class="fp">lib/auth-middleware.ts</span>,
+        <span class="fp">app/api/auth/login/route.ts</span>,
+        <span class="fp">app/api/auth/me/route.ts</span>,
+        <span class="fp">app/api/auth/logout/route.ts</span>,
+        <span class="fp">components/fab/use-session.ts</span>,
+        <span class="fp">components/login-page.tsx</span>, <span class="fp">.env.example</span></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">lib/session-store.ts</span> (Postgres-backed,
+        mirroring <span class="fp">lib/decisions/postgres-store.ts</span> which already does
+        <code>CREATE TABLE IF NOT EXISTS</code> on first use)</dd></dl>
+      <dl class="f"><dt>Key functions</dt><dd><code>foLogin()</code>, <code>foWhoAmI()</code> (new),
+        <code>foLogout()</code> (new), <code>createSession()</code>, <code>readSession()</code>,
+        <code>destroySession()</code>, <code>requireAuth()</code>, <code>setFoTokenCookie()</code></dd></dl>
+      <dl class="f"><dt>Flow</dt><dd>See <a href="#s9">&sect;09</a> for the traced sequence.</dd></dl>
+      <dl class="f"><dt>Contracts</dt><dd>In <code>{email,password}</code>.
+        Out <code>{user:{id,email,name,role},expiresAt}</code> &mdash; and <b>no token</b> in the body
+        once the opaque-session change lands. Errors: 400 malformed, 401
+        <code>{code:"bad_credentials"}</code>, 429 <code>{code:"throttled"}</code> + <code>Retry-After</code>,
+        503 <code>{code:"faborch_unavailable"}</code>.</dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP0. Blocks WP4, WP5, WP7.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>FO token server-side only, and after this package not in any
+        cookie either. Both cookies <code>httpOnly</code>, <code>sameSite=lax</code>,
+        <code>secure</code> on HTTPS. Never log the token or the password. Never distinguish
+        &ldquo;no such user&rdquo; from &ldquo;wrong password&rdquo; &mdash; note that <em>FO itself does</em>
+        (&ldquo;No account found with this email&rdquo; vs &ldquo;Incorrect password&rdquo;), so the PWA must
+        collapse them rather than relay them.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Unit: session mint/verify/expire/revoke. Integration against a
+        stub FO: valid login sets both cookies and returns no token; FO 401 clears the session; FO
+        unreachable returns 503 not 401; ninth bad attempt returns 429. Manual: sign in on a phone,
+        background the app 35 minutes, return &rarr; a clean sign-in prompt, not a broken conversation.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>The FO token appears nowhere in DevTools &mdash; not in JS, not in
+        <code>localStorage</code>, not in a readable cookie; sign-out revokes; a 30-minute idle gap
+        produces a sign-in prompt with the destination preserved.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>The 30-minute idle window is aggressive for a phone that gets
+        pocketed. If demos suffer, the only honest remedies are a keep-alive ping (which defeats the
+        audit&rsquo;s purpose) or an FO-side policy change &mdash; a product decision, not a PWA one.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP3 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP3</span><span class="nm">FabOrchestrator client layer</span><span class="est">1.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>One server-only module that knows FO&rsquo;s HTTP contract, so
+        that when FO changes, the blast radius is one file.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>Base URL, bearer handling, timeout policy and error
+        classification are the same four decisions on every call; made per-route they drift.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <span class="fp">lib/faborch/client.ts</span>: <code>foBaseUrl()</code> with no localhost
+        fallback, <code>isFabOrchConfigured()</code>, <code>foLogin()</code>,
+        <code>foConnectedMcpIds()</code>, <code>foChat()</code>, <code>fetchFo()</code> with
+        <code>cache:"no-store"</code>, and typed <code>FabOrchNotConfiguredError</code> /
+        <code>FabOrchRequestError</code>.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><code>foWhoAmI(token)</code> &rarr; <code>GET /api/auth/me</code>, for WP2&rsquo;s liveness probe.</li>
+        <li><code>foLogout(token)</code> &rarr; <code>POST /api/auth/logout</code>, best effort.</li>
+        <li><code>foModelingAccess(token)</code> &rarr; <code>GET /api/modeling-agent/access</code>, for WP7.</li>
+        <li><b>Timeouts.</b> A connect/headers budget only &mdash;
+        <code>AbortSignal.timeout(FABORCH_CONNECT_TIMEOUT_MS)</code> combined with the caller&rsquo;s
+        signal via <code>AbortSignal.any</code>. It must stop applying once headers arrive, or a
+        legitimate three-minute tool call is killed mid-answer. This is the one idea worth lifting
+        verbatim from <span class="fp">faborch_pwa/lib/faborch.ts</span>.</li>
+        <li><b>Error normalisation.</b> A single <code>foErrorMessage(res)</code> that understands
+        <em>both</em> FO shapes: <code>{error:"string"}</code> (login, quota, modeling gate) and
+        <code>{error:{message,type,errorId}}</code> (anything through <code>handleApiError</code>).
+        This is the fix for the defect in &sect;01.</li>
+        <li>Drop <code>model</code> from the chat body unless <code>FABORCH_MODEL</code> is explicitly
+        set, so FO applies its own default and its own role check.</li>
+        <li><b>No health check.</b> FO has no <code>/api/health</code>. Liveness is
+        <code>GET /api/auth/me</code>, which distinguishes &ldquo;FO down&rdquo; from &ldquo;session
+        expired&rdquo; without spending a chat turn.</li></ul></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">lib/faborch/client.ts</span></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">lib/faborch/errors.ts</span> (the shared
+        normaliser, so the proxy and the client cannot disagree)</dd></dl>
+      <dl class="f"><dt>Endpoints used</dt><dd><code>POST /api/auth/login</code>,
+        <code>GET /api/auth/me</code>, <code>POST /api/auth/logout</code>,
+        <code>GET /api/mcp/connections</code>, <code>GET /api/modeling-agent/access</code>,
+        <code>POST /api/chat</code>, <code>POST /api/modeling-agent/chat</code>,
+        <code>POST /api/backend-agent/chat</code></dd></dl>
+      <dl class="f"><dt>Headers</dt><dd>Out: <code>Authorization: Bearer</code>,
+        <code>Content-Type: application/json</code>, <code>Accept: text/event-stream</code> on chat.
+        In: <code>Content-Type</code>, and <code>X-FabOrch-Warning</code> /
+        <code>X-FabOrch-Warning-Message</code> which FO sets on a row-capped list response.</dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP0. Blocks WP4.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>Server-only. Add the <code>server-only</code> package so a stray
+        import from <code>components/</code> fails the build rather than shipping
+        <code>process.env</code> and a token to the browser &mdash; the file&rsquo;s own header notes this
+        enforcement is currently missing.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Unit against a stubbed <code>fetch</code>: base-URL
+        normalisation and the trailing-slash strip; 401/403 &rarr; <code>null</code>; 500 &rarr; throw
+        with FO&rsquo;s message; both error shapes flattened to a string; connect timeout fires,
+        post-header silence does not.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>Every FO call goes through this module; both error envelopes
+        yield a string; no route handler contains a literal FO path.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Undocumented FO responses &mdash; an HTML error page from CloudFront,
+        a 502 from the ALB &mdash; are not JSON. The normaliser must survive that; the current
+        <code>errorTextOf</code> catches parse failure but is untested against HTML.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP4 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP4</span><span class="nm">PWA backend proxy / API layer</span><span class="est">1.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>The one authenticated route that carries a conversation turn to
+        any FO agent and streams the answer back untouched.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>FO sends no CORS headers, so the browser cannot reach it. The
+        hop is forced &mdash; and it buys two things anyway: the FO token stays server-side, and
+        <code>activeMcpIds</code> is decided by the server rather than by whatever the page posts.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <span class="fp">app/api/faborch/[agent]/chat/route.ts</span>: agent resolution from a fixed
+        registry, <code>requireAuth</code>, cookie read, Zod validation, MCP-id fetch, upstream call,
+        401 &rarr; cookie drop, <code>maxDuration = 300</code>, body piped unread,
+        <code>X-Accel-Buffering: no</code> + <code>Cache-Control: no-cache, no-transform</code>,
+        client-abort propagation via <code>signal: req.signal</code>.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><b>Fix <code>messageOf()</code></b> to use WP3&rsquo;s normaliser. Today it returns
+        <code>body.error</code>, which for FO&rsquo;s canonical envelope is an object that reaches React
+        as a child.</li>
+        <li>Carry FO&rsquo;s <code>type</code> (e.g. <code>SESSION_TIMEOUT</code>,
+        <code>INVALID_PARAMETER</code>, <code>LAMBDA_MCP_CRASH</code>) into the PWA error code so the
+        screen can offer the right next step, and preserve <code>errorId</code> for support.</li>
+        <li>Reject a turn for an agent the operator cannot use, before calling FO
+        (<code>modeling</code> &rarr; <code>foModelingAccess</code>), so a permission failure is a
+        disabled card rather than a dead conversation.</li>
+        <li>Add <code>export const runtime = "nodejs"</code> explicitly. Streaming a body through the
+        Edge runtime behaves differently and the default should not be left implicit on the one route
+        that must stream.</li>
+        <li>Cap request body size and reject non-JSON early.</li></ul></dd></dl>
+      <dl class="f"><dt>Route structure &mdash; validating the proposal</dt><dd>
+        <p><code>POST /api/faborch/insight/chat</code> is <b>nearly right</b>. Adopt
+        <code>POST /api/faborch/[agent]/chat</code>, which already exists: same URL for
+        <code>insight</code>, and one implementation instead of three. Three literal routes would mean
+        three copies of the token read, the 401 path and the no-buffering headers, and the day FO
+        changes one of those, two copies would be wrong.</p>
+        <p>Full surface: <code>POST /api/auth/login</code>, <code>GET /api/auth/me</code>,
+        <code>POST /api/auth/logout</code>, <code>GET /api/faborch/agents</code> <span class="chip c-new">New</span>
+        (the catalog plus per-agent availability, so the landing page does not guess), and
+        <code>POST /api/faborch/[agent]/chat</code>.</p></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">app/api/faborch/[agent]/chat/route.ts</span>,
+        <span class="fp">lib/validation.ts</span></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">app/api/faborch/agents/route.ts</span></dd></dl>
+      <dl class="f"><dt>Contracts</dt><dd>In: <code>{messages:[{role,parts:[{type:"text",text}]}]}</code>
+        &mdash; a deliberate narrowing of FO&rsquo;s <code>ChatRequestSchema</code>, which accepts
+        <code>parts: z.array(z.unknown())</code> because FO&rsquo;s own chat sends file and tool parts.
+        <code>model</code> and <code>activeMcpIds</code> are <b>not accepted from the client</b>: a
+        client that could name the model could pick one the role forbids; one that could name
+        <code>activeMcpIds</code> could name a connection belonging to someone else.
+        Out: <code>200 text/event-stream</code>, or
+        <code>{code, error, errorId?}</code> with 400/401/403/404/429/502/503.</dd></dl>
+      <dl class="f"><dt>Cache &amp; buffering</dt><dd><code>Cache-Control: no-cache, no-transform</code>
+        and <code>X-Accel-Buffering: no</code> are set on the way out and must also survive Fly&rsquo;s
+        proxy. <code>no-transform</code> matters as much as <code>no-cache</code>: a proxy that
+        recompresses the stream can buffer it.</dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP2, WP3. Blocks WP5, WP6, WP7.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>The <code>[agent]</code> segment selects from
+        <code>FO_AGENTS</code> and never becomes a URL &mdash; unknown values 404 before any request
+        leaves. No client-controlled field reaches an FO privilege decision. FO&rsquo;s messages are
+        relayed verbatim only where they are actionable (role restriction, quota, modeling gate) and
+        never where they name a table, view or tool.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Route tests with a stub FO: unknown agent &rarr; 404; no PWA
+        session &rarr; 401; no FO cookie &rarr; <code>no_faborch_session</code>; FO 401 &rarr; cookie
+        cleared; FO 403 relays the modeling message; FO 429 &rarr; 429; nested error envelope &rarr; a
+        string; a 2 MB body &rarr; 413; stream bytes arrive incrementally, not at the end.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>All three agents stream through one route; every failure
+        returns <code>{code, error:string}</code>; no error path can put an object on the screen.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Fly&rsquo;s edge proxy buffering the response is the one thing no
+        source file can answer. Probe P3 in &sect;16 settles it.</dd></dl>
+    </div>
+  </div>
+</section>
+<section style="padding-top:0">
+  <!-- WP5 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP5</span><span class="nm">Chat request flow</span><span class="est">0.5 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>One prompt travels from a React state update to a rendered
+        answer, with conversation history intact across turns and no server state on either side.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>It is the product. Everything else exists to make this path
+        correct.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <span class="fp">components/fab/screens/agent-chat.tsx</span> holds a <code>Turn[]</code>,
+        posts the whole array each turn, appends deltas into the trailing assistant turn, drops an
+        assistant turn that ends empty, and cancels with an <code>AbortController</code>.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li>Route the bearer through WP2&rsquo;s session cookie instead of the inline
+        <code>localStorage.getItem("llmatscale_auth_token")</code> read at line 111.</li>
+        <li>Cap client-side history to match <code>FabInsightRequestSchema</code>&rsquo;s 100 messages
+        &times; 20,000 chars, so a long conversation degrades by trimming rather than by a 400.</li>
+        <li>Persist the turn array to <code>sessionStorage</code> so a backgrounded PWA that iOS
+        evicts does not lose the conversation on return.</li>
+        <li>Wire the artifact segmentation from WP9 into the assistant turn renderer.</li></ul></dd></dl>
+      <dl class="f"><dt>Exact path</dt><dd>See <a href="#s8">&sect;08</a> &mdash; traced with file and
+        line references.</dd></dl>
+      <dl class="f"><dt>Contracts</dt><dd>In (browser &rarr; PWA): <code>{messages}</code>.
+        Out: an event stream. FO rebuilds model context from the body
+        (<code>convertToModelMessages</code>), which is why follow-ups work statelessly and why
+        <code>conversationId</code> is deliberately not sent &mdash; it only adds FO-side persistence
+        and S3 file refs this interface has no use for.</dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">components/fab/screens/agent-chat.tsx</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP2, WP4, WP6.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>User text is rendered through <code>react-markdown</code>, which
+        escapes by default &mdash; do not enable <code>rehype-raw</code>. The prompt seeded from
+        <code>?q=</code> is trimmed and capped server-side in
+        <span class="fp">app/fabinsight/page.tsx</span> before it reaches the component.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Integration against a stub FO: three-turn conversation carries
+        full history; abort mid-stream keeps partial text and leaves the app usable; a 101st message
+        trims rather than 400s.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>Ask, read, follow up, stop, ask again &mdash; on a phone, on
+        each of the three agents.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>The seeding effect that asks the landing-page question on arrival
+        is delicate: <code>send</code> closes over <code>turns</code>, so it is a new function on every
+        token. The current code parks it in a ref written from an effect. A careless refactor re-asks
+        the question dozens of times.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP6 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP6</span><span class="nm">SSE / streaming</span><span class="est">1.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Read FabOrchestrator&rsquo;s AI SDK v6 UI message stream
+        correctly, incrementally, and across arbitrary chunk boundaries.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>A turn with tool calls runs for minutes. Anything that waits
+        for the whole answer turns a live conversation into a spinner &mdash; and FO&rsquo;s 15-second
+        keep-alive frames exist precisely because the connection would otherwise be cut.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <span class="fp">lib/faborch/stream.ts</span> &mdash; an incremental parser holding partial
+        lines, mapping <code>text-delta</code>, <code>tool-input-start</code> and <code>error</code>,
+        ignoring the envelope, keep-alives and reasoning; plus <code>readFoStream()</code>. Ten unit
+        tests pin the frame shapes against <code>ai@6.0.97</code>&rsquo;s <code>UIMessageChunk</code> union.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><code>tool-output-available</code> / <code>tool-output-error</code> &rarr; clear or fail the
+        activity line. Today the &ldquo;running <em>tool</em>&rdquo; label only clears when the next text
+        delta arrives, so a tool that errors leaves a stale label.</li>
+        <li><code>finish</code> / <code>finish-step</code> &rarr; an explicit end signal, so a stream that
+        closes with no text is distinguishable from one still arriving.</li>
+        <li><code>data-fileDownload</code> &rarr; at minimum, name the file FO produced. Today it is
+        dropped silently, so an answer that generated an .xlsx looks like it did nothing.</li>
+        <li>A watchdog: if no frame of any kind arrives for &gt; 45 s (three missed keep-alives), surface
+        &ldquo;the connection stalled&rdquo; and offer retry rather than sitting on dots forever.</li>
+        <li>An SSE conformance note in the file header pinning the <code>ai</code> version, so an FO
+        upgrade shows up as a red test rather than a silent blank screen.</li></ul></dd></dl>
+      <dl class="f"><dt>Confirmed wire format</dt><dd>
+        <p><b>Content type</b> <code>text/event-stream</code>, produced by
+        <code>createUIMessageStreamResponse</code>
+        (<span class="fp">app/api/chat/route.ts:1145</span>).
+        <b>Framing</b> <code>data: &lt;json&gt;\n\n</code>, terminated by <code>data: [DONE]</code>.
+        <b>Events</b> <code>start</code>, <code>start-step</code>, <code>text-start</code>,
+        <code>text-delta</code> (<code>{id, delta}</code>), <code>text-end</code>,
+        <code>reasoning-*</code> (FO sets <code>sendReasoning: true</code>),
+        <code>tool-input-start</code> (<code>{toolCallId, toolName}</code>),
+        <code>tool-input-delta</code>, <code>tool-output-available</code>,
+        <code>source-*</code>, <code>data-keepalive</code> (every 15 s,
+        <span class="fp">route.ts:768</span>), <code>data-fileDownload</code>,
+        <code>finish-step</code>, <code>finish</code>, and <code>error</code>
+        (<code>{errorText}</code>).</p>
+        <p><b>Errors inside the stream</b> never change the HTTP status &mdash; the response is already
+        200. FO&rsquo;s <code>onError</code> at <span class="fp">route.ts:1140</span> maps the cause into
+        the REQ-01 catalog and returns
+        <code>"&lt;userMessage&gt; (errorId=&lt;uuid&gt;)"</code>. That string is shown as sent: the
+        <code>errorId</code> is what a support engineer needs.</p></dd></dl>
+      <dl class="f"><dt>Buffering</dt><dd>FO already sets <code>X-Accel-Buffering: no</code> and
+        <code>Cache-Control: no-cache, no-transform</code>; the PWA proxy copies both. The unproven
+        links are CloudFront in front of FO and Fly in front of the PWA. History is on the record here:
+        App Runner&rsquo;s 120 s hard timeout broke SSE badly enough that FO was migrated to Elastic
+        Beanstalk over it.</dd></dl>
+      <dl class="f"><dt>Cancellation</dt><dd>Client aborts &rarr; <code>AbortController</code> &rarr;
+        <code>req.signal</code> &rarr; the upstream fetch. FO&rsquo;s
+        <code>result.consumeStream()</code> means it still finishes the turn and writes its audit rows,
+        so cancelling is safe and does not corrupt the record.</dd></dl>
+      <dl class="f"><dt>Malformed input</dt><dd>A frame that will not parse is skipped, not thrown &mdash;
+        one bad frame must not end an answer. A partial trailing line is held until the rest arrives.
+        Both are already covered by tests.</dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">lib/faborch/stream.ts</span>,
+        <span class="fp">__tests__/faborch/stream.test.ts</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>Independent of WP2 &mdash; <b>testable now</b>, against a
+        fixture file or a raw <code>curl</code> capture. This is why it can run in parallel with auth.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>Frame content is data, never markup or instruction. Cap the
+        accumulated text so a runaway stream cannot exhaust the tab.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>The existing ten tests plus: split at every byte offset of a
+        multi-frame fixture and assert identical output; a real captured stream from
+        <code>curl -N</code> replayed through the parser; tool-error clears the activity line; the
+        45 s watchdog fires.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>A captured FO stream replays to the exact same text as
+        FO&rsquo;s own UI shows, and the byte-offset split test passes.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>The parser is version-coupled by construction. That is a chosen
+        trade &mdash; <code>useChat</code> would cost <code>ai</code> + <code>@ai-sdk/react</code> for a
+        screen that needs three of fifteen frame types &mdash; but it means an FO SDK upgrade is a
+        breaking change for the PWA. The pinned tests are the alarm.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP7 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP7</span><span class="nm">Agent selection &amp; routing</span><span class="est">1.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Present FabOrchestrator&rsquo;s own agents honestly &mdash; the
+        ones that work, reachable; the ones that do not, explaining themselves.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>Agent identity in FO is a <em>route</em>, not a parameter. The
+        PWA has to encode that mapping somewhere, and it must not invent a fifth agent or imply that
+        each card reaches its own service.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <span class="fp">lib/faborch/agents.ts</span> &mdash; three agents with <code>foPath</code>,
+        <code>sendMcpIds</code>, chips and blurb, each traced to the FO route it fronts;
+        <code>foAgent(id)</code> resolving the URL segment from a fixed set; three pages sharing one
+        client; landing cards mirroring the cockpit&rsquo;s numbering and copy.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><code>GET /api/faborch/agents</code> returning the catalog <em>with availability</em>:
+        <code>modeling</code> gated on <code>/api/modeling-agent/access</code>, <code>backend</code>
+        gated on a configurable flag until the deployed FO build is confirmed to serve
+        <code>/api/backend-agent/chat</code>.</li>
+        <li>Landing cards read that endpoint and render an unavailable agent as disabled with the
+        reason on the card &mdash; not as a door that opens onto a 403.</li>
+        <li>Resolve the fourth cockpit card. FO&rsquo;s <b>AI Support Engineer</b> also routes to
+        <code>/chat</code>; the PWA currently omits it while its landing page shows four. Either add it
+        as a second <code>/api/chat</code> entry with its own chips, or drop the card. Omitting the
+        screen while showing the card is the one dishonest state.</li>
+        <li>Per-agent suggested prompts sourced from FO&rsquo;s own copy
+        (<span class="fp">components/cockpit/cockpit-ask.tsx</span>), not invented.</li></ul></dd></dl>
+      <dl class="f"><dt>The mapping, from source</dt><dd>
+        <div class="tw"><table>
+          <thead><tr><th>Cockpit card</th><th>FO screen</th><th>FO endpoint</th><th>MCP ids</th><th>Gate</th><th>PWA</th></tr></thead>
+          <tbody>
+            <tr><td>AGENT&nbsp;01 FabInsight&trade;</td><td><code>/chat</code></td><td><code>/api/chat</code></td>
+              <td>Yes &mdash; required</td><td>Role model allow-list, 24 h quota</td><td><span class="chip c-have">Built</span></td></tr>
+            <tr><td>AGENT&nbsp;02 AI Support Engineer</td><td><code>/chat</code></td><td><code>/api/chat</code></td>
+              <td>Yes</td><td>Same</td><td><span class="chip c-new">Decide</span></td></tr>
+            <tr><td>AGENT&nbsp;03 Modeling Agent</td><td><code>/modeling-agent</code></td><td><code>/api/modeling-agent/chat</code></td>
+              <td>No &mdash; builds its own CMF tools</td><td>403 unless admin or role has <code>modeling_agent</code></td><td><span class="chip c-mod">Gate it</span></td></tr>
+            <tr><td>AGENT&nbsp;04 Back-end Agent</td><td><code>/backend-agent</code></td><td><code>/api/backend-agent/chat</code></td>
+              <td>No &mdash; <code>buildUiAgentTools(user.id)</code></td><td>None in code</td><td><span class="chip c-risk">Deploy unproven</span></td></tr>
+          </tbody>
+        </table></div>
+        <p>Only <code>/api/chat</code> reads <code>activeMcpIds</code>. Sending it to the other two would
+        be inert at best and would make the client claim an influence it does not have.</p>
+        <p><b>Verified against source 2026-08-31:</b> the <code>modeling_agent</code> role permission
+        (admins bypass) at <span class="fp">app/api/modeling-agent/chat/route.ts:158&ndash;172</span>
+        is the <em>only</em> agent-level gate in FO. <code>/api/chat</code> checks the model allow-list
+        and quotas but no agent permission, and the Back-end Agent route requires authentication and
+        nothing more. FO enforces the modeling gate itself with a 403, so the PWA&rsquo;s pre-check via
+        <code>/api/modeling-agent/access</code> is presentation, never authorisation.</p></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">lib/faborch/agents.ts</span>,
+        <span class="fp">components/fab/screens/landing.tsx</span>,
+        <span class="fp">app/api/faborch/[agent]/chat/route.ts</span></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">app/api/faborch/agents/route.ts</span>;
+        optionally <span class="fp">app/support-engineer/page.tsx</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP2, WP4.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>Availability is advisory only. FO remains the authority: the
+        Modeling Agent&rsquo;s 403 is still relayed verbatim if it fires, because that message names the
+        exact permission an administrator must grant.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Unit: <code>foAgent()</code> returns <code>null</code> for
+        <code>"../"</code>, <code>"chat"</code>, <code>""</code>. Route: unknown agent &rarr; 404 with no
+        outbound request. Integration: a user without <code>modeling_agent</code> sees a disabled card;
+        a user with it can converse.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>Every card either opens a working conversation or explains, on
+        the card, why it cannot.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Whether the deployed FO carries the Back-end Agent API is a live
+        unknown &mdash; probe P2.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP8 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP8</span><span class="nm">FabInsight &amp; MES-backed answers</span><span class="est">1.5 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Make sure a question about the fab reaches real MES data, and
+        that the answer renders properly on a phone &mdash; without a line of MES logic in this app.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>This is the demo. It is also the most fragile link in the
+        chain, because it depends on a caller-supplied list of MCP connection ids that has no default.</dd></dl>
+      <dl class="f"><dt>How it actually works</dt><dd>
+        <ul>
+          <li>There is <b>no metric detection and no query planner</b>. The model reads the topic guide,
+          writes T-SQL itself, and runs it through a generic executor.</li>
+          <li><b>MES access is via MCP</b> &mdash; ten servers on AWS API Gateway + Lambda, seeded at
+          <span class="fp">admin_athena/prisma/seed.ts:145</span> with <code>authType:'none'</code>.
+          Six of the eight live ones are the same implementation pointed at different MES databases:
+          one <code>run_&lt;prefix&gt;_query</code>, six schema-introspection tools, ~10
+          <code>&lt;prefix&gt;_topic_*</code> guides. There is no <code>get_oee</code> and no
+          <code>build_pareto</code>.</li>
+          <li><b>Not direct SQL from this app, and not from FO&rsquo;s Node process either.</b> The SQL runs
+          inside the Lambda. The PWA is three hops away from the database and must stay there.</li>
+          <li><b>Permissions</b> are enforced twice by FO: <code>/api/mcp/connections</code> returns only
+          personal + role-level connections, and <code>/api/chat</code> re-filters the posted
+          <code>activeMcpIds</code> against the authorised set
+          (<span class="fp">route.ts:429&ndash;454</span>).</li>
+          <li><b>Time filters are not enforced anywhere.</b> &ldquo;Last two days&rdquo; becomes whatever
+          <code>WHERE</code> clause the model writes. Nothing validates it. That is a product-level
+          accuracy property, outside this app&rsquo;s reach &mdash; and worth stating plainly at the demo.</li>
+          <li><b>Tables</b> are GFM markdown from the model, shaped by the system prompt&rsquo;s
+          &ldquo;executive-ready&rdquo; rule and its ban on exposing table names, SQL and error ids.</li>
+        </ul></dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <code>foConnectedMcpIds()</code> fetching connections and filtering to
+        <code>status === "connected"</code>, called fresh on every turn; markdown + GFM rendering with
+        the <code>.fab-md</code> type scale.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><b>Empty-tools guard.</b> If <code>foConnectedMcpIds</code> returns <code>[]</code> for
+        <code>insight</code>, say so before the turn: &ldquo;No data connections are enabled for your
+        account&rdquo;. Today it silently sends an empty list and the model answers with no way to look
+        anything up &mdash; which reads as a wrong answer, not a missing connection. Note that
+        FO&rsquo;s own cockpit ask bar hardcodes <code>activeMcpIds: []</code> and therefore has this
+        behaviour; the PWA should not copy it.</li>
+        <li><b>Cache the id list</b> for the session with a short TTL. One extra round trip per turn is
+        cheap; ten are not, over a phone connection.</li>
+        <li><b>Mobile table treatment.</b> A seven-column OEE table at 360 px needs a horizontal scroll
+        container with a visible affordance, tabular numerals, and a sticky first column.</li>
+        <li><b>Row-cap surfacing.</b> FO truncates at 1,000 rows and the system prompt instructs the
+        model to say so; if the header <code>X-FabOrch-Warning</code> appears on the connections call,
+        relay it.</li></ul></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">lib/faborch/client.ts</span>,
+        <span class="fp">app/api/faborch/[agent]/chat/route.ts</span>,
+        <span class="fp">components/fab/screens/agent-chat.tsx</span>,
+        <span class="fp">app/globals.css</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP4, WP6.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>The PWA never names a connection. It relays FO&rsquo;s list back to
+        FO, which re-authorises it. No MES credential exists in this app; the MCP servers take none.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Stub: connections endpoint returns two connected and one
+        errored &rarr; only the two are forwarded; returns <code>[]</code> &rarr; the guard fires;
+        returns 500 &rarr; the turn still proceeds (FO answers without tools rather than not at all).
+        Live: the &sect;16 prompt ladder.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>&ldquo;What is yield by product this week?&rdquo; returns a
+        readable table on a phone, and the trace shows an MCP tool named in the activity line.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd><span class="chip c-risk">Material</span> Two of the ten MCP servers
+        (Genealogy, Scrap Pareto) returned HTTP 500 on 2026-07-24 and may still. MES databases sit behind
+        a Site-to-Site VPN reachable only from the CMF VPC, so a locally run FO may not reach them at
+        all &mdash; local development can prove streaming but not necessarily data.</dd></dl>
+    </div>
+  </div>
+</section>
+<section style="padding-top:0">
+  <!-- WP9 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP9</span><span class="nm">Dashboard &amp; artifact rendering</span><span class="est">3.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Show a dashboard FabOrchestrator produced, safely, on a phone
+        &mdash; without executing arbitrary HTML unsafely and without re-implementing FO&rsquo;s renderer.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>This is the largest genuine gap. Today an artifact answer
+        renders its raw <code>&lt;antArtifact&gt;</code> markup as markdown text, which looks like a
+        broken product rather than a missing feature.</dd></dl>
+      <dl class="f"><dt>Two mechanisms, from source</dt><dd>
+        <div class="tw"><table>
+          <thead><tr><th></th><th>A &mdash; inline artifact</th><th>B &mdash; published dashboard</th></tr></thead>
+          <tbody>
+            <tr><th>Produced by</th><td><code>/api/chat</code> &mdash; any agent, when the user
+              explicitly asks for visual output</td><td>Back-end Agent&rsquo;s
+              <code>create_dashboard</code> &rarr; <code>publish_dashboard</code> tools</td></tr>
+            <tr><th>Trigger</th><td>The system prompt&rsquo;s <code>&lt;artifacts&gt;</code> block: only on
+              explicit request &mdash; &ldquo;create a dashboard&rdquo;, &ldquo;visualize&rdquo;,
+              &ldquo;make a chart&rdquo;. Never for explanations or code snippets.</td>
+              <td>The user describes a screen to the Back-end Agent.</td></tr>
+            <tr><th>Transport</th><td>Inline in the <code>text-delta</code> stream, wrapped in
+              <code>&lt;antArtifact identifier type title&gt;…&lt;/antArtifact&gt;</code></td>
+              <td>Not in the stream at all. Stored as a UiView; fetched from
+              <code>GET /api/views/[key]</code> + <code>/data</code></td></tr>
+            <tr><th>Format</th><td>Self-contained <code>text/html</code>, Tailwind via CDN, inline
+              CSS/JS, no React, no localStorage. Also <code>text/markdown</code>,
+              <code>text/mermaid</code>, <code>image/svg+xml</code>.</td>
+              <td>Validated JSON spec + separate binding data. <b>Never HTML.</b></td></tr>
+            <tr><th>FO renders it</th><td><span class="fp">lib/artifact-parser.ts</span> &rarr;
+              <span class="fp">components/artifact-preview.tsx:630</span> &mdash;
+              <code>&lt;iframe srcDoc={enforceLightHtml(…)} sandbox="allow-scripts"&gt;</code></td>
+              <td><span class="fp">components/ui-runtime/renderer.tsx</span> at <code>/v/[key]</code>,
+              re-validating the spec on every read</td></tr>
+            <tr><th>Permissions</th><td>None beyond the chat turn itself</td>
+              <td>The view is owned by its creator; <code>/api/views/[key]</code> requires FO auth</td></tr>
+            <tr><th>PWA plan</th><td><span class="chip c-new">Build</span> parse, extract, sandbox</td>
+              <td><span class="chip c-mod">Deep-link</span> to FO, do not re-render</td></tr>
+          </tbody>
+        </table></div></dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd>In FO: a complete, battle-tested parser
+        (<span class="fp">lib/artifact-parser.ts</span>, 238 lines) handling complete <em>and
+        streaming-partial</em> tags, tolerating both <code>&lt;/antArtifact&gt;</code> and the
+        <code>&lt;/artifact&gt;</code> the model sometimes shortens to, and splitting a message into
+        alternating text/artifact segments. In the PWA: <b>nothing</b>.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><b>Port <code>segmentMessageText()</code></b> from FO into
+        <span class="fp">lib/faborch/artifacts.ts</span> &mdash; a copy, not an import, since the apps
+        are separate deployments. Keep the two regexes byte-identical and cite the source file, so a
+        change in FO is a diffable change here.</li>
+        <li><b>Streaming-aware rendering.</b> A partial tag must show a building placeholder with the
+        title, not half a document. The parser already reports
+        <code>isStreaming</code>/<code>hasStreamingArtifact</code>.</li>
+        <li><b>An artifact card, not an inline frame.</b> On a phone the answer must stay readable:
+        show a tile with title and type; tapping opens a full-screen sheet holding the iframe.</li>
+        <li><b>Sandbox.</b> <code>&lt;iframe srcDoc sandbox="allow-scripts"&gt;</code> &mdash; matching
+        FO, and deliberately <b>without</b> <code>allow-same-origin</code>. The two together would
+        defeat the sandbox entirely; without <code>allow-same-origin</code> the frame gets an opaque
+        origin, so it cannot read the PWA&rsquo;s cookies, storage or DOM. Also set
+        <code>referrerpolicy="no-referrer"</code> and a restrictive <code>csp</code>/<code>allow</code>.
+        Dashboards load Tailwind and Google Fonts from CDNs, so the frame needs network &mdash; note
+        that as an accepted, stated risk rather than a silent one.</li>
+        <li><b>Light-mode enforcement.</b> Port <span class="fp">lib/enforce-light.ts</span>. FO&rsquo;s
+        prompt already forbids dark artifacts; the helper is the belt to that braces.</li>
+        <li><b>Mobile fit.</b> Artifacts are authored for a desktop canvas. Give the frame a viewport
+        meta injection or a scaled wrapper, and let it scroll both axes inside the sheet.</li>
+        <li><b>Fallbacks.</b> Unclosed tag at stream end &rarr; keep the placeholder and offer &ldquo;show
+        source&rdquo;. Unknown <code>type</code> &rarr; render as a code block. Frame fails to load &rarr;
+        a message plus the source, never a blank rectangle.</li>
+        <li><b>Back-end Agent deep link.</b> When an answer names a published dashboard, offer
+        &ldquo;Open in FabOrchestrator&rdquo; &rarr; <code>{FABORCH_BASE_URL}/v/&lt;key&gt;</code>. That
+        opens FO&rsquo;s own screen, authenticated by the FO session in that browser &mdash; a different
+        session from the PWA&rsquo;s, so the operator may have to sign in there. Say so on the link
+        rather than letting it look broken.</li></ul></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">lib/faborch/artifacts.ts</span>,
+        <span class="fp">lib/faborch/enforce-light.ts</span>,
+        <span class="fp">components/fab/artifact-tile.tsx</span>,
+        <span class="fp">components/fab/artifact-sheet.tsx</span></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">components/fab/screens/agent-chat.tsx</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP5, WP6.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd><b>The most security-sensitive package in the plan.</b> Model
+        output is untrusted input that this app is about to execute. Rules: never
+        <code>dangerouslySetInnerHTML</code> into the page; never <code>allow-same-origin</code>
+        alongside <code>allow-scripts</code>; never <code>allow-top-navigation</code>; no
+        <code>postMessage</code> channel between frame and host; the frame never sees a token.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Unit: FO&rsquo;s own fixtures &mdash; complete tag, partial tag,
+        mismatched closing tag, two artifacts in one message, text before and after, an
+        <code>&lt;antArtifact</code> string inside a fenced code block. Manual: ask for a dashboard on a
+        phone; confirm it renders, scrolls, and that <code>window.parent.document</code> throws inside
+        the frame.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>&ldquo;Build me a chart of scrap by line this week&rdquo; produces
+        a tappable tile that opens a working, sandboxed, light-mode dashboard on a phone.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Artifact quality on a 390 px viewport is the model&rsquo;s output, not
+        this app&rsquo;s &mdash; FO&rsquo;s prompt says nothing about mobile widths. Some dashboards will
+        need horizontal scrolling. Making them responsive means changing FO&rsquo;s prompt, which is FO&rsquo;s
+        call and is explicitly out of scope here.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP10 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP10</span><span class="nm">Progress, loading &amp; error handling</span><span class="est">2.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Every failure mode reaches the screen as a predictable
+        <code>{code, message}</code> pair, and every state tells the operator what to do next.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>A screen that can only say &ldquo;something went wrong&rdquo;
+        sends the operator to find whoever set the demo up. Each of these failures has a different next
+        step.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        Four codes &mdash; <code>not_configured</code>, <code>no_faborch_session</code>,
+        <code>faborch_session_expired</code>, <code>faborch_unavailable</code> &mdash; each rendered with
+        its own next step; a dots-plus-tool-name working indicator; abort handling that keeps partial
+        text; an empty-answer guard.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li>Extend the code set to cover what FO can actually return, and map it once, in one table.</li>
+        <li>Fix the object-as-message defect (WP3/WP4) so the contract is real.</li>
+        <li>Preserve and display <code>errorId</code> in a copyable form &mdash; it is the only handle a
+        support engineer has into <code>error_audit_logs</code>.</li>
+        <li>Distinguish <em>waiting for FO</em> (no frames yet) from <em>FO is working</em> (tool
+        running) from <em>answering</em> (text arriving). Three states, three different indicators.</li>
+        <li>Network interruption mid-stream: keep what arrived, mark it incomplete, offer retry.</li>
+        <li>A stall watchdog at 45 s of silence (WP6).</li></ul></dd></dl>
+      <dl class="f"><dt>The mapping</dt><dd>
+        <div class="tw"><table>
+          <thead><tr><th>Situation</th><th>Detected where</th><th>Code</th><th>HTTP</th><th>What the operator sees</th></tr></thead>
+          <tbody>
+            <tr><td><code>FABORCH_BASE_URL</code> unset</td><td><code>foBaseUrl()</code> throws</td><td><code>not_configured</code></td><td>503</td><td>&ldquo;This app is not connected to FabOrchestrator.&rdquo; Named as a deployment fault, so nobody retypes a password.</td></tr>
+            <tr><td>No PWA session</td><td><code>requireAuth</code></td><td><code>unauthenticated</code></td><td>401</td><td>Redirect to sign-in, destination preserved.</td></tr>
+            <tr><td>PWA session but no FO token</td><td><code>foTokenFrom</code> null</td><td><code>no_faborch_session</code></td><td>401</td><td>&ldquo;Sign in with your FabOrchestrator credentials.&rdquo;</td></tr>
+            <tr><td>FO idle-evicted or expired</td><td>upstream 401</td><td><code>faborch_session_expired</code></td><td>401</td><td>Cookie dropped, sign-in offered. Not a retry loop.</td></tr>
+            <tr><td>Role forbids the model</td><td>FO 400 <code>INVALID_PARAMETER</code></td><td><code>faborch_rejected</code></td><td>400</td><td>FO&rsquo;s message plus the valid options it supplies.</td></tr>
+            <tr><td>Modeling Agent not permitted</td><td>FO 403</td><td><code>agent_forbidden</code></td><td>403</td><td>&ldquo;The Modeling Agent is not enabled for your role.&rdquo; &mdash; verbatim; it names the permission to grant.</td></tr>
+            <tr><td>Daily request/token limit</td><td>FO 429</td><td><code>quota_exceeded</code></td><td>429</td><td>&ldquo;Daily limit reached. Try again later.&rdquo;</td></tr>
+            <tr><td>FO unreachable</td><td><code>fetch</code> throws</td><td><code>faborch_unavailable</code></td><td>503</td><td>&ldquo;Could not reach FabOrchestrator&rdquo; + the address tried.</td></tr>
+            <tr><td>MES/MCP tool failed</td><td><code>error</code> frame, <code>LAMBDA_MCP_CRASH</code></td><td><code>faborch_unavailable</code></td><td>200</td><td>FO&rsquo;s business-language message + <code>errorId</code>. The prompt already bars naming a view, table or tool.</td></tr>
+            <tr><td>Claude/tool failure mid-turn</td><td><code>error</code> frame</td><td><code>stream_error</code></td><td>200</td><td>Partial answer kept, marked incomplete, retry offered.</td></tr>
+            <tr><td>Malformed request</td><td>Zod</td><td><code>bad_request</code></td><td>400</td><td>The first issue message. Should never be user-visible.</td></tr>
+            <tr><td>Malformed JSON body</td><td><code>req.json()</code> throws</td><td><code>bad_request</code></td><td>400</td><td>Same.</td></tr>
+            <tr><td>Malformed SSE frame</td><td>parser</td><td>&mdash;</td><td>&mdash;</td><td>Silently skipped. One bad frame must not end an answer.</td></tr>
+            <tr><td>Connection dropped</td><td>reader throws</td><td><code>connection_lost</code></td><td>&mdash;</td><td>&ldquo;The connection dropped part-way through.&rdquo; Partial text kept.</td></tr>
+            <tr><td>Stream stalled &gt; 45 s</td><td>watchdog</td><td><code>stream_stalled</code></td><td>&mdash;</td><td>&ldquo;Still no response &mdash; stop and try again?&rdquo;</td></tr>
+            <tr><td>Artifact will not parse</td><td>WP9</td><td>&mdash;</td><td>&mdash;</td><td>Placeholder + &ldquo;show source&rdquo;. Never a blank rectangle.</td></tr>
+          </tbody>
+        </table></div></dd></dl>
+      <dl class="f"><dt>Normalisation rule</dt><dd>Exactly one shape crosses the boundary:
+        <code>{ code: PwaErrorCode, error: string, errorId?: string }</code>. <code>error</code> is
+        <b>always a string</b> &mdash; enforced by the WP3 normaliser and asserted in tests. This is the
+        contract the current defect violates.</dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">app/api/faborch/[agent]/chat/route.ts</span>,
+        <span class="fp">lib/faborch/stream.ts</span>,
+        <span class="fp">components/fab/screens/agent-chat.tsx</span>,
+        <span class="fp">components/fab/primitives.tsx</span></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">lib/faborch/errors.ts</span> (shared with WP3)</dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP3, WP4, WP6.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>Relay FO&rsquo;s message only where FO intends it for the user. Never
+        surface a stack trace, an internal URL, a table name or a tool name to the screen &mdash; FO&rsquo;s
+        own prompt spends a whole section on this and the PWA must not undo it. Log the full cause
+        server-side with the <code>errorId</code>.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>One test per row of the table above, with a stub FO that
+        produces exactly that failure. Plus a property test: for any FO response body, the proxy&rsquo;s
+        <code>error</code> field is a string.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>Every row is reachable in a test, renders a distinct message,
+        and offers a distinct next step. No path can put an object or <code>undefined</code> on screen.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>FO&rsquo;s error catalog is loaded at runtime from an
+        <code>error_catalog</code> table, so messages can change without a code change. Match on
+        <code>type</code>, never on message text.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP11 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP11</span><span class="nm">Testing</span><span class="est">3.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>Prove each layer on its own before anything depends on the
+        whole chain being up.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>The chain has five hops and two of them (MES, deployed FO) are
+        outside this team&rsquo;s control. Without layer isolation, every failure looks like the same
+        failure.</dd></dl>
+      <dl class="f"><dt>What already exists</dt><dd><span class="chip c-have">Already implemented</span>
+        <code>node:test</code> via <code>tsx</code>, six suites wired into <code>npm test</code>, and
+        <span class="fp">__tests__/faborch/stream.test.ts</span> with ten SSE tests. No test runner for
+        route handlers or React components yet.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd>Detail in <a href="#s15">&sect;15</a>. In outline: a
+        stub FO server, route-handler tests, an artifact-parser suite, an error-path suite, and a
+        scripted live smoke test.</dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">__tests__/faborch/stub-fo.ts</span>,
+        <span class="fp">__tests__/faborch/{proxy,agents,artifacts,errors,session}.test.ts</span>,
+        <span class="fp">scripts/smoke-faborch.ts</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>Runs alongside WP2&ndash;WP10, not after.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd><code>npm test</code> is green from a clean clone with no
+        network, and the live smoke script passes against a real FO.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>A test suite that needs a live FO is a test suite that gets
+        skipped. The stub must be the default and the live script explicitly opt-in.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP12 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP12</span><span class="nm">Final integration, security review &amp; handoff</span><span class="est">2.5 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>A demonstrable, installed, documented app somebody else can run.</dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><b>Device validation.</b> One iPhone (Safari) and one Android (Chrome): scan the QR, sign in,
+        install, launch from the home screen, ask each agent, rotate, background 5 min, return,
+        sign out.</li>
+        <li><b>Installability.</b> Lighthouse PWA audit on the deployed URL; icon and title correct in
+        the launcher; <code>start_url</code> lands somewhere sensible signed-out.</li>
+        <li><b>Refresh/session behaviour.</b> Hard reload mid-conversation; reinstall over an existing
+        copy; deploy a new build while a session is open (the chunk-recovery path).</li>
+        <li><b>Security review.</b> The checklist in <a href="#s21">&sect;21</a>, run as a review, not a
+        self-assessment.</li>
+        <li><b>Configuration cleanup.</b> Remove <code>DEMO_USER_*</code> if &sect;05 is accepted; verify
+        <code>.env</code> is ignored; rotate <code>SESSION_SIGNING_SECRET</code>; confirm
+        <code>FABORCH_BASE_URL</code> points where intended in <span class="fp">fly.toml</span>.</li>
+        <li><b>Logging cleanup.</b> Audit every <code>console.log</code> on the FO path for token,
+        prompt or PII leakage. FO&rsquo;s own chat route logs tool arguments and result prefixes to
+        stdout; the PWA must not add to that.</li>
+        <li><b>Documentation.</b> Rewrite <span class="fp">README.md</span> around the FO integration:
+        setup, env vars, how to run FO locally, how to point at the deployed one, the demo script, and
+        the known limitations verbatim.</li>
+        <li><b>Demo procedure.</b> A one-page runbook: which account, which agent, which three prompts,
+        what each proves, and what to say when the MES is slow.</li></ul></dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">README.md</span>,
+        <span class="fp">.env.example</span>, <span class="fp">fly.toml</span>,
+        <span class="fp">CLAUDE.md</span></dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">docs/DEMO.md</span>,
+        <span class="fp">docs/SECURITY-REVIEW.md</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>Everything.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>Somebody who has not seen the repository can, from the README
+        alone, run it locally against FO and reproduce the demo.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Device testing needs physical devices and a reachable deployment.
+        Booking both is the usual schedule slip.</dd></dl>
+    </div>
+  </div>
+
+  <!-- WP13 -->
+  <div class="wp">
+    <div class="wp-h"><span class="id">WP13</span><span class="nm">Agentic entry point &mdash; ask first, route automatically</span><span class="est">2.0 d</span></div>
+    <div class="wp-b">
+      <dl class="f"><dt>Objective</dt><dd>One ask box on the landing screen. The operator types what they
+        want; the system decides which FabOrchestrator agent and which data path should serve it, carries
+        out the routing, and returns the answer. Choosing an agent first becomes optional rather than
+        required.</dd></dl>
+      <dl class="f"><dt>Why needed</dt><dd>Confirmed requirement, 1 September 2026. A supervisor on a fab
+        floor does not know that &ldquo;yield by product this week&rdquo; is FabInsight and &ldquo;build
+        me a screen for line 4&rdquo; is the Back-end Agent. Requiring the choice up front pushes an
+        internal product decomposition onto the user, and on a phone it costs a whole screen before the
+        question has even been typed.</dd></dl>
+      <dl class="f"><dt>What FabOrchestrator already does &mdash; and must not be rebuilt</dt><dd><ul>
+        <li><span class="chip c-have">Already implemented</span> <b>Tool and data-path selection inside an
+        agent is already agentic, and already FO&rsquo;s.</b>
+        <span class="fp">app/api/chat/route.ts:454</span> loads the MCP tools for the authorised
+        connections and <code>buildSystemPromptWithTools()</code>
+        (<span class="fp">lib/system-prompts.ts:109</span>) injects their descriptions, so FO&rsquo;s model
+        chooses which MES or quality tool to call and writes the query itself. The Back-end Agent does the
+        equivalent through <code>list_data_sources</code> and <code>list_components</code>
+        (<span class="fp">lib/ui-agent/tools.ts:44</span>), which enumerate exactly the connections that
+        user is entitled to. <b>None of this is rebuilt in the PWA.</b></li>
+        <li><span class="chip c-have">Already implemented</span> <b>FO&rsquo;s own landing page already has
+        the ask-first shape.</b> <span class="fp">components/cockpit/cockpit-ask.tsx:125</span> &mdash;
+        &ldquo;Ask anything, or describe a task to orchestrate&hellip;&rdquo; &mdash; posts straight to
+        <code>/api/chat</code> and streams the answer inline. The interaction being asked for is
+        FabOrchestrator&rsquo;s own, not an invention of this project.</li>
+        <li><span class="chip c-risk">But</span> that same component sends
+        <code>activeMcpIds: []</code> (<span class="fp">cockpit-ask.tsx:43</span>), so it runs with
+        <em>no data connections at all</em> and answers a plant question from the model&rsquo;s general
+        knowledge. The pattern is right; the wiring is not. The PWA must attach the user&rsquo;s
+        authorised connections (WP8) on this path or it reproduces that defect on a phone, where it is
+        harder to spot.</li>
+        <li><span class="chip c-new">Absent</span> <b>FO has no cross-agent router.</b> A grep across
+        <span class="fp">app/</span>, <span class="fp">lib/</span> and <span class="fp">components/</span>
+        finds <code>/api/modeling-agent/chat</code> and <code>/api/backend-agent/chat</code> referenced
+        only by their own screens (<span class="fp">components/agent-chat/modeling-chat-app.tsx:881</span>,
+        <span class="fp">backend-agent-app.tsx:131</span>). No endpoint, prompt or library takes a
+        free-form request and decides between the three. <b>That single decision is the only new
+        reasoning this package adds.</b></li></ul></dd></dl>
+      <dl class="f"><dt>Must be implemented</dt><dd><ul>
+        <li><b>Default without deciding.</b> Unless a request clearly belongs elsewhere it goes to
+        <code>/api/chat</code> with the user&rsquo;s authorised <code>activeMcpIds</code> attached. For
+        most questions the routing is then finished, because FO picks the tools and the data path itself.
+        This is the most important design point in the package: the requirement is largely satisfied by
+        <em>not</em> building a router.</li>
+        <li><b>One classification turn, executed on FO.</b> Where a request may belong to the Modeling or
+        Back-end agent, the PWA asks FabOrchestrator rather than deciding for itself: a short call to
+        <code>/api/chat</code> with a fixed prompt that returns one token &mdash; <code>insight</code>,
+        <code>modeling</code> or <code>backend</code>. The judgement runs on FO&rsquo;s model, under
+        FO&rsquo;s credential, inside FO&rsquo;s quota and audit trail. No classifier, keyword table,
+        model key or prompt library is added to the PWA.</li>
+        <li><b>Fail towards the working path.</b> A timeout, an unparseable reply, or a route the user is
+        not permitted to use (the Modeling gate, WP7) all resolve to FabInsight. The classification hop is
+        capped so it can never delay an ordinary answer by more than that cap.</li>
+        <li><b>Say where it went, and let it be changed.</b> The answer is labelled with the agent that
+        produced it and offers one tap to re-ask elsewhere. A route the user cannot see is a route they
+        cannot correct.</li>
+        <li><b>Carry the question through.</b> The typed question opens a real conversation on the chosen
+        agent&rsquo;s thread (WP5), so follow-ups continue normally instead of starting again.</li></ul></dd></dl>
+      <dl class="f"><dt>Relationship to manual selection</dt><dd><b>Manual choice stays.</b> The agent
+        cards from WP7 remain a direct path, and now double as the override. Three things in the source
+        argue for keeping both: the Modeling Agent&rsquo;s upload, parse and parent-options flows
+        (<span class="fp">app/api/modeling-agent/chat/parse-upload/route.ts</span>,
+        <span class="fp">parent-options/[targetType]/route.ts</span>) are entered deliberately and cannot
+        sensibly be inferred from a sentence; a misrouted request needs a one-tap correction; and a
+        permission-gated agent must still explain itself on a card rather than inside a routed
+        conversation. Ask-first is the default door, not the only one.</dd></dl>
+      <dl class="f"><dt>Modified files</dt><dd><span class="fp">components/fab/screens/landing.tsx</span>
+        (ask bar above the cards), <span class="fp">lib/faborch/agents.ts</span> (routing targets reused
+        as-is), <span class="fp">app/api/faborch/[agent]/chat/route.ts</span> (accepts a pre-resolved
+        route)</dd></dl>
+      <dl class="f"><dt>New files</dt><dd><span class="fp">app/api/faborch/route/route.ts</span> &mdash;
+        server-side: classification turn, permission filter, fallback;
+        <span class="fp">lib/faborch/route-request.ts</span> &mdash; the prompt, the three-value parse and
+        the cap; <span class="fp">__tests__/faborch/route-request.test.ts</span></dd></dl>
+      <dl class="f"><dt>Dependencies</dt><dd>WP4 (the connector), WP5 (conversation state), WP7 (the agent
+        registry and the modeling availability query). <b>WP8 is not a prerequisite:</b> the default
+        path attaches connection ids through the client&rsquo;s existing lookup
+        (<code>foConnectedMcpIds</code>, <span class="fp">lib/faborch/client.ts</span>), which WP8
+        later hardens &mdash; the data-grounded proof of what ask-first routes to lands one phase
+        later, at M3.</dd></dl>
+      <dl class="f"><dt>Security</dt><dd>Routing happens server-side. The client sends a question, never a
+        target: a request that named its own agent could be used to reach an agent the user is not
+        entitled to. The resolved route is filtered against WP7 availability before dispatch, and
+        FO&rsquo;s own 403 remains the authority if it fires anyway. The classification turn carries the
+        same server-held credential as any other call, so it is attributable and counted like any other
+        FO usage.</dd></dl>
+      <dl class="f"><dt>Tested by</dt><dd>Unit: the parser maps each of the three tokens, and maps
+        anything else &mdash; empty, prose, a fourth word &mdash; to <code>insight</code>. Route: a
+        classification timeout still answers, on FabInsight, within the cap; a <code>modeling</code>
+        verdict for a user without the permission is downgraded to <code>insight</code> rather than
+        producing a 403. Integration: a fixture set of about twenty real questions (yield, downtime, a
+        dashboard request, a CMF modelling request) routes as expected and the score is recorded, so a
+        prompt change can be compared against it. Manual: the override re-asks the same question on
+        another agent.</dd></dl>
+      <dl class="f"><dt>Done when</dt><dd>An operator types a plant question on the landing screen without
+        choosing anything, and gets an answer from the right agent, drawn from the data they are entitled
+        to, labelled with where it came from &mdash; and can still pick an agent directly when they want
+        to.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Routing accuracy is a judgement, not a fact: some requests genuinely
+        sit between two agents. Mitigated by defaulting to the agent that can answer the widest range of
+        questions, by making the choice visible and reversible in one tap, and by keeping manual selection
+        as a first-class path. The fixture set turns any future regression into a number rather than an
+        anecdote.</dd></dl>
+    </div>
+  </div>
+
+  <h3>Estimate summary</h3>
+  <div class="tw"><table>
+    <thead><tr><th>WP</th><th>Package</th><th class="num">Days</th><th>Depends on</th><th>Parallelisable</th></tr></thead>
+    <tbody>
+      <tr><td>WP0</td><td>Consolidation &amp; baseline</td><td class="num">0.5</td><td>&mdash;</td><td>No &mdash; gates everything</td></tr>
+      <tr><td>WP1</td><td>PWA foundation</td><td class="num">1.5</td><td>WP0</td><td>Yes</td></tr>
+      <tr><td>WP2</td><td>Auth &amp; session</td><td class="num">2.5</td><td>WP0</td><td>Yes</td></tr>
+      <tr><td>WP3</td><td>FO client layer</td><td class="num">1.0</td><td>WP0</td><td>Yes</td></tr>
+      <tr><td>WP4</td><td>Backend proxy</td><td class="num">1.0</td><td>WP2, WP3</td><td>No</td></tr>
+      <tr><td>WP5</td><td>Chat request flow</td><td class="num">0.5</td><td>WP2, WP4, WP6</td><td>No</td></tr>
+      <tr><td>WP6</td><td>SSE / streaming</td><td class="num">1.0</td><td>WP0</td><td>Yes &mdash; from fixtures</td></tr>
+      <tr><td>WP7</td><td>Agent routing</td><td class="num">1.0</td><td>WP2, WP4</td><td>Partly</td></tr>
+      <tr><td>WP8</td><td>FabInsight / MES</td><td class="num">1.5</td><td>WP4, WP6</td><td>No</td></tr>
+      <tr><td>WP9</td><td>Artifacts &amp; dashboards</td><td class="num">3.0</td><td>WP5, WP6</td><td>Yes &mdash; parser from fixtures</td></tr>
+      <tr><td>WP10</td><td>Progress &amp; errors</td><td class="num">2.0</td><td>WP3, WP4, WP6</td><td>Partly</td></tr>
+      <tr><td>WP11</td><td>Testing</td><td class="num">3.0</td><td>continuous</td><td>Yes</td></tr>
+      <tr><td>WP12</td><td>Integration &amp; handoff</td><td class="num">2.5</td><td>all</td><td>No</td></tr>
+      <tr><td>WP13</td><td>Agentic entry point</td><td class="num">2.0</td><td>WP4, WP5, WP7</td><td>Partly</td></tr>
+      <tr style="font-weight:700"><td></td><td>Core total</td><td class="num">23.0</td><td></td><td></td></tr>
+    </tbody>
+  </table></div>
+</section>
+<section id="s7">
+  <div class="sechead"><div class="secno">&sect;07</div><h2>File-by-file change plan</h2></div>
+
+  <h3>7.1 <span class="fp">progressive_web_app_demo/</span></h3>
+  <div class="tw"><table>
+    <thead><tr><th>File</th><th>Status</th><th>WP</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr><td><span class="fp">lib/faborch/agents.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP7</td><td>Add availability flags; resolve the AI Support Engineer card</td></tr>
+      <tr><td><span class="fp">lib/faborch/client.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP3</td><td><code>foWhoAmI</code>, <code>foLogout</code>, <code>foModelingAccess</code>; connect-only timeout; shared error normaliser; drop <code>model</code> unless configured</td></tr>
+      <tr><td><span class="fp">lib/faborch/session.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>FO token moves into the server-side store; this file keeps the opaque session-id cookie</td></tr>
+      <tr><td><span class="fp">lib/faborch/stream.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP6</td><td>Handle <code>tool-output-*</code>, <code>finish</code>, <code>data-fileDownload</code>; add stall watchdog</td></tr>
+      <tr><td><span class="fp">lib/faborch/errors.ts</span></td><td><span class="chip c-new">New</span></td><td>WP3/10</td><td>The single normaliser: any FO body &rarr; <code>{code, message, errorId?}</code></td></tr>
+      <tr><td><span class="fp">lib/faborch/artifacts.ts</span></td><td><span class="chip c-new">New</span></td><td>WP9</td><td>Port of <code>segmentMessageText</code> / <code>extractTagArtifacts</code></td></tr>
+      <tr><td><span class="fp">lib/faborch/enforce-light.ts</span></td><td><span class="chip c-new">New</span></td><td>WP9</td><td>Port of FO&rsquo;s <code>enforceLightHtml</code></td></tr>
+      <tr><td><span class="fp">lib/session-store.ts</span></td><td><span class="chip c-new">New</span></td><td>WP2</td><td>Postgres-backed PWA sessions; <code>CREATE TABLE IF NOT EXISTS</code> on first use</td></tr>
+      <tr><td><span class="fp">lib/auth.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Remove <code>authenticate()</code> / <code>configuredUser()</code>; keep <code>sessionFor()</code></td></tr>
+      <tr><td><span class="fp">lib/auth-middleware.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Look up the session row instead of verifying an HMAC</td></tr>
+      <tr><td><span class="fp">lib/validation.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP4</td><td>Body-size cap; agent-id enum</td></tr>
+      <tr><td><span class="fp">app/api/auth/login/route.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Drop the demo branch; mint an opaque session; stop returning a token</td></tr>
+      <tr><td><span class="fp">app/api/auth/me/route.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Report FO <em>liveness</em> via <code>foWhoAmI</code>, not cookie presence</td></tr>
+      <tr><td><span class="fp">app/api/auth/logout/route.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Call FO logout; destroy the session row</td></tr>
+      <tr><td><span class="fp">app/api/faborch/[agent]/chat/route.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP4/8/10</td><td>Error normalisation; explicit <code>runtime="nodejs"</code>; pre-gate; MCP cache; empty-tools guard</td></tr>
+      <tr><td><span class="fp">app/api/faborch/agents/route.ts</span></td><td><span class="chip c-new">New</span></td><td>WP7</td><td>Catalog + per-user availability</td></tr>
+      <tr><td><span class="fp">components/fab/screens/agent-chat.tsx</span></td><td><span class="chip c-mod">Modify</span></td><td>WP5/8/9/10</td><td>Artifact segments; three-state progress; error codes; safe-area composer; session-storage persistence</td></tr>
+      <tr><td><span class="fp">components/fab/artifact-tile.tsx</span></td><td><span class="chip c-new">New</span></td><td>WP9</td><td>Tile in the answer</td></tr>
+      <tr><td><span class="fp">components/fab/artifact-sheet.tsx</span></td><td><span class="chip c-new">New</span></td><td>WP9</td><td>Full-screen sandboxed iframe</td></tr>
+      <tr><td><span class="fp">components/fab/screens/landing.tsx</span></td><td><span class="chip c-mod">Modify</span></td><td>WP7</td><td>Availability-driven cards</td></tr>
+      <tr><td><span class="fp">components/fab/use-session.ts</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Cookie session; no token in <code>localStorage</code></td></tr>
+      <tr><td><span class="fp">components/login-page.tsx</span></td><td><span class="chip c-mod">Modify</span></td><td>WP2</td><td>Single-credential copy; throttle message</td></tr>
+      <tr><td><span class="fp">public/manifest.webmanifest</span></td><td><span class="chip c-mod">Modify</span></td><td>WP1</td><td>Reconcile <code>id</code> with <code>start_url</code> &mdash; once, before anyone installs</td></tr>
+      <tr><td><span class="fp">app/globals.css</span></td><td><span class="chip c-mod">Modify</span></td><td>WP1/8</td><td>Table scroll container, tabular numerals, sticky first column</td></tr>
+      <tr><td><span class="fp">.env.example</span>, <span class="fp">README.md</span>, <span class="fp">fly.toml</span></td><td><span class="chip c-mod">Modify</span></td><td>WP12</td><td>Config cleanup and documentation</td></tr>
+      <tr><td><span class="fp">app/{orders,decisions,activity,labels}/</span>, <span class="fp">lib/{mes,ai,decisions,scan}/</span></td><td><span class="chip c-mod">Remove?</span></td><td>&sect;05</td><td>The mock-MES order workflow &mdash; pending the scope decision</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>7.2 <span class="fp">FabOrchestrator_product_code/</span></h3>
+  <p>The constraint is to avoid modifying FO unless inspection proves it necessary. Inspection proves
+  it is <b>not</b>: every endpoint the PWA needs exists, is authenticated the same way, and already
+  sets the no-buffering headers. The list below is therefore <em>zero required changes</em> plus two
+  optional ones.</p>
+  <div class="tw"><table>
+    <thead><tr><th>File</th><th>Status</th><th>Note</th></tr></thead>
+    <tbody>
+      <tr><td>All FO API routes</td><td><span class="chip c-have">No change</span></td><td>Consumed as-is</td></tr>
+      <tr><td><span class="fp">app/api/CLAUDE.md</span></td><td><span class="chip c-mod">Optional</span></td><td>Its documented SSE format is stale and actively misleading. Correcting it costs an hour and prevents the next person writing a parser to fiction.</td></tr>
+      <tr><td><span class="fp">app/api/health/route.ts</span></td><td><span class="chip c-new">Optional</span></td><td>A 20-line unauthenticated liveness route would let the PWA distinguish &ldquo;FO down&rdquo; from &ldquo;session expired&rdquo; without spending a chat turn. Not required &mdash; <code>/api/auth/me</code> does the job for an authenticated caller.</td></tr>
+      <tr><td>CORS headers</td><td><span class="chip c-have">Do not add</span></td><td>Adding them would let a browser call FO directly, which would put the FO token in client JavaScript &mdash; the exact thing the architecture exists to prevent.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>7.3 Configuration</h3>
+  <div class="tw"><table>
+    <thead><tr><th>Variable</th><th>Where</th><th>Required</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><code>FABORCH_BASE_URL</code></td><td>PWA</td><td>Yes</td><td>No default, deliberately. A localhost fallback would let a misconfigured deployment answer from whatever is on :3000. Production: <code>https://d7y8a8whrch88.cloudfront.net</code>, set in <span class="fp">fly.toml:49</span>.</td></tr>
+      <tr><td><code>FABORCH_MODEL</code></td><td>PWA</td><td>No</td><td>Leave unset so FO applies its own default and role check.</td></tr>
+      <tr><td><code>FABORCH_CONNECT_TIMEOUT_MS</code></td><td>PWA</td><td>No</td><td>Default 30,000. Connect/headers phase only.</td></tr>
+      <tr><td><code>SESSION_SIGNING_SECRET</code></td><td>PWA</td><td>Yes today</td><td>Retired by WP2&rsquo;s opaque sessions; until then a missing value is a 500, not a login failure.</td></tr>
+      <tr><td><code>SESSION_TTL_HOURS</code></td><td>PWA</td><td>No</td><td>Default 12. Must not exceed FO&rsquo;s <code>expiresAt</code>.</td></tr>
+      <tr><td><code>DATABASE_URL</code></td><td>PWA</td><td>Yes after WP2</td><td>Currently optional (decision log falls back to a process map). Becomes required once sessions are durable.</td></tr>
+      <tr><td><code>DEMO_USER_*</code></td><td>PWA</td><td>&mdash;</td><td>Removed by &sect;05.</td></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code></td><td>PWA</td><td>&mdash;</td><td>Only used by the mock-MES Explain flow. Removed with it. <b>The PWA must never hold a model key on the FO path.</b></td></tr>
+      <tr><td><code>ANTHROPIC_API_KEY</code>, <code>DATABASE_URL</code>, <code>KEY_ENCRYPTION_SECRET</code>, <code>CMF_*</code>, <code>S3_BUCKET</code></td><td>FO</td><td>Yes</td><td>FO&rsquo;s own. Unchanged by this work.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="s8">
+  <div class="sechead"><div class="secno">&sect;08</div><h2>End-to-end request flow</h2></div>
+  <p>One prompt, traced through the files that carry it.</p>
+  <div class="flow"> 1  Composer submit
+    components/fab/screens/agent-chat.tsx → send(text)
+    appends {role:"user"} + an empty {role:"assistant"} turn
+
+ 2  fetch POST /api/faborch/insight/chat
+    body   { messages: Turn[] → [{role, parts:[{type:"text",text}]}] }
+    cookie fpwa_sid (opaque)          ← after WP2
+    signal AbortController
+
+ 3  PWA route handler
+    app/api/faborch/[agent]/chat/route.ts
+      foAgent("insight")              lib/faborch/agents.ts   → {foPath:"/api/chat", sendMcpIds:true}
+      requireAuth(req)                lib/auth-middleware.ts  → session row or 401
+      session.foToken                 lib/session-store.ts    (never leaves the server)
+      FabInsightRequestSchema.safeParse                        → 400 on bad shape
+
+ 4  GET {FO}/api/mcp/connections      lib/faborch/client.ts → foConnectedMcpIds()
+      Authorization: Bearer <FO token>
+      ← [{id,status,…}]  filter status==="connected"  → activeMcpIds[]
+      (empty → the WP8 guard answers before FO is called)
+
+ 5  POST {FO}/api/chat                lib/faborch/client.ts → foChat()
+      { messages, activeMcpIds, webSearch:false, enableReasoning:true }
+
+ 6  FO route                          app/api/chat/route.ts
+      requireAuth → 30-min idle check                    lib/session-audit.ts
+      model allow-list  (registry ∪ ALLOWED_MODELS)      lib/model-registry.ts
+      role model restriction + 24 h quota                prisma
+      recordPromptStart()                                lib/prompt-audit.ts
+      re-filter activeMcpIds against authorised set
+      loadActiveMcpToolsWithDescriptions()               lib/mcp-client.ts
+      buildSystemPromptWithTools()                       lib/system-prompts.ts
+      fitMessagesToContextWindow()                       lib/context-window.ts
+      streamText(anthropic(model), tools, stopWhen:20 steps)
+
+ 7  Anthropic
+      thinking: adaptive, effort max        (opus-4-8)
+      tools: code_execution + MCP tools
+      MCP call → API Gateway → Lambda → MES SQL Server → rows
+      model writes the answer, often a GFM table
+
+ 8  FO streams back
+      createUIMessageStream → createUIMessageStreamResponse
+      headers X-Accel-Buffering: no · Cache-Control: no-cache, no-transform
+      frames start · text-start · text-delta… · tool-input-start · data-keepalive
+             · finish · [DONE]
+      onFinish → persist message, usage_records, prompt_audit_logs, bump activity
+
+ 9  PWA route returns upstream.body UNREAD
+      new Response(upstream.body, {headers copied})
+      nothing is buffered, parsed or re-encoded
+
+10  Browser reads
+      readFoStream(res.body, onEvent)      lib/faborch/stream.ts
+        text  → append to the trailing assistant turn
+        tool  → set the activity label
+        error → surface FO's message + errorId
+
+11  Render
+      segmentMessageText(text)             lib/faborch/artifacts.ts   ← WP9
+        text segment     → ReactMarkdown + remarkGfm  (.fab-md)
+        artifact segment → ArtifactTile → ArtifactSheet → sandboxed iframe</div>
+</section>
+
+<section id="s9">
+  <div class="sechead"><div class="secno">&sect;09</div><h2>Authentication &amp; session flow</h2></div>
+
+  <div class="flow">SIGN IN
+  login form ──POST /api/auth/login {email,password}──▶ PWA
+                                                        checkLoginAllowed(ip)     lib/rate-limit.ts
+                                                        LoginSchema.safeParse
+                             ──POST {FO}/api/auth/login──▶ FO
+                                                            getUserByEmail
+                                                            status DELETED → 403
+                                                            status SUSPENDED → 403
+                                                            verifyPassword (scrypt, timing-safe)
+                                                            generateToken(); createSession(30 d)
+                                                            recordLogin() → user_session_logs
+                             ◀──{user, token, expiresAt}──
+                                                        createSession(foToken, user)  ← server-side row
+                                                        Set-Cookie fpwa_sid=<opaque>
+                                                          httpOnly · sameSite=lax
+                                                          secure ← x-forwarded-proto
+                                                          expires ← min(FO expiresAt, now+TTL)
+  ◀──{user, expiresAt}── (NO token in the body, NO FO token anywhere on the device)
+
+EVERY SUBSEQUENT REQUEST
+  browser ──cookie fpwa_sid──▶ PWA route
+                                 requireAuth → session row → session.foToken
+                                 ──Authorization: Bearer <FO token>──▶ FO
+                                     validateSession()                lib/auth-middleware.ts
+                                     absolute expiry (30 d)?          → 401 SESSION_TIMEOUT
+                                     checkAndRecordActivity()         lib/session-audit.ts
+                                       gap > 30 min → CLOSED_IDLE, deleteSession() → 401
+                                       gap > 60 s   → record idle episode, bump clock
+                                     status SUSPENDED/DELETED         → 403
+                                     forcePasswordChange              → 403 + redirectTo
+
+EXPIRY
+  FO 401 ─▶ PWA proxy: destroy the session row, clear fpwa_sid,
+            reply {code:"faborch_session_expired"}
+         ─▶ screen: clear state, route to /login?next=<current>
+
+SIGN OUT
+  ──POST /api/auth/logout──▶ PWA
+                              POST {FO}/api/auth/logout (best effort)
+                                FO: recordLogout(); deleteSession(); audit row
+                              destroySession(); clear cookie
+                            ◀── {ok:true} ─▶ redirect to /login</div>
+
+  <h3>Design decisions and why</h3>
+  <div class="tw"><table>
+    <thead><tr><th>Question</th><th>Answer</th><th>Reason</th></tr></thead>
+    <tbody>
+      <tr><td>What token does FO return?</td><td>An opaque, cryptographically random session token &mdash; not a JWT. Row in <code>sessions</code>, 30-day <code>expiresAt</code>.</td><td>Read from <span class="fp">app/api/auth/login/route.ts</span> and <code>generateToken()</code>.</td></tr>
+      <tr><td>Where should it live?</td><td>The PWA server, in a session row keyed by an opaque id.</td><td>It carries a real operator&rsquo;s role, MCP access, quota and audit identity. It must not be on the handset &mdash; the least controlled thing in a QR-code demo.</td></tr>
+      <tr><td>What does the browser get?</td><td>A 32-byte opaque id in an httpOnly cookie, plus the public user projection.</td><td>Worth nothing to anyone who does not also have the PWA server.</td></tr>
+      <tr><td>Is an opaque PWA session id appropriate?</td><td>Yes, and it is the change WP2 makes.</td><td>The stateless HMAC in use today cannot be revoked: logout only clears the client, so a stolen token stays valid to <code>exp</code>. Its own file header says so.</td></tr>
+      <tr><td>httpOnly cookie?</td><td>Yes, both today&rsquo;s FO-token cookie and tomorrow&rsquo;s session id.</td><td>Keeps it out of screenshots, logs and service-worker caches &mdash; the three usual ways a demo loses a credential.</td></tr>
+      <tr><td>How should expiry work?</td><td>Cookie expiry <code>= min(FO expiresAt, now + TTL)</code>; any FO 401 is terminal.</td><td>The binding constraint is FO&rsquo;s 30-minute idle eviction, not the 30-day absolute.</td></tr>
+      <tr><td>What when FO rejects an expired session?</td><td>Destroy the PWA session, clear the cookie, return <code>faborch_session_expired</code>, route to sign-in with the destination preserved.</td><td>Without dropping the cookie every retry fails identically and the screen has no way out.</td></tr>
+      <tr><td>Should sign-out call FO&rsquo;s logout?</td><td><b>Open question for the review.</b></td><td>It ends the FO session properly, but also signs the operator out of any FabOrchestrator browser tab they have open. Today&rsquo;s code deliberately skips it; with a PWA-only identity that reasoning weakens.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="s10">
+  <div class="sechead"><div class="secno">&sect;10</div><h2>SSE / streaming flow</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>Property</th><th>Value, from source</th></tr></thead>
+    <tbody>
+      <tr><td>Content type</td><td><code>text/event-stream</code> via <code>createUIMessageStreamResponse</code></td></tr>
+      <tr><td>Protocol</td><td>AI SDK v6 UI Message Stream &mdash; <b>not</b> the format in <span class="fp">app/api/CLAUDE.md</span></td></tr>
+      <tr><td>Framing</td><td><code>data: &lt;json&gt;\n\n</code>, terminated <code>data: [DONE]</code></td></tr>
+      <tr><td>Text</td><td><code>text-start</code> &rarr; n &times; <code>text-delta {id, delta}</code> &rarr; <code>text-end</code></td></tr>
+      <tr><td>Tools</td><td><code>tool-input-start {toolCallId, toolName}</code>, <code>tool-input-delta</code>, <code>tool-output-available</code></td></tr>
+      <tr><td>Keep-alive</td><td><code>data-keepalive</code> every 15 s (<span class="fp">route.ts:768</span>) &mdash; exists so CloudFront&rsquo;s 60 s origin timeout does not cut a long tool call</td></tr>
+      <tr><td>Files</td><td><code>data-fileDownload {fileId, filename, mimeType, sizeBytes}</code> after code execution</td></tr>
+      <tr><td>Reasoning</td><td><code>reasoning-*</code> &mdash; FO sets <code>sendReasoning:true</code>; the PWA drops them (half-rendering thinking is worse than not showing it)</td></tr>
+      <tr><td>Errors</td><td><code>error {errorText}</code>, HTTP still 200. Text is <code>"&lt;userMessage&gt; (errorId=&lt;uuid&gt;)"</code> from the REQ-01 catalog</td></tr>
+      <tr><td>Termination</td><td><code>finish-step</code>, <code>finish</code>, then <code>[DONE]</code></td></tr>
+      <tr><td>Anti-buffering</td><td><code>X-Accel-Buffering: no</code>, <code>Cache-Control: no-cache, no-transform</code> &mdash; set by FO, copied by the proxy</td></tr>
+      <tr><td>Duration</td><td><code>maxDuration = 300</code> both sides; ALB idle 600 s; <code>stopWhen: stepCountIs(20)</code></td></tr>
+      <tr><td>Client disconnect</td><td><code>result.consumeStream()</code> &mdash; FO completes the turn and its audit rows regardless</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Forwarding rule.</b> The proxy returns <code>upstream.body</code> unread. It does not parse,
+  re-encode, transform or buffer. Anything else is a second implementation of a format FO owns, and
+  the first thing to break when FO&rsquo;s SDK moves.</p>
+  <p><b>Reading rule.</b> The browser parser holds partial lines across chunk boundaries, skips frames
+  it cannot parse, and ignores frame types it does not render. New frame types must be additive:
+  an unknown <code>type</code> is dropped, never thrown.</p>
+</section>
+
+<section id="s11">
+  <div class="sechead"><div class="secno">&sect;11</div><h2>Agent routing plan</h2></div>
+  <p>Backend routing is a two-line lookup; the rest is UI framing. The table in
+  <a href="#s6">WP7</a> is the whole mapping. Three consequences worth stating separately:</p>
+  <ul>
+    <li><b>Agent selection is mostly framing, but not entirely.</b> FabInsight and the AI Support
+    Engineer are the same endpoint with the same tools &mdash; the difference is the card and the
+    suggested prompts. The Modeling and Back-end agents are genuinely different backends with
+    different tools and different gates. A design that treated all four as pure framing would send
+    <code>activeMcpIds</code> to endpoints that ignore it and would miss the modeling permission gate.</li>
+    <li><b>Do not invent services.</b> One proxy route, one registry. The exploratory plan&rsquo;s
+    <code>/api/faborch/insight/chat</code> becomes <code>/api/faborch/[agent]/chat</code>.</li>
+    <li><b>Unsupported agents must say so on the card.</b> The Modeling Agent&rsquo;s file upload,
+    download tiles and parent-options picker are not proxied; the Back-end Agent&rsquo;s
+    &ldquo;Open dashboard&rdquo; button is replaced by a deep link. Each omission is a sentence on the
+    screen, not a silent difference.</li>
+  </ul>
+
+  <h3>11.1 The agentic entry point (WP13)</h3>
+  <p>Confirmed 1 September 2026: the operator should be able to ask from the landing page without
+  choosing an agent, and the system should work out where the request belongs. Everything above still
+  holds &mdash; this adds a default door in front of the cards, it does not replace them. Three findings
+  from the source decide the shape of it.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Decision</th><th>Who makes it</th><th>Evidence</th><th>PWA&rsquo;s part</th></tr></thead>
+    <tbody>
+      <tr><td>Which MES / quality tool answers this question, and what query to run</td>
+        <td><b>FabOrchestrator, today</b></td>
+        <td><span class="fp">app/api/chat/route.ts:454</span> loads MCP tools for the authorised
+        connections; <code>buildSystemPromptWithTools()</code> injects their descriptions and the model
+        chooses. The Back-end Agent equivalents are <code>list_data_sources</code> /
+        <code>list_components</code> in <span class="fp">lib/ui-agent/tools.ts:44</span>.</td>
+        <td>Attach the authorised connection ids (WP8). Nothing else.</td></tr>
+      <tr><td>Whether a free-form question should go to a single ask box at all</td>
+        <td><b>FabOrchestrator, today</b></td>
+        <td><span class="fp">components/cockpit/cockpit-ask.tsx:125</span> &mdash; &ldquo;Ask anything, or
+        describe a task to orchestrate&hellip;&rdquo; &mdash; posts to <code>/api/chat</code>. But it
+        sends <code>activeMcpIds: []</code> (line 43), so it answers plant questions from general
+        knowledge.</td>
+        <td>Copy the interaction, fix the wiring.</td></tr>
+      <tr><td>Which of the three agents should serve this request</td>
+        <td><span class="chip c-new">Nobody &mdash; absent from FO</span></td>
+        <td>The two non-chat endpoints are referenced only by their own screens. No dispatcher exists in
+        <span class="fp">app/</span>, <span class="fp">lib/</span> or
+        <span class="fp">components/</span>.</td>
+        <td>One classification turn, run on FO&rsquo;s own model via <code>/api/chat</code>. The only new
+        reasoning in the project.</td></tr>
+    </tbody>
+  </table></div>
+  <p><b>Default is FabInsight.</b> Most operational questions belong there, and once the authorised
+  connections are attached FO finishes the routing itself. The classification turn exists for the two
+  cases FO cannot infer from inside a single agent &mdash; a CMF modelling request, and a request to
+  build a screen. Anything ambiguous, timed out, unparseable or not permitted resolves to FabInsight,
+  which answers rather than failing. The chosen route is shown on the answer with a one-tap override,
+  and the agent cards remain the direct path. Full package: <a href="#s6">WP13</a>.</p>
+</section>
+<section id="s12">
+  <div class="sechead"><div class="secno">&sect;12</div><h2>FabInsight / MES plan</h2></div>
+  <p>The mechanism is documented in <a href="#s6">WP8</a>. What the plan commits to, in one place:</p>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">The PWA does</h4>
+      <ul>
+        <li>Ask FO which MCP connections the operator has, every turn (cached briefly), and forward
+        only the ids FO reports as <code>connected</code>.</li>
+        <li>Refuse to send a turn with an empty tool list, and say why.</li>
+        <li>Render whatever markdown comes back &mdash; text, tables, lists &mdash; in FO&rsquo;s own type
+        scale, with tables scrolling inside their own container.</li>
+        <li>Name the tool FO is running while it runs, using FO&rsquo;s own tool name, unprettified, so it
+        is searchable.</li>
+        <li>Relay a row-cap warning if FO sends one.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">The PWA does not</h4>
+      <ul>
+        <li>Detect that a question is about a metric.</li>
+        <li>Choose a data source, write SQL, or call an MCP server.</li>
+        <li>Apply, validate or correct a time filter. <b>Nothing anywhere validates one</b> &mdash; the
+        model writes its own <code>WHERE</code> clause. State this at the demo rather than implying
+        precision the system does not have.</li>
+        <li>Cache any answer. A cached downtime figure is a wrong downtime figure.</li>
+        <li>Hold an MES credential. There is none to hold: the MCP servers are
+        <code>authType: 'none'</code>.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout warnbox">
+    <h4>Reachability, not code, is the risk here</h4>
+    <p>MES databases sit behind a Site-to-Site VPN reachable only from the CMF VPC, which is why FO runs
+    a second Elastic Beanstalk environment there. A locally run FO can prove the streaming path but may
+    not reach data at all. Two of the ten MCP servers were returning HTTP 500 on 2026-07-24. Plan the
+    demo against the deployed FO, and settle reachability with probe P4 before promising a data answer.</p>
+  </div>
+</section>
+
+<section id="s13">
+  <div class="sechead"><div class="secno">&sect;13</div><h2>Dashboard &amp; artifact rendering plan</h2></div>
+  <p>Two mechanisms, fully compared in <a href="#s6">WP9</a>. The rendering contract, restated because
+  it is the security-critical part of the build:</p>
+  <div class="tw"><table>
+    <thead><tr><th>Concern</th><th>Decision</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td>Detection</td><td>String test for <code>&lt;antArtifact</code> before any regex; then
+        <code>segmentMessageText()</code>.</td><td>The fast path matters: this runs on every token of
+        every streaming answer.</td></tr>
+      <tr><td>Parsing</td><td>Ported from <span class="fp">lib/artifact-parser.ts</span>, byte-identical
+        regexes, source cited in the header.</td><td>It already handles partial streaming tags and the
+        <code>&lt;/artifact&gt;</code> variant the model sometimes emits. Rewriting it would rediscover
+        both bugs.</td></tr>
+      <tr><td>Extraction</td><td>Attributes <code>identifier</code>, <code>type</code>,
+        <code>title</code>; body verbatim.</td><td>Matches FO&rsquo;s <code>parseAttributes</code>.</td></tr>
+      <tr><td>Rendering</td><td><code>&lt;iframe srcDoc sandbox="allow-scripts"&gt;</code> in a
+        full-screen sheet. Never <code>allow-same-origin</code>. Never
+        <code>dangerouslySetInnerHTML</code>.</td><td>Those two sandbox flags together cancel the
+        sandbox. Without <code>allow-same-origin</code> the frame has an opaque origin and cannot touch
+        the PWA&rsquo;s cookies, storage or DOM.</td></tr>
+      <tr><td>Light mode</td><td>Port <code>enforceLightHtml</code>.</td><td>FO&rsquo;s prompt already
+        forbids dark artifacts; this is the enforcement that does not depend on the model obeying.</td></tr>
+      <tr><td>Mobile</td><td>Tile in the answer, sheet for the frame, both axes scrollable inside it.</td>
+        <td>Artifacts are authored for a desktop canvas. Inlining one at 390 px destroys the answer
+        around it.</td></tr>
+      <tr><td>Fallback</td><td>Unclosed &rarr; placeholder + &ldquo;show source&rdquo;. Unknown type &rarr;
+        code block. Frame error &rarr; message + source.</td><td>A blank rectangle is the one outcome
+        that looks like the app is broken.</td></tr>
+      <tr><td>Published dashboards</td><td>Deep link to <code>{FABORCH_BASE_URL}/v/&lt;key&gt;</code>,
+        with a note that FO may ask for its own sign-in.</td><td>Re-implementing <code>SpecRenderer</code>
+        and the binding-data fetch is a second copy of a screen FO owns and re-validates on every read.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="s14">
+  <div class="sechead"><div class="secno">&sect;14</div><h2>Error &amp; progress handling plan</h2></div>
+  <p>The full mapping table is in <a href="#s6">WP10</a>. Two rules govern it.</p>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">One shape crosses the boundary</h4>
+      <p><code>{ code: PwaErrorCode, error: string, errorId?: string }</code>. <code>error</code> is
+      always a string, asserted by a property test over arbitrary FO bodies. Components never receive an
+      object, never receive <code>undefined</code>, and never have to guess.</p>
+      <p>The current implementation violates this &mdash; FO&rsquo;s nested envelope passes straight
+      through <code>messageOf()</code>. That is the first fix in WP4.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">Three progress states, not one spinner</h4>
+      <ul>
+        <li><b>Waiting</b> &mdash; request sent, no frame yet. Dots.</li>
+        <li><b>Working</b> &mdash; a tool is running. Dots + the tool&rsquo;s own name. An operator watching
+        a fifteen-second pause needs to know something is being looked up, not that the app hung.</li>
+        <li><b>Answering</b> &mdash; text arriving. Dots off, cursor on.</li>
+      </ul>
+      <p>Plus a fourth, negative state: <b>stalled</b>, after 45 s with no frame of any kind &mdash; three
+      missed keep-alives.</p>
+    </div>
+  </div>
+</section>
+
+<section id="s15">
+  <div class="sechead"><div class="secno">&sect;15</div><h2>Testing plan</h2></div>
+  <p class="lead">Each layer is proved on its own before anything depends on the whole chain being up.
+  Five of the six layers need no network at all.</p>
+
+  <h3>L1 &mdash; Pure units, no network <span class="chip c-have">Partly exists</span></h3>
+  <div class="tw"><table>
+    <thead><tr><th>Suite</th><th>Covers</th><th>Key cases</th></tr></thead>
+    <tbody>
+      <tr><td><span class="fp">faborch/stream.test.ts</span><br><span class="chip c-mod">Extend</span></td>
+        <td>SSE parser</td>
+        <td>10 existing tests, plus: split a multi-frame fixture at <em>every</em> byte offset and assert
+        identical output; <code>tool-output-error</code> clears the activity line; <code>finish</code>
+        emits an end event; an unknown frame type is dropped, not thrown.</td></tr>
+      <tr><td><span class="fp">faborch/route-request.test.ts</span><br><span class="chip c-new">New</span></td>
+        <td>Ask-first routing (WP13)</td>
+        <td>Each of the three verdicts maps to its agent; every other reply &mdash; empty, prose, a
+        fourth word, whitespace, a JSON wrapper &mdash; falls back to <code>insight</code> rather than
+        throwing; a <code>modeling</code> verdict for a user without the permission is downgraded, not
+        dispatched; the classification cap is enforced with a fake timer. Plus a scored fixture set of
+        ~20 real questions, so a prompt change is measured rather than guessed at.</td></tr>
+      <tr><td><span class="fp">faborch/artifacts.test.ts</span><br><span class="chip c-new">New</span></td>
+        <td>Artifact parser</td>
+        <td>Complete tag; partial streaming tag; <code>&lt;/artifact&gt;</code> variant; two artifacts in
+        one message; text before/between/after; no tag at all (fast path); an
+        <code>&lt;antArtifact</code> string inside a fenced code block; attributes in any order;
+        a missing <code>title</code>.</td></tr>
+      <tr><td><span class="fp">faborch/errors.test.ts</span><br><span class="chip c-new">New</span></td>
+        <td>Error normaliser</td>
+        <td><code>{error:"str"}</code>; <code>{error:{message,type,errorId}}</code>;
+        <code>{userMessage}</code>; an HTML error page; empty body; invalid JSON. <b>Property:</b> for
+        any input the output <code>message</code> is a non-empty string.</td></tr>
+      <tr><td><span class="fp">faborch/session.test.ts</span><br><span class="chip c-new">New</span></td>
+        <td>PWA sessions</td>
+        <td>Mint, read, expire, revoke; expiry clamped to FO&rsquo;s <code>expiresAt</code>; an unknown id
+        returns null; a revoked id stays revoked.</td></tr>
+      <tr><td><span class="fp">faborch/agents.test.ts</span><br><span class="chip c-new">New</span></td>
+        <td>Agent registry</td>
+        <td><code>foAgent()</code> returns null for <code>""</code>, <code>"../"</code>,
+        <code>"chat"</code>, <code>"__proto__"</code>; every entry&rsquo;s <code>foPath</code> starts
+        <code>/api/</code>; only <code>insight</code> has <code>sendMcpIds:true</code>.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>L2 &mdash; Route handlers against a stub FO <span class="chip c-new">New</span></h3>
+  <p><span class="fp">__tests__/faborch/stub-fo.ts</span>: a <code>node:http</code> server that speaks
+  FO&rsquo;s contract and can be told to misbehave &mdash; wrong password, 403 suspended, 401 mid-turn,
+  429 quota, nested error envelope, an HTML 502, a slow first byte, a stream that stops mid-frame. Every
+  suite below points <code>FABORCH_BASE_URL</code> at it.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Suite</th><th>Cases</th></tr></thead>
+    <tbody>
+      <tr><td><b>Auth</b></td><td>Valid FO credential &rarr; 200, cookie set, <b>no token in the body</b>;
+        wrong password &rarr; 401 with an identical message for unknown-email and wrong-password;
+        FO unreachable &rarr; 503, not 401; 9th attempt &rarr; 429 with <code>Retry-After</code>;
+        success clears the counter; <code>/api/auth/me</code> reports FO liveness, not cookie presence;
+        logout destroys the row and clears the cookie.</td></tr>
+      <tr><td><b>Proxy</b></td><td>Unknown agent &rarr; 404 with <b>zero outbound requests</b>;
+        no session &rarr; 401; no FO token &rarr; <code>no_faborch_session</code>; FO 401 &rarr; cookie
+        cleared + <code>faborch_session_expired</code>; FO 403 relays the modeling message verbatim;
+        FO 429 &rarr; 429; nested envelope &rarr; a string; body over cap &rarr; 413; response headers
+        carry <code>X-Accel-Buffering: no</code>.</td></tr>
+      <tr><td><b>Streaming</b></td><td>First byte reaches the client before the stub finishes writing
+        &mdash; the test that actually proves nothing buffers; client abort closes the upstream socket;
+        an upstream stream that stops mid-frame surfaces <code>connection_lost</code> and keeps partial
+        text.</td></tr>
+      <tr><td><b>Agent routing</b></td><td><code>insight</code> forwards to <code>/api/chat</code> with
+        <code>activeMcpIds</code>; <code>modeling</code> and <code>backend</code> forward to their own
+        paths <b>without</b> it; a user lacking <code>modeling_agent</code> gets a disabled card from
+        <code>/api/faborch/agents</code>.</td></tr>
+      <tr><td><b>FabInsight tools</b></td><td>Two connected + one errored &rarr; two ids forwarded;
+        <code>[]</code> &rarr; the guard fires before FO is called; connections endpoint 500 &rarr; the
+        turn still proceeds without tools.</td></tr>
+      <tr><td><b>Validation</b></td><td>Missing <code>messages</code>; empty array; 101 messages;
+        a 20,001-character part; a non-text part type; a role of <code>"system"</code>; malformed JSON.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>L3 &mdash; Component <span class="chip c-new">New</span></h3>
+  <p>The PWA has no component test runner today; adding one is part of WP11&rsquo;s estimate. Minimum:
+  <code>AgentChat</code> renders each of the failure states with a distinct message and next step;
+  a streamed table renders as a table; an artifact segment renders a tile, not raw markup; the stop
+  button aborts.</p>
+
+  <h3>L4 &mdash; Live smoke against a real FO <span class="chip c-new">New</span></h3>
+  <p><span class="fp">scripts/smoke-faborch.ts</span>, opt-in, credentials from the environment.
+  Six checks, each with an unambiguous failure meaning:</p>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>Check</th><th>Pass</th><th>Failure means</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>POST /api/auth/login</code></td><td>200 with a token</td><td>Bad credentials, or FO unreachable &mdash; the response distinguishes them</td></tr>
+      <tr><td>2</td><td><code>GET /api/auth/me</code></td><td>200, <code>user.role</code> present</td><td>The token was not accepted &mdash; auth is broken, stop here</td></tr>
+      <tr><td>3</td><td><code>GET /api/mcp/connections</code></td><td>&ge;1 with <code>status:"connected"</code></td><td>The account has no data access. Every metric answer will be wrong. An admin must assign role MCPs.</td></tr>
+      <tr><td>4</td><td>Chat: <em>&ldquo;Reply with the single word: ready&rdquo;</em></td><td><code>text-delta</code> frames; first byte &lt; 10 s</td><td>Streaming is broken independently of MES &mdash; look at buffering, not data</td></tr>
+      <tr><td>5</td><td>Chat: <em>&ldquo;List the data sources you can query. Names only.&rdquo;</em></td><td>&ge;1 <code>tool-input-start</code></td><td>Tools were not attached &mdash; <code>activeMcpIds</code> is empty or was rejected</td></tr>
+      <tr><td>6</td><td>Chat: <em>&ldquo;What is yield by product for the last 7 days?&rdquo;</em></td><td>A GFM table, or FO&rsquo;s honest &ldquo;No data found for that request.&rdquo;</td><td>An <code>errorId</code> here means the MCP Lambda or the MES is the problem, not the PWA</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>L5 &mdash; PWA &amp; device <span class="chip c-mod">Extend</span></h3>
+  <ul>
+    <li>Lighthouse PWA audit on the deployed URL: installable, manifest valid, icons present, offline
+    navigation answers.</li>
+    <li>Service-worker regression: assert <code>respondWith</code> is never called for a
+    <code>/api/</code> path &mdash; <span class="fp">__tests__/platform/service-worker.test.ts</span>
+    already exists for this.</li>
+    <li>Manual install on one iPhone and one Android; launch from the home screen; confirm the icon is
+    the app&rsquo;s and not a page screenshot.</li>
+    <li>Rotate, background 5 minutes, return, continue the conversation.</li>
+    <li>Deploy a new build with a session open &rarr; the chunk-recovery script reloads once, not in a
+    loop.</li>
+  </ul>
+
+  <h3>L6 &mdash; End-to-end demo rehearsal</h3>
+  <p>The full path on a phone against the deployed FO: scan &rarr; sign in &rarr; install &rarr; launch
+  &rarr; FabInsight metric question &rarr; follow-up &rarr; dashboard request &rarr; open the artifact
+  &rarr; switch agent &rarr; sign out. Run twice: once on wifi, once on cellular.</p>
+
+  <div class="callout">
+    <h4>Ordering rule</h4>
+    <p>L1 needs nothing. L2 needs only the stub. L3 needs neither FO nor MES. <b>Only L4&ndash;L6 need a
+    live FabOrchestrator, and only L4 check 6 and L6 need a live MES.</b> That is deliberate: MES
+    reachability is the least controllable thing in this system, and it must not be able to block
+    development or CI.</p>
+  </div>
+</section>
+
+<section id="s16">
+  <div class="sechead"><div class="secno">&sect;16</div><h2>Dependency order &amp; the smallest experiment</h2></div>
+
+  <h3>16.1 Dependency graph</h3>
+  <div class="flow">WP0  consolidate ─┬─▶ WP1  foundation ────────────────────┐
+                  ├─▶ WP2  auth + session ──┬─▶ WP4 proxy ──┬─▶ WP5  chat flow ─┐
+                  ├─▶ WP3  FO client ───────┘               ├─▶ WP7  agents ────┤
+                  └─▶ WP6  SSE (fixtures) ──────────────────┴─▶ WP8  FabInsight ┤
+                                                             ├─▶ WP9  artifacts ┤
+                                                             └─▶ WP10 errors ───┤
+       WP11 testing ─── runs continuously alongside WP2…WP10 ───────────────────┤
+                                                                                ▼
+                                                                        WP12  integration
+                                                                              &amp; handoff
+
+Critical path:  WP0 → WP2 → WP4 → WP7 → WP13 → WP12
+Ask-first path: WP4 + WP5 + WP7 → WP13   (introduces no dependency of its own)
+Off the path:   WP1, WP6, WP9's parser, WP11's unit suites — all startable on day one</div>
+  <ul>
+    <li><b>Ask-first comes last of the conversation packages, and lengthens the critical path.</b> WP13 routes to agents (WP7) and opens a thread on one of them (WP5), so it closes Phase 2. It attaches connection ids through the client&rsquo;s existing lookup rather than waiting for WP8; the data-grounded proof of what it routes to is Phase 3&rsquo;s job. Because WP13 completes M2, the critical path now runs WP0 &rarr; WP2 &rarr; WP4 &rarr; WP7 &rarr; WP13 &rarr; WP12.</li>
+    <li><b>Chat cannot work without auth</b> &mdash; every FO endpoint is behind <code>requireAuth</code>,
+    so WP2 precedes any end-to-end chat milestone.</li>
+    <li><b>SSE can be proved without either.</b> The parser is a pure function; a <code>curl</code>
+    capture or a fixture file is enough. WP6 starts on day one in parallel with WP2.</li>
+    <li><b>The artifact parser is likewise independent</b> &mdash; it takes a string. Only its
+    <em>rendering</em> needs the rest.</li>
+    <li><b>WP8 is last on the critical path</b> because it is the only one whose failure mode is
+    external: it depends on the operator&rsquo;s role having MCP connections and on the Lambdas being up.</li>
+  </ul>
+
+  <h3>16.2 The smallest experiment that proves the architecture</h3>
+  <p>Two experiments, in order. The first needs no code at all and eliminates the two largest unknowns.</p>
+
+  <div class="card">
+    <h4 style="margin-top:0">E0 &mdash; Prove the wire format and the streaming path, with <code>curl</code></h4>
+    <p><b>Minimum auth:</b> one FabOrchestrator account. Nothing else.</p>
+    <div class="flow">TOKEN=$(curl -s -X POST "$FO/api/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"…","password":"…"}' | jq -r .token)
+
+curl -s "$FO/api/mcp/connections" -H "Authorization: Bearer $TOKEN" \
+  | jq '[.[] | select(.status=="connected") | .id]'      # → IDS
+
+curl -N -X POST "$FO/api/chat" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: text/event-stream' \
+  -d '{"messages":[{"role":"user","parts":[{"type":"text",
+       "text":"Reply with the single word: ready"}]}],
+       "activeMcpIds":IDS}' -D -</div>
+    <p><b>Pass:</b> response headers show <code>content-type: text/event-stream</code> and
+    <code>x-accel-buffering: no</code>; <code>data:</code> lines appear <em>progressively</em>, not in
+    one burst at the end; frames are <code>text-delta</code> with a <code>delta</code> field; the stream
+    ends <code>data: [DONE]</code>.</p>
+    <p><b>Failure readings.</b> Nothing until the end &rarr; something between you and FO is buffering
+    (run it against the origin EB URL as well as CloudFront to find out which).
+    Frames named <code>text</code> with a <code>text</code> field &rarr; a different <code>ai</code>
+    version than the parser assumes; re-pin the tests.
+    401 &rarr; the token was idle-evicted; log in again.
+    Empty <code>IDS</code> &rarr; stop and get MCP connections assigned to the role before writing
+    anything, because every subsequent data answer would be meaningless.</p>
+    <p><b>Cost:</b> 30 minutes. <b>Value:</b> settles the SSE format, the buffering question and the MCP
+    provisioning question before a single line is written.</p>
+  </div>
+
+  <div class="card">
+    <h4 style="margin-top:0">E1 &mdash; Prove the full architecture, PWA frontend &rarr; PWA backend &rarr; FO &rarr; screen</h4>
+    <p><b>Minimum auth:</b> the FO account from E0, plus a PWA session, because
+    <code>/api/faborch/[agent]/chat</code> is behind <code>requireAuth</code> and the FO token is read
+    off the request. There is no shortcut &mdash; a login that yields both is the floor.</p>
+    <p><b>Files involved</b> (all already present):</p>
+    <ul>
+      <li><span class="fp">.env</span> &mdash; <code>FABORCH_BASE_URL</code>,
+      <code>SESSION_SIGNING_SECRET</code></li>
+      <li><span class="fp">app/api/auth/login/route.ts</span> &rarr;
+      <span class="fp">lib/faborch/client.ts</span> (<code>foLogin</code>) &rarr;
+      <span class="fp">lib/faborch/session.ts</span> (<code>setFoTokenCookie</code>)</li>
+      <li><span class="fp">app/api/faborch/[agent]/chat/route.ts</span> &rarr;
+      <code>foConnectedMcpIds</code> &rarr; <code>foChat</code></li>
+      <li><span class="fp">components/fab/screens/agent-chat.tsx</span> &rarr;
+      <span class="fp">lib/faborch/stream.ts</span> (<code>readFoStream</code>)</li>
+    </ul>
+    <p><b>Request:</b> sign in at <code>/login</code> with FO credentials, open
+    <code>/fabinsight</code>, send <em>&ldquo;List the data sources you can query. Names only, no
+    explanation.&rdquo;</em></p>
+    <p><b>Expected:</b> the working indicator appears within ~2 s; it names an MCP tool
+    (e.g. <code>cmf_list_schemas</code>); text streams in word by word; a short list of business-named
+    sources lands; a follow-up (&ldquo;and the first one&rsquo;s tables?&rdquo;) works with history intact.</p>
+    <p><b>Pass criteria:</b> (1) tokens arrive progressively, not all at once; (2) at least one
+    <code>tool-input-start</code> is observed; (3) the FO token appears nowhere in DevTools &mdash;
+    not in JS, not in <code>localStorage</code>, not in a readable cookie; (4) a follow-up carries
+    context; (5) stop cancels and keeps partial text.</p>
+    <p><b>Failure readings.</b>
+    Answer arrives all at once &rarr; buffering in the PWA proxy or Fly, not in FO (E0 already cleared FO).
+    &ldquo;Not signed in to FabOrchestrator&rdquo; &rarr; the cookie was not set; check
+    <code>secure</code> vs the scheme, the exact bug <code>isHttps()</code> exists for.
+    No tool line and a vague answer &rarr; <code>activeMcpIds</code> was empty; the connections call
+    failed silently, which is by design and is what WP8&rsquo;s guard fixes.
+    <code>[object Object]</code> on screen &rarr; the nested-envelope defect; that is WP4.
+    Nothing renders at all &rarr; the frame names moved; the parser tests will say so.</p>
+    <p><b>Cost:</b> half a day, assuming the working tree builds. <b>Value:</b> proves every claim the
+    architecture makes.</p>
+  </div>
+
+  <h3>16.3 Probes that must run before the estimate holds</h3>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>Question</th><th>How</th><th>If it fails</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>Does the working tree build from a clean clone?</td><td><code>npm ci &amp;&amp; npm run build</code> on a fresh checkout</td><td>WP0 grows; everything slips</td></tr>
+      <tr><td>P2</td><td>Does the deployed FO serve <code>/api/backend-agent/chat</code>?</td><td><code>curl -i -X POST</code> with a valid token</td><td>The Back-end Agent card is disabled until FO redeploys &mdash; not this team&rsquo;s call</td></tr>
+      <tr><td>P3</td><td>Does CloudFront or Fly buffer SSE?</td><td>E0 against CloudFront and against the EB origin; then E1 against the deployed PWA</td><td>Streaming is the product; a fix may require CloudFront behaviour changes, i.e. an infrastructure ticket</td></tr>
+      <tr><td>P4</td><td>Does the demo account&rsquo;s role have connected MCPs, and are the Lambdas up?</td><td>E0 step 2, then smoke check 6</td><td>No data answers. An admin must assign role MCPs; a dead Lambda is outside this repo entirely</td></tr>
+      <tr><td>P5</td><td>Does the account have <code>modeling_agent</code>?</td><td><code>GET /api/modeling-agent/access</code></td><td>The Modeling Agent card ships disabled</td></tr>
+    </tbody>
+  </table></div>
+</section>
+<section id="s17">
+  <div class="sechead"><div class="secno">&sect;17</div><h2>Milestones &amp; deliverables</h2></div>
+  <p>Six milestones. Each names what must be <em>shown</em> before the next begins &mdash; not what must
+  be written. Each also closes one <b>business phase</b>: the phase is the capability the business gets, the milestone is the technical proof that closes it. Phase 0 is the foundation and unlocks no business capability by design; Phases 1&ndash;5 each do. The management-facing phase view carries the same six groupings with the same day totals.</p>
+  <div class="tw"><table>
+    <thead><tr><th>M</th><th>Milestone</th><th>Phase</th><th>Work</th><th>Deliverable</th><th>Proof required to pass</th></tr></thead>
+    <tbody>
+      <tr><td><b>M0</b></td><td>Baseline established</td><td>Phase 0</td><td>WP0, E0, P1&ndash;P5</td>
+        <td>A branch that builds from a clean clone; a pinned FO SHA; a one-page probe report</td>
+        <td>Clean clone builds and boots. E0 shows progressive <code>text-delta</code> frames from the
+        deployed FO. The probe report answers all five questions with evidence, not assumption.</td></tr>
+      <tr><td><b>M1</b></td><td>Architecture proven end to end</td><td>Phase 1</td><td>WP2, WP3, WP4, WP6, E1</td>
+        <td>A signed-in operator can hold a streaming conversation with FabInsight from a browser</td>
+        <td>E1&rsquo;s five pass criteria, demonstrated live. Especially: the FO token is not findable in
+        DevTools, and tokens arrive progressively.</td></tr>
+      <tr><td><b>M2</b></td><td>All three agents reachable, and reachable without choosing one</td><td>Phase 2</td><td>WP5, WP7, WP13</td>
+        <td>FabInsight, Modeling and Back-end agents, each on its own screen with honest availability &mdash; plus a landing ask box that routes a free-form question to the right one</td>
+        <td>Each card either opens a working conversation or states, on the card, why it cannot. A
+        permission failure is a disabled card, not a dead conversation. A question typed without choosing an agent is answered, labelled with the agent that served it, and the route can be overridden in one tap.</td></tr>
+      <tr><td><b>M3</b></td><td>Real data on a phone</td><td>Phase 3</td><td>WP1, WP8</td>
+        <td>Installed PWA answering a metric question with a readable table</td>
+        <td>Installed from the home screen on a real handset: &ldquo;What is yield by product this
+        week?&rdquo; returns a table that scrolls in its own container, with an MCP tool named in the
+        activity line.</td></tr>
+      <tr><td><b>M4</b></td><td>Dashboards and failures behave</td><td>Phase 4</td><td>WP9, WP10</td>
+        <td>Sandboxed artifact rendering; the complete error contract</td>
+        <td>A dashboard request produces a tappable, sandboxed, light-mode artifact.
+        <code>window.parent.document</code> throws inside the frame. Every row of the WP10 table is
+        reachable in a test and renders a distinct next step.</td></tr>
+      <tr><td><b>M5</b></td><td>Handoff-ready</td><td>Phase 5</td><td>WP11, WP12</td>
+        <td>Green test suite, security review, README, demo runbook</td>
+        <td><code>npm test</code> green from a clean clone with no network. Live smoke passes. Someone
+        who has not seen the repo reproduces the demo from the README alone.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="s18">
+  <div class="sechead"><div class="secno">&sect;18</div><h2>Engineering timeline</h2></div>
+  <p>Derived from the work packages, not fitted to a target. One engineer, five working days per week.
+  The phase column is the grouping used in the management-facing phase view; the two
+  tables carry identical day totals.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Week</th><th>Phase</th><th>Work</th><th class="num">Days</th><th>Milestone</th><th>Demonstration</th></tr></thead>
+    <tbody>
+      <tr><td><b>1</b></td><td>Phase 0</td><td>WP0 consolidation + probes; WP6 SSE from fixtures; WP3 FO client</td><td class="num">4.0</td><td>M0</td><td>Clean-clone build; <code>curl</code> transcript showing progressive frames; parser tests green</td></tr>
+      <tr><td><b>1&ndash;2</b></td><td>Phase 1</td><td>WP2 auth &amp; session; WP4 proxy</td><td class="num">3.5</td><td>M1</td><td>Live streaming conversation; DevTools showing no FO token</td></tr>
+      <tr><td><b>2&ndash;3</b></td><td>Phase 2</td><td>WP5 chat flow; WP7 agent routing; WP13 ask-first routing</td><td class="num">3.5</td><td>M2</td><td>Three agents, each opening or stating its own unavailability; a landing question routed and answered without an agent being chosen</td></tr>
+      <tr><td><b>3</b></td><td>Phase 3</td><td>WP1 foundation; WP8 FabInsight / MES</td><td class="num">3.0</td><td>M3</td><td>Installed on a phone; yield table on a handset with a named tool</td></tr>
+      <tr><td><b>3&ndash;4</b></td><td rowspan="2">Phase 4</td><td>WP9 artifacts &amp; dashboards</td><td class="num">3.0</td><td rowspan="2">M4</td><td>Sandboxed dashboard in a sheet; sandbox escape test</td></tr>
+      <tr><td><b>4</b></td><td>WP10 progress &amp; errors</td><td class="num">2.0</td><td>Every error row reachable and distinct</td></tr>
+      <tr><td><b>4&ndash;5</b></td><td rowspan="2">Phase 5</td><td>WP11 testing (runs alongside, banked here)</td><td class="num">3.0</td><td rowspan="2">M5</td><td>Green suite from a clean clone, no network</td></tr>
+      <tr><td><b>5</b></td><td>WP12 integration, security review, docs, demo</td><td class="num">2.5</td><td>Device validation; README reproduction by a fresh reader</td></tr>
+      <tr style="font-weight:700"><td></td><td></td><td>Core implementation</td><td class="num">24.5</td><td></td><td>&asymp; 5 working weeks</td></tr>
+    </tbody>
+  </table></div>
+  <p><small>The 24.5 total exceeds the 23.0 in &sect;06 by the 1.5 days of probe and demonstration work
+  folded into week 1; the package estimates cover implementation only.</small></p>
+
+  <h3>With two engineers</h3>
+  <p>The critical path is WP0 &rarr; WP2 &rarr; WP4 &rarr; WP7 &rarr; WP13 &rarr; WP12, about 11 days
+  including the week-one probes. A second
+  engineer takes WP1, WP6, WP9&rsquo;s parser and WP11&rsquo;s unit suites &mdash; all startable on day
+  one and none on the path. That compresses to roughly <b>3 weeks</b>, not 2.5: WP4, WP13 and
+  WP12 serialise, and both engineers need the same probe answers before either can trust their work.</p>
+  <p><small>That 3 weeks is the compressed <em>critical path</em>. The figure carried in the
+  management-facing plan and the phase view is <b>about 4 weeks</b>: the same path plus the scheduled
+  probe and milestone-demonstration days and the customer-facing handover in Phase 5, none of which
+  parallelises. Both describe the two-engineer case; they are not competing estimates.</small></p>
+</section>
+
+<section id="s19">
+  <div class="sechead"><div class="secno">&sect;19</div><h2>Contingency</h2></div>
+  <p>Core implementation and integration debugging are estimated separately because they have different
+  causes. The core number is a function of the code; the contingency is a function of things this team
+  does not control.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Driver</th><th>Why it is uncertain</th><th class="num">Days</th></tr></thead>
+    <tbody>
+      <tr><td><b>SSE through two proxies</b></td><td>Neither CloudFront (in front of FO) nor Fly (in front of the PWA) can be checked from source. FO was migrated off App Runner <em>because</em> its 120 s timeout broke streaming, so this failure mode has already happened once here. A fix may be an infrastructure ticket, not a code change.</td><td class="num">2.0</td></tr>
+      <tr><td><b>MES / MCP availability</b></td><td>Two of ten servers were 500ing on the last recorded check; MES sits behind a VPN reachable only from the CMF VPC; the Lambdas are not in this repository and nobody on this side can fix one.</td><td class="num">2.0</td></tr>
+      <tr><td><b>Deployed FO version drift</b></td><td>The deployed build is known to predate <code>/backend-agent</code>. Whether it carries the Back-end Agent API, and which <code>ai</code> version it streams, are both runtime facts. An FO redeploy is somebody else&rsquo;s schedule.</td><td class="num">1.5</td></tr>
+      <tr><td><b>iOS install &amp; standalone behaviour</b></td><td>Safari fires no <code>beforeinstallprompt</code>; install is a manual Share-sheet path; the app has already had one reported false-offline defect that only reproduced on a cold standalone launch. Needs a physical device and iteration.</td><td class="num">1.5</td></tr>
+      <tr><td><b>Account &amp; permission provisioning</b></td><td>A demo FO account needs a role with connected MCPs and, for the Modeling Agent, the <code>modeling_agent</code> permission. Both are granted in the admin console by someone else.</td><td class="num">1.0</td></tr>
+      <tr><td><b>Artifact fidelity on a phone</b></td><td>FO&rsquo;s prompt says nothing about mobile widths. Some dashboards will simply be wide. Improving that means changing FO&rsquo;s prompt, which is out of scope.</td><td class="num">1.0</td></tr>
+      <tr style="font-weight:700"><td>Integration &amp; debugging contingency</td><td>&asymp; 40% of core</td><td class="num">9.0</td></tr>
+    </tbody>
+  </table></div>
+  <div class="grid3" style="margin-top:22px">
+    <div class="kpi"><div class="k">Core implementation</div><div class="v">24.5 d</div><div class="s">&asymp; 5 weeks, one engineer</div></div>
+    <div class="kpi"><div class="k">Integration contingency</div><div class="v">9.0 d</div><div class="s">Driven by proxies, MES and devices &mdash; not by code volume</div></div>
+    <div class="kpi"><div class="k">Total, one engineer</div><div class="v">33.5 d</div><div class="s">&asymp; 7 working weeks. Two engineers: about 4 weeks.</div></div>
+  </div>
+  <p style="margin-top:18px">Running probes P1&ndash;P5 in the first two days is the single cheapest way
+  to shrink this number: four of the six drivers become known facts rather than reserves, and roughly
+  <b>4 days</b> of the contingency can be released or reallocated at the M0 gate.</p>
+</section>
+
+<section id="s20">
+  <div class="sechead"><div class="secno">&sect;20</div><h2>Risks &amp; unresolved questions</h2></div>
+
+  <h3>20.1 Risks</h3>
+  <div class="tw"><table>
+    <thead><tr><th>Risk</th><th>Sev</th><th>Evidence</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td>All integration work is untracked in one working tree</td><td><span class="chip c-risk">High</span></td><td><code>git status</code> shows <code>??</code> for <span class="fp">lib/faborch/</span>, <span class="fp">app/api/faborch/</span>, <span class="fp">app/fabinsight/</span>, <span class="fp">__tests__/faborch/</span></td><td>WP0, first thing</td></tr>
+      <tr><td>SSE buffered by CloudFront or Fly</td><td><span class="chip c-risk">High</span></td><td>Not knowable from source; App Runner already broke it once</td><td>Probe P3 before M1</td></tr>
+      <tr><td>Demo account has no connected MCPs</td><td><span class="chip c-risk">High</span></td><td><code>/api/chat</code> loads tools from <code>activeMcpIds</code> and nothing else</td><td>Probe P4; WP8 guard</td></tr>
+      <tr><td>Automatic routing sends a request to the wrong agent</td><td><span class="chip c-mod">Medium</span></td><td>No router exists in FO to inherit accuracy from; some requests genuinely sit between two agents</td><td>Default to the agent that answers the widest range; show the route with a one-tap override; keep manual selection; score a fixture set of ~20 real questions (WP13)</td></tr>
+      <tr><td>Parser breaks on an FO SDK upgrade</td><td><span class="chip c-mod">Medium</span></td><td>Hand-written parser pinned to <code>ai@6.0.97</code> frame names</td><td>Pinned tests are the alarm; add a version note in the file header</td></tr>
+      <tr><td>Nested error envelope reaches React</td><td><span class="chip c-mod">Medium</span></td><td>Confirmed defect, &sect;01</td><td>WP3/WP4, with a property test</td></tr>
+      <tr><td>30-minute idle eviction interrupts a demo</td><td><span class="chip c-mod">Medium</span></td><td><code>IDLE_TIMEOUT_MS</code>, <span class="fp">lib/session-audit.ts:23</span></td><td>Clean re-auth with the destination preserved; brief the demo operator</td></tr>
+      <tr><td>Back-end Agent API absent from the deployed build</td><td><span class="chip c-mod">Medium</span></td><td>Recorded 2026-08-24: <code>GET /backend-agent</code> &rarr; 404</td><td>Probe P2; ship the card disabled if needed</td></tr>
+      <tr><td>Artifact sandbox misconfigured</td><td><span class="chip c-risk">High if wrong</span></td><td>New code executing model output</td><td>Never <code>allow-same-origin</code> with <code>allow-scripts</code>; escape test in CI</td></tr>
+      <tr><td>Two MCP servers down</td><td><span class="chip c-mod">Medium</span></td><td>Genealogy and Scrap Pareto, HTTP 500 on 2026-07-24</td><td>Outside the repo. Avoid those use cases in the demo script</td></tr>
+      <tr><td>Manifest <code>id</code> change orphans installed copies</td><td><span class="chip c-mod">Low but permanent</span></td><td><code>id:"/orders"</code> vs <code>start_url:"/"</code></td><td>Decide in WP1, before anyone installs</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>20.2 Questions for the review</h3>
+  <ol>
+    <li><b>Does the mock-MES order workflow stay?</b> The estimate assumes it goes. Keeping it adds
+    ~3 days and keeps a second credential path alive.</li>
+    <li><b>Which FabOrchestrator does the demo run against?</b> Deployed CloudFront (real MES, version
+    drift) or a local instance (current code, possibly no MES reach)? They cannot both be the answer.</li>
+    <li><b>Is the AI Support Engineer card in scope?</b> The landing page shows four agents; three have
+    screens.</li>
+    <li><b>Should PWA sign-out end the FO session?</b> It is cleaner, but it signs the operator out of any
+    FabOrchestrator tab they have open.</li>
+    <li><b>Who provisions the demo FO account</b>, with which role, which MCP connections, and does it
+    carry <code>modeling_agent</code>?</li>
+    <li><b>Is a <code>DATABASE_URL</code> available</b> for durable PWA sessions? Without one, sessions
+    stay in-process and every deploy signs everyone out.</li>
+    <li><b>Two optional FO changes</b> &mdash; correcting the stale SSE docs in
+    <span class="fp">app/api/CLAUDE.md</span>, and adding <code>/api/health</code>. Both are small; both
+    need FO&rsquo;s owners to agree.</li>
+    <li><b>Does the installable-FO track continue in parallel?</b> It answers &ldquo;install the real
+    product&rdquo;; this plan answers &ldquo;a phone-shaped client&rdquo;. Both are defensible; shipping
+    both without saying which is which will confuse the audience.</li>
+  </ol>
+
+  <h3>20.3 Stated openly: what cannot be proven from source</h3>
+  <ul>
+    <li>Whether CloudFront or Fly buffers the SSE response.</li>
+    <li>Which FO build is deployed, and therefore which endpoints and which <code>ai</code> version it serves.</li>
+    <li>Whether the MCP Lambdas are up and whether the MES is reachable from the serving VPC.</li>
+    <li>What any given FO account&rsquo;s role actually permits.</li>
+    <li>How an artifact renders on a specific handset.</li>
+    <li>Whether the PWA working tree builds from a clean clone &mdash; it has never been tried.</li>
+  </ul>
+</section>
+
+<section id="s21">
+  <div class="sechead"><div class="secno">&sect;21</div><h2>Definition of done</h2></div>
+  <div class="grid2">
+    <div class="card">
+      <h4 style="margin-top:0">Functional</h4>
+      <ul>
+        <li>Scanning the QR code opens the PWA; it can be installed on iOS and Android and launches in a
+        standalone window with the app&rsquo;s own icon.</li>
+        <li>An operator signs in with their own FabOrchestrator credentials and reaches the landing page.</li>
+        <li>A question typed on the landing page without choosing an agent is routed automatically, answered from the data the user is entitled to, and labelled with the agent that produced it.</li>
+        <li>The route can be overridden in one tap, and every agent card still either opens a working conversation or explains on the card why it cannot.</li>
+        <li>A prompt streams back progressively: text, tables, and artifacts.</li>
+        <li>Follow-up questions carry conversation context.</li>
+        <li>A dashboard request produces a tappable, sandboxed, light-mode artifact.</li>
+        <li>Stop cancels a turn and keeps what already arrived.</li>
+        <li>Every failure in the WP10 table renders a distinct message and a distinct next step.</li>
+        <li>An expired FO session produces a clean sign-in with the destination preserved.</li>
+        <li>Sign-out revokes the PWA session and removes the FO token from the server.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4 style="margin-top:0">Non-functional</h4>
+      <ul>
+        <li><b>Security:</b> the FO token is not present in client JavaScript, <code>localStorage</code>,
+        any readable cookie, any log line or any service-worker cache.</li>
+        <li><b>Security:</b> the artifact iframe has an opaque origin;
+        <code>window.parent.document</code> throws inside it.</li>
+        <li><b>Security:</b> no client-controlled field reaches an FO privilege decision &mdash;
+        <code>model</code> and <code>activeMcpIds</code> are server-side only.</li>
+        <li><b>Boundary:</b> no MES query, metric calculation, system prompt or model call exists in the
+        PWA. Grep for <code>anthropic</code>, <code>SELECT</code> and <code>system:</code> outside the
+        removed order workflow returns nothing.</li>
+        <li><b>Streaming:</b> first token visible within 10 s on a normal connection; nothing buffers.</li>
+        <li><b>Tests:</b> <code>npm test</code> green from a clean clone with no network; the live smoke
+        script passes against a real FO.</li>
+        <li><b>Docs:</b> a fresh reader reproduces the demo from the README alone.</li>
+        <li><b>Limitations written down:</b> no file upload, no conversation history, no model picker,
+        no offline data, time filters unvalidated, MES reachability environment-dependent.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:22px">
+    <h4>The one-line test</h4>
+    <p>A supervisor scans a code on the shop floor, installs the app, asks it what yield looked like this
+    week, and reads FabOrchestrator&rsquo;s answer &mdash; computed by FabOrchestrator, against
+    FabOrchestrator&rsquo;s data, under that supervisor&rsquo;s own permissions &mdash; on their phone. Every
+    line of this plan exists to make that sentence true without a second copy of FabOrchestrator being
+    built to do it.</p>
+  </div>
+</section>
+
+</div>

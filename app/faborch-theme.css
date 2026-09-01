@@ -1,0 +1,265 @@
+/* ============================================================================
+   FabOrchestrator V2 — the shipped design language
+   ----------------------------------------------------------------------------
+   Source of truth, all under FabOrchestrator_product_code/claudeai_athena/:
+
+     app/globals.css  194–244   the V2 brand palette ("Brand / cockpit / login
+                                palette (tokenized from components)")
+     app/globals.css  806–855   :root[data-theme="fab-blue"] — the product's
+                                default theme, and where --radius: 0.5rem says
+                                out loud that FabOrchestrator is rounded
+     components/login-page.tsx            radii, shadows, gradient button
+     components/cockpit/cockpit-nav.tsx   the top nav this app's shell follows
+                                          (⚠ only on branch `main` — the
+                                          console redesign deleted it)
+
+   Every hex below is copied from there, not re-picked. This is what the login
+   page, the cockpit and the chat shell actually ship with. The full mapping of
+   source file → what was taken → where it landed is in CLAUDE.md under
+   "Where the FabOrchestrator look comes from".
+
+   This replaced app/console-theme.css on 2026-08-10. The console theme is the
+   *Board* redesign proposal — flat grey, square corners, hairline borders,
+   Barlow Condensed — which lives on an unmerged local branch and reads almost
+   identically to the CMF dashboard theme. It is not the product.
+
+   SCOPING. Tokens live under `.fab`, not `:root`, following the precedent the
+   product's own CLAUDE.md records for 2026-08-04: a second global palette
+   restyles surfaces you did not mean to touch. Everything the demo renders
+   sits inside one `.fab` subtree.
+   ========================================================================== */
+
+.fab {
+  /* — indigo family — */
+  --brand-indigo: #5b54e8;
+  --cockpit-indigo: #4842d4;
+  --brand-indigo-light: #6f73ff;
+  --brand-indigo-soft: #7d82ff;
+  --brand-indigo-pale: #aeb2ff;
+  --brand-indigo-bg: #edecfd;
+
+  /* — navy, for the sidebar and the login brand panel — */
+  --navy-1: #1d2660;
+  --navy-2: #161d4a;
+  --navy-3: #10153a;
+  --nav-active: #1a2150;
+
+  /* — surfaces & borders — */
+  --page-surface: #f6f7fc;
+  --cockpit-surface: #f2f3fb;
+  --field-bg: #eef0fa;
+  --border-light: #e7e9f4;
+  --pure-white: #fff;
+
+  /* — ink — */
+  --text-ink: #161c34;
+  --text-muted-cool: #5d6680;
+  /* Darkened from #8b93b0 by design review F-02, 2026-08-12: 4.90:1 on white
+     and 4.58:1 on --page-surface, against 3.04 and 2.85 before. Not an
+     incidental tone — it carries every EVIDENCE eyebrow, every field name
+     beside every citation, and every meta line in the app. Same cool grey,
+     two steps darker; the V2 hue is unchanged. */
+  --text-subtle: #667090;
+
+  /* — text on navy — */
+  --on-navy-label: #aab2dd;
+  --on-navy-body: #c3c9e8;
+  --on-navy-strong: #e6e9f7;
+
+  /* — status —
+     Green, amber and the error pair are the product's own tokens. Severity is
+     never carried by colour alone: every dot and pill below is rendered beside
+     its word, because a supervisor reading through safety glasses on a lit
+     shop floor is exactly who a colour-only signal fails. */
+  --status-green: #1fa971;
+  --status-green-bg: #e7f7ef;
+  --status-amber: #d6841f;
+  --status-red: #dc2626;
+  --status-red-bg: #fef2f2;
+  --status-red-border: #fecaca;
+
+  /* INFERRED — the product has --status-amber but ships no amber background
+     and no neutral/idle pair. Mixed toward the page surface to sit beside the
+     observed green and red rather than invented from scratch. */
+  --status-amber-bg: #fdf4e7;
+  --status-idle: #8b93b0;
+  --status-idle-bg: #f2f3fb;
+
+  /* — geometry —
+     Rounded, and generously so: the login card is 22px, fields and chips 12px,
+     the primary button 13px. Square corners are the console proposal's
+     language, not this one. */
+  --r-card: 22px;
+  --r-panel: 16px;
+  --r-control: 12px;
+  --r-chip: 9px;
+
+  /* — elevation —
+     Cards are lifted, not outlined. The big one is the login card's own
+     shadow; the small one is its everyday equivalent. */
+  --shadow-card: 0 2px 8px rgba(16, 21, 58, 0.05), 0 1px 2px rgba(16, 21, 58, 0.04);
+  --shadow-lifted: 0 8px 24px rgba(16, 21, 58, 0.09);
+  --shadow-brand: 0 8px 20px rgba(91, 84, 232, 0.34);
+
+  --font-sans: "Plus Jakarta Sans", var(--font-plus-jakarta), ui-sans-serif,
+    system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+
+  /* — type scale, added 2026-08-12 —
+     **These seven steps are the whole scale. Do not add an eighth.**
+
+     The screens previously used nineteen sizes: 9.5, 10, 11, 11.5, 12, 12.5,
+     13, 13.5, 14, 14.5, 15, 16, 17, 18, 19, 22, 26, 28 and 30px. Eight of
+     those sat half a pixel from a neighbour — 12 against 12.5, 13 against
+     13.5, 14 against 14.5 — which no reader can see. A difference nobody can
+     perceive is not hierarchy, it is noise, and it makes every new screen a
+     fresh guess about which of three near-identical sizes to reach for.
+
+     For comparison the product's own cockpit uses fourteen across four files;
+     this demo had more ad-hoc sizes than the thing it is imitating.
+
+     Steps are given as custom properties so the scale is greppable and can be
+     retuned in one place. Components still write the concrete px value in
+     their Tailwind class (`text-[14px]`) because that is what generates a
+     utility — but the only px values permitted are these seven. */
+  --fs-label: 10px; /* uppercase eyebrows, tracking .14em */
+  --fs-meta: 12px; /* timestamps, record ids, pills, author lines */
+  --fs-body: 14px; /* running text, notes, list values */
+  --fs-strong: 16px; /* card titles, the brand lockup, emphasised values */
+  --fs-title: 20px; /* section and panel headings */
+  --fs-page: 26px; /* the page's own h1 */
+  --fs-hero: 30px; /* the one number a screen is about */
+
+  /* — an eighth step, added 2026-08-23, and the rule above still holds —
+     `--fs-display` exists for exactly one element: the cockpit headline on the
+     landing page, *Your orchestration cockpit.* It is 42px in the product
+     (`claudeai_athena/components/cockpit/cockpit-hero.tsx`), and the landing
+     page's job since 2026-08-23 is to reproduce that cockpit closely enough
+     that a stakeholder recognises it.
+
+     This is not the rule being relaxed. The rule exists because this app once
+     used nineteen sizes, eight of them half a pixel from a neighbour — a
+     difference nobody can perceive, which is noise rather than hierarchy. 42
+     against 30 is a full tier apart and is a value copied from the product
+     rather than picked. Every *other* size on the cockpit replica (9.5, 10.5,
+     11.5, 12.5, 13.5, 14.5, 23, 27) is mapped to the nearest existing step
+     instead of imported, which is where the rule does its work.
+
+     If a second element ever wants this step, that is the signal the scale
+     needs rethinking — not that a ninth should be added. */
+  --fs-display: 42px; /* the cockpit headline, and nothing else */
+
+  /* — measure —
+     The column widened from 860px to 1180px on 2026-08-12 to match the
+     product's own cockpit (`components/cockpit/cockpit-page.tsx`), which is
+     `max-w-[1180px]`. At 860 this demo rendered a visibly narrower ribbon than
+     the product it copies. Running prose is capped separately: a 1180px line
+     of 14px text is roughly 140 characters, about twice a comfortable measure,
+     so text blocks inside cards carry `--measure` instead of filling. */
+  /* — the shell header's height —
+     The sticky top nav is `py-[10px]` around a 34px control row plus a 1px
+     border. Anything that docks beneath it needs this exact number, or content
+     shows through the seam. It is a token because it is not one component's
+     business: `app/globals.css` uses it for the decision dock and the review
+     panel, and a fourth thing will want it eventually. */
+  --shell-h: 55px;
+
+  --page-width: 1180px;
+  /* 52ch, not 72ch — design review F-04, 2026-08-12. `ch` is the advance of
+     "0", which is 11.7px in Plus Jakarta at 16px, well above the face's average
+     character width, so `72ch` actually rendered about 100 characters. 52ch is
+     ~600px and ~72 real characters in this face. */
+  --measure: 52ch;
+
+  /* — status ink (design review F-02, 2026-08-12) —
+     **Pill text uses these; pill dots keep the plain status hue.** So nothing
+     on screen changes colour — only the word darkens enough to be readable.
+
+     The dot-and-word structure already answered the colour-blindness half of
+     "status is never carried by colour alone". It failed the other half: the
+     word was set in the status hue on the status tint, which at 12px measured
+     2.68:1 (amber), 2.72:1 (green) and 2.75:1 (idle) against a 4.5:1 floor.
+     That is the glare-and-safety-glasses case — the supervisor this app is for.
+
+     Ratios below are WCAG 2.1 against the tint each colour actually sits on. */
+  --status-green-ink: #0f7a52; /* on --status-green-bg 4.83:1, was 2.72 */
+  --status-amber-ink: #97600f; /* on --status-amber-bg 4.82:1, was 2.68 */
+  --status-red-ink: #b91c1c; /* on --status-red-bg   5.91:1, was 4.41 */
+  --status-idle-ink: #616b8b; /* on --status-idle-bg  4.77:1, was 2.75 */
+
+  background: var(--page-surface);
+  color: var(--text-ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+}
+
+/* Headings carry the weight this design system uses — 700/800, tight. */
+.fab :where(h1, h2, h3, h4) {
+  font-family: var(--font-sans);
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  margin: 0;
+}
+
+/* Focus is the brand ring, never the browser default. */
+.fab :focus-visible {
+  outline: 2px solid var(--brand-indigo);
+  outline-offset: 2px;
+}
+
+.fab ::selection {
+  background: var(--brand-indigo-pale);
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────────
+   A white, rounded, softly lifted surface. The one shape this whole design
+   language is built from. */
+
+/* F-14, design review 2026-08-12: below `sm` the 22px corner eats into the
+   20px padding and crowds the first and last line of a card on a handheld.
+   18px there only — the desktop shape, which is the one a stakeholder
+   recognises as FabOrchestrator, is unchanged. */
+@media (max-width: 639px) {
+  .fab-card {
+    border-radius: 18px;
+  }
+}
+
+.fab-card {
+  background: var(--pure-white);
+  border: 1px solid var(--border-light);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Interactive cards rise slightly on hover — the cockpit's own affordance. */
+.fab-card-link {
+  cursor: pointer;
+  transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease;
+}
+.fab-card-link:hover {
+  box-shadow: var(--shadow-lifted);
+  transform: translateY(-1px);
+  border-color: var(--brand-indigo-pale);
+}
+
+/* ── Animation ─────────────────────────────────────────────────────────── */
+
+@keyframes fab-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.85; }
+}
+
+.fab-pulse {
+  animation: fab-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fab *,
+  .fab *::before,
+  .fab *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,853 @@
+<title>FabOrchestrator PWA Delivery Plan</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&family=JetBrains+Mono:wght@600&display=swap">
+<style>
+:root{
+  --ground:#f6f7fa; --panel:#ffffff; --panel-2:#eff1f7;
+  --ink:#171b28; --ink-2:#464e67; --ink-3:#6f7791;
+  --rule:#e1e4ee; --rule-2:#ccd1e1;
+  --accent:#5b54e8; --accent-ink:#4038c9; --accent-wash:#eeedfd;
+  --ok:#1c6f4e; --ok-wash:#e2f2ea;
+  --warn:#8a5a00; --warn-wash:#fbf0d9;
+  --stop:#a52b23; --stop-wash:#fbe8e6;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+    --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+    --rule:#282e40; --rule-2:#39415a;
+    --accent:#9a94ff; --accent-ink:#b6b1ff; --accent-wash:#22203f;
+    --ok:#67d3a3; --ok-wash:#12291f;
+    --warn:#e2b35c; --warn-wash:#2d2415;
+    --stop:#f08d84; --stop-wash:#331b19;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+  --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+  --rule:#282e40; --rule-2:#39415a;
+  --accent:#9a94ff; --accent-ink:#b6b1ff; --accent-wash:#22203f;
+  --ok:#67d3a3; --ok-wash:#12291f;
+  --warn:#e2b35c; --warn-wash:#2d2415;
+  --stop:#f08d84; --stop-wash:#331b19;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:17px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1000px;margin:0 auto;padding:0 24px 100px}
+h1,h2,h3,.ui{font-family:Archivo,"Helvetica Neue",Arial,sans-serif}
+h1,h2,h3{text-wrap:balance;margin:0}
+code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:.82em;
+  background:var(--panel-2);border:1px solid var(--rule);padding:.08em .34em;border-radius:4px}
+header.mast{background:var(--panel);border-bottom:1px solid var(--rule)}
+.mast-in{max-width:1000px;margin:0 auto;padding:44px 24px 32px}
+.eyebrow{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+h1{font-size:clamp(29px,5vw,42px);font-weight:700;letter-spacing:-.022em;line-height:1.1;margin:11px 0 13px}
+.dek{font-size:18.5px;color:var(--ink-2);max-width:62ch}
+.meta{display:flex;flex-wrap:wrap;gap:6px 28px;margin-top:22px;
+  font-family:Archivo,sans-serif;font-size:12px;color:var(--ink-3)}
+.meta b{color:var(--ink-2);font-weight:600}
+section{padding-top:46px}
+.sechead{display:flex;gap:13px;align-items:baseline;border-top:2px solid var(--ink);
+  padding-top:11px;margin-bottom:20px}
+.secno{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--accent-ink);
+  padding-top:5px;flex:none}
+h2{font-size:clamp(20px,2.8vw,26px);font-weight:700;letter-spacing:-.015em}
+h3{font-size:16.5px;font-weight:600;margin:26px 0 9px}
+p{margin:0 0 14px;max-width:72ch}
+ul,ol{margin:0 0 14px;padding-left:21px;max-width:72ch}
+li{margin-bottom:6px}
+.lead{font-size:18px;color:var(--ink-2)}
+.tw{overflow-x:auto;margin:0 0 20px;border:1px solid var(--rule);border-radius:9px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-family:Archivo,sans-serif;font-size:13.5px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{background:var(--panel-2);font-weight:600;font-size:11px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+.num{text-align:right;white-space:nowrap;font-weight:600}
+.comp{font-weight:600;color:var(--ink)}
+.tag{display:block;font-family:"JetBrains Mono",monospace;font-size:10px;
+  color:var(--ink-3);font-weight:600;margin-top:3px;letter-spacing:.03em}
+.total td{background:var(--panel-2);font-weight:700;font-size:14px}
+.phc{display:block;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:600;
+  color:var(--accent);letter-spacing:.07em;margin-bottom:3px}
+.wpc{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:10.5px;
+  font-weight:600;color:var(--accent);background:var(--accent-wash);border-radius:4px;
+  padding:1.5px 6px;margin:0 3px 3px 0}
+.wkd{display:block;font-family:"JetBrains Mono",monospace;font-size:11px;
+  color:var(--ink-3);margin-top:2px}
+.msd{display:inline-block;margin-top:6px;font-family:"JetBrains Mono",monospace;
+  font-size:10.5px;font-weight:600;color:var(--ok);background:var(--ok-wash);
+  border-radius:4px;padding:2px 7px}
+.flow{font-family:Archivo,sans-serif;font-size:13.5px;line-height:1.8;
+  background:var(--panel-2);border:1px solid var(--rule);border-radius:9px;
+  padding:18px 20px;overflow-x:auto;white-space:pre;margin:0 0 18px;color:var(--ink-2)}
+.callout{border-left:3px solid var(--accent);background:var(--accent-wash);
+  border-radius:0 8px 8px 0;padding:15px 18px;margin:0 0 18px}
+.callout.warnbox{border-left-color:var(--warn);background:var(--warn-wash)}
+.callout p:last-child{margin-bottom:0}
+.callout h3{margin:0 0 7px;font-size:14.5px}
+.grid3{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin:22px 0 26px}
+.kpi{border:1px solid var(--rule);border-radius:9px;padding:15px 17px;background:var(--panel)}
+.kpi .k{font-family:Archivo,sans-serif;font-size:10.5px;font-weight:600;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3)}
+.kpi .v{font-family:Archivo,sans-serif;font-size:29px;font-weight:700;letter-spacing:-.02em;
+  margin:4px 0 3px;color:var(--ink)}
+.kpi .s{font-size:13.5px;color:var(--ink-2);line-height:1.45}
+.sev{display:inline-block;font-family:Archivo,sans-serif;font-size:10px;font-weight:600;
+  letter-spacing:.07em;text-transform:uppercase;padding:2px 6px;border-radius:4px;border:1px solid}
+.s-hi{background:var(--stop-wash);color:var(--stop);border-color:var(--stop)}
+.s-md{background:var(--warn-wash);color:var(--warn);border-color:var(--warn)}
+.s-lo{background:var(--ok-wash);color:var(--ok);border-color:var(--ok)}
+.grid2{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+.card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:19px 21px;margin:0 0 18px}
+.card h3{margin-top:0}
+.foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-3)}
+</style>
+
+<header class="mast">
+  <div class="mast-in">
+    <div class="eyebrow">Implementation plan &middot; for review</div>
+    <h1>FabOrchestrator PWA Delivery Plan</h1>
+    <p class="dek">Giving operations staff access to FabOrchestrator from their phones, as an
+    installable app, without building a second version of the product.</p>
+    <div class="meta">
+      <div><b>Prepared</b> 30 August 2026 &middot; revised 1 September 2026 (agentic entry point added)</div>
+      <div><b>Effort</b> 24.5 engineer-days core &middot; 9 days contingency</div>
+      <div><b>Duration</b> 7 weeks with one engineer &middot; about 4 with two</div>
+      <div><b>Structure</b> Six business phases &middot; business milestones B1&ndash;B5 &middot; technical milestones M0&ndash;M5</div>
+      <div><b>Backup</b> Detailed engineering plan, held separately</div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section id="objective">
+  <div class="sechead"><div class="secno">01</div><h2>Objective</h2></div>
+  <p class="lead">Deliver an installable mobile app that lets a supervisor on the floor ask
+  FabOrchestrator a question &mdash; about yield, downtime, quality, a production order &mdash; and read
+  the answer on their phone, under their own permissions.</p>
+
+  <p>The app is a <strong>front door and a secure connector</strong>. It does not contain any
+  manufacturing intelligence of its own. Every answer it displays is produced by the FabOrchestrator
+  platform we already run: the AI reasoning, the connections to MES and quality data, the dashboards,
+  the user permissions, the usage limits and the audit trail all stay exactly where they are today.</p>
+
+  <p>That boundary is the central design decision, and it is what keeps this project measured in weeks
+  rather than in months. A second copy of FabOrchestrator&rsquo;s logic on a phone would have to
+  be kept correct forever, and would be wrong the first time the platform changed. This app forwards
+  questions and displays answers.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>What the app delivers</h3>
+      <ul>
+        <li>Reached by scanning a QR code &mdash; no app store, no IT deployment</li>
+        <li>Installs to the phone&rsquo;s home screen and opens like a native app</li>
+        <li>Each person signs in with their own FabOrchestrator account</li>
+        <li><b>Ask from the landing page without choosing anything</b> &mdash; the system works out which part of the platform should answer, and sends the request there</li>
+        <li>Choice of the platform&rsquo;s agents by name as well, for anyone who prefers to pick</li>
+        <li>Answers appear progressively as they are produced, including tables and dashboards</li>
+        <li>Clear, actionable messages when something is unavailable</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>What stays in FabOrchestrator</h3>
+      <ul>
+        <li>All AI reasoning and model access</li>
+        <li>All MES, ERP and quality data connections</li>
+        <li>All business logic and analysis</li>
+        <li>Dashboard generation</li>
+        <li>Deciding which tools and which data answer a question</li>
+        <li>User roles, permissions and usage quotas</li>
+        <li>The audit trail of who asked what, and what it cost</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p>An honest note on the starting point: this is not a green-field build. A working prototype of
+    the connection between the phone app and FabOrchestrator already exists, and the estimates below
+    reflect the effort to take each component from prototype to something we can put in front of a
+    customer &mdash; secured, tested, documented and supportable. Where a component is already close,
+    the estimate is small; where it is genuinely new, the estimate is larger.</p>
+  </div>
+</section>
+
+<section id="architecture">
+  <div class="sechead"><div class="secno">02</div><h2>Target architecture</h2></div>
+  <p>Five steps, one of which is the only piece we are building.</p>
+
+  <div class="flow">   Supervisor's phone
+        │   types a question
+        ▼
+   1  Mobile app  ·  the screen people use
+        │
+        ▼
+   2  Mobile app's secure server  ·  the connector we build
+        │   holds the FabOrchestrator credential; the phone never sees it
+        ▼
+   3  FabOrchestrator  ·  the platform we already run
+        │   AI reasoning · MES and quality data · dashboards · permissions · audit
+        ▼
+   4  The answer, streamed back word by word as it is produced
+        │
+        ▼
+   5  Displayed on the phone  ·  text, tables, dashboards</div>
+
+  <h3>Why step 2 exists</h3>
+  <p>Three reasons, and each one is load-bearing:</p>
+  <ul>
+    <li><strong>Security.</strong> The credential that identifies the operator to FabOrchestrator is
+    held on our server, never on the handset. A phone that is lost, screenshotted or handed around
+    carries nothing that grants access to production data.</li>
+    <li><strong>Necessity.</strong> FabOrchestrator does not accept direct calls from another
+    website&rsquo;s browser page. This is a deliberate protection in the platform and we are not going to
+    weaken it &mdash; doing so would require putting that credential into the phone, which is the thing
+    we are avoiding.</li>
+    <li><strong>Control.</strong> Which data connections a question is allowed to use is decided on our
+    server from the operator&rsquo;s own permissions, not by whatever the phone sends. FabOrchestrator
+    then checks it again independently.</li>
+  </ul>
+
+  <h3>Where the thinking happens</h3>
+  <p>A confirmed requirement is that a user should be able to <strong>ask for what they want from the
+  landing page</strong> and have the system decide which part of FabOrchestrator should serve it. It is
+  worth being precise about how little of that is new, because it was checked against the platform&rsquo;s
+  own code rather than assumed:</p>
+  <ul>
+    <li><strong>Choosing the tools and the data for a question is already the platform&rsquo;s job, and it
+    already does it.</strong> When a question arrives with a user&rsquo;s data connections attached,
+    FabOrchestrator decides which plant systems to query and how. The app adds nothing here and must not
+    try to.</li>
+    <li><strong>The platform already offers a single ask box of exactly this kind on its own home
+    screen.</strong> The interaction is the product&rsquo;s, not an invention of this project. It is
+    currently wired without data connections, which the app corrects on its own path.</li>
+    <li><strong>What is genuinely missing is the choice between the platform&rsquo;s several agents.</strong>
+    Nothing in the platform decides that today; each agent is reached only from its own screen. That one
+    decision is the new work &mdash; and even then the app asks FabOrchestrator to make the judgement
+    rather than making it itself, so the intelligence stays in one place.</li>
+  </ul>
+  <p>Anything unclear, unanswerable or not permitted falls back to the general-purpose agent, which
+  answers rather than failing. The chosen route is shown on the answer and can be changed in one tap, and
+  picking an agent by name stays available throughout.</p>
+
+  <p>Everything else in the diagram already exists and is unchanged by this project.
+  <strong>No changes to FabOrchestrator are required</strong> &mdash; every service the app needs is
+  already available and already secured the same way. Two optional half-day improvements to the
+  platform are noted in &sect;08; neither blocks delivery.</p>
+</section>
+<section id="phases">
+  <div class="sechead"><div class="secno">03</div><h2>Business-value phases</h2></div>
+  <p class="lead">The same programme of work as &sect;04, grouped by <strong>when the business can
+  realise value</strong> rather than by what gets built. A foundation phase that unlocks certainty,
+  then five that each unlock a capability someone can use. Business milestones <b>B1&ndash;B5</b> close
+  the five value phases; the technical milestones <b>M0&ndash;M5</b> in &sect;05 are unchanged and sit
+  alongside them.</p>
+
+  <div class="tw"><table>
+    <thead><tr>
+      <th style="width:15%">Phase</th><th style="width:28%">Business capability unlocked</th>
+      <th style="width:12%">Work packages</th><th style="width:29%">Business milestone &mdash; demonstrable outcome</th>
+      <th style="width:16%">When it is reached</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="phc">PHASE 0</span><span class="comp">Foundation and proven link</span></td>
+        <td>Nothing user-facing yet, and deliberately so. This phase replaces the project&rsquo;s
+        assumptions with facts: one codebase anyone on the team can build, written evidence of how the
+        live platform actually behaves, and the ability to receive an answer <strong>while it is being
+        written</strong> rather than after it is finished.</td>
+        <td><span class="wpc">WP0</span><span class="wpc">WP6</span><span class="wpc">WP3</span></td>
+        <td>A clean checkout that builds; a one-page report answering the open questions about the live
+        environment with evidence; a recorded exchange showing FabOrchestrator delivering an answer
+        progressively.</td>
+        <td>Week 1<span class="wkd">4.0 days of work</span><span class="msd">M0 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="phc">PHASE 1</span><span class="comp">Secure access to FabOrchestrator</span></td>
+        <td>The first genuinely usable version. A person signs in with <strong>their own FabOrchestrator
+        account</strong> and holds a real conversation with the platform through the app, the answer
+        appearing as it is produced. Their credential stays on our server and never reaches the handset,
+        so every question is attributable and carries that person&rsquo;s own permissions.</td>
+        <td><span class="wpc">WP2</span><span class="wpc">WP4</span></td>
+        <td>A live conversation with FabOrchestrator, signed in as a real user, shown from end to end
+        &mdash; with the platform credential demonstrably absent from the phone.</td>
+        <td>Week 2<span class="wkd">3.5 days of work</span><span class="msd">M1 &check;</span><span class="msd">B1 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="phc">PHASE 2</span><span class="comp">Usable and agentic conversations</span></td>
+        <td><strong>A user asks for what they want from the landing page and the system works out where
+        the request belongs</strong> &mdash; which agent, which tools, which data &mdash; then does the
+        work and returns the answer. Follow-up questions stay in the same thread. Choosing an agent by
+        name stays available as a direct path for anyone who prefers it.</td>
+        <td><span class="wpc">WP5</span><span class="wpc">WP7</span><span class="wpc">WP13</span></td>
+        <td>A plant question typed on the landing screen with nothing selected, answered by the right
+        agent and labelled with which one served it, and the route changed in one tap; a multi-question
+        conversation held and interrupted safely; every agent still directly reachable, and the one
+        permission-restricted agent still shown as unavailable on the menu rather than failing inside a
+        conversation.</td>
+        <td>Week 3<span class="wkd">3.5 days of work</span><span class="msd">M2 &check;</span>
+        <span class="msd">B2 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="phc">PHASE 3</span><span class="comp">Real plant value on mobile</span></td>
+        <td>The demonstration the project exists for. The app installs to a phone&rsquo;s home screen
+        from a QR code &mdash; no app store, no IT deployment &mdash; and answers questions from
+        <strong>live plant data</strong>: yield, downtime, quality, returned as tables that are readable
+        on a handset.</td>
+        <td><span class="wpc">WP1</span><span class="wpc">WP8</span></td>
+        <td>Installed on one iPhone and one Android handset from a QR code; a yield or downtime question
+        answered from live MES data and read as a table on the phone itself.</td>
+        <td>Week 3<span class="wkd">3.0 days of work</span><span class="msd">M3 &check;</span><span class="msd">B3 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="phc">PHASE 4</span><span class="comp">Rich operational output</span></td>
+        <td>The platform&rsquo;s visual output reaches the phone: a requested chart or dashboard opens
+        full-screen and can be tapped through. And the app stops being fragile &mdash; every failure it
+        can hit says in plain language what happened, what to do next, and carries a reference support
+        can trace.</td>
+        <td><span class="wpc">WP9</span><span class="wpc">WP10</span></td>
+        <td>A dashboard requested and rendered on the handset, proven isolated from the app around it;
+        each identified failure &mdash; expired session, data connection down, platform busy &mdash;
+        producing its own message and next step.</td>
+        <td>Week 4<span class="wkd">5.0 days of work</span><span class="msd">M4 &check;</span><span class="msd">B4 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="phc">PHASE 5</span><span class="comp">Ready for reliable use and handover</span></td>
+        <td>Nothing new appears on screen. What changes is who can run it: the app becomes something the
+        business can demonstrate, support and maintain without the engineer who built it &mdash;
+        automated tests, validation on real handsets, a signed-off security review, setup documentation
+        and a written demo procedure.</td>
+        <td><span class="wpc">WP11</span><span class="wpc">WP12</span></td>
+        <td>Test suite green from a clean checkout with no network; security review signed off; a
+        colleague who did not build the app reproduces the full demo from the documentation alone.</td>
+        <td>Week 5<span class="wkd">5.5 days of work</span><span class="msd">M5 &check;</span><span class="msd">B5 &check;</span></td>
+      </tr>
+      <tr class="total"><td colspan="4">Core implementation, as scheduled</td>
+        <td>24.5 days<span class="wkd">&asymp; 5 weeks</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <p>Phase order is set by genuine dependencies, not preference: nothing can reach FabOrchestrator
+  before sign-in works, and plant data cannot be proven before the connection is proven. Each phase is
+  dated by <strong>the one week in which it is finished</strong>, with one engineer at five days a
+  week; Phases 2 and 3 both finish in week 3 because Phase 3 is small. The days shown are the
+  scheduled figures, which include 1.5 days of environment probing and milestone demonstrations on top
+  of the 23.0 days of build effort in &sect;04. With two engineers the phases overlap and delivery
+  compresses to about 4 weeks. Phase 0 is the only phase that unlocks no business
+  capability; it is kept separate rather than folded into Phase 1 because pretending it delivers value
+  would misrepresent what the first week produces.</p>
+
+  <div class="callout">
+    <h3>Phase 1 is the decision point</h3>
+    <p>By the end of week two the entire architecture is proven with a real question and a real answer
+    from a real account, and the first business capability &mdash; secure access &mdash; is realised.
+    Everything after that is capability and quality on a design that is already validated. If the
+    approach is going to fail, it fails there &mdash; about a fifth of the way into the budget, not at
+    the end.</p>
+  </div>
+</section>
+
+<section id="components">
+  <div class="sechead"><div class="secno">04</div><h2>Engineering components</h2></div>
+  <p class="lead">Twelve components. Each one is a capability the app cannot ship without, and each
+  estimate is the effort to bring it to a state we would demonstrate to a customer.</p>
+
+  <div class="tw"><table>
+    <thead><tr>
+      <th style="width:15%">Component</th><th style="width:23%">What is built</th>
+      <th style="width:24%">Why it is needed</th><th style="width:24%">Deliverable</th>
+      <th class="num">Days</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="comp">C1 &nbsp;Baseline &amp; environment validation</span><span class="tag">WP0</span></td>
+        <td>Consolidate the codebase into one reviewable branch, and run five short live checks against
+        the running FabOrchestrator to confirm the environment behaves as the design assumes.</td>
+        <td>Four of the six things that could delay this project are properties of the running system,
+        not of our code. Confirming them in the first two days is the cheapest risk reduction available
+        &mdash; it converts guesses into facts before anyone commits to a date.</td>
+        <td>A single build-able codebase, and a one-page report answering the five environment
+        questions with evidence.</td>
+        <td class="num">0.5</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C2 &nbsp;Mobile app foundation &amp; installability</span><span class="tag">WP1</span></td>
+        <td>The phone-shaped shell: screen layouts that work one-handed, and the packaging that lets
+        the app be installed to a home screen from a QR code and open in its own window.</td>
+        <td>This is the difference between &ldquo;a website&rdquo; and &ldquo;an app&rdquo; to the person
+        holding the phone, and it is the whole reason we chose this delivery route over a native app.
+        Getting install behaviour right on iPhone in particular takes hands-on work &mdash; Apple gives
+        us no automatic prompt, and the failure modes only appear on a real device.</td>
+        <td>An installable app, verified on one iPhone and one Android handset, that behaves sensibly
+        when the network drops.</td>
+        <td class="num">1.5</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C3 &nbsp;Sign-in &amp; session security</span><span class="tag">WP2</span></td>
+        <td>Each user signs in with their own FabOrchestrator account. Their credential is exchanged
+        for a revocable session held on our server; the phone receives only a meaningless identifier.
+        Sign-out, expiry and re-authentication are handled cleanly.</td>
+        <td>Every question must be attributable to a real person, because FabOrchestrator applies that
+        person&rsquo;s permissions, data access, usage limits and audit record. A shared demo account
+        would hand whoever holds the QR code somebody else&rsquo;s access to production data, and would
+        make the audit trail worthless.</td>
+        <td>Working sign-in and sign-out; the FabOrchestrator credential provably absent from the
+        phone; a clean re-authentication prompt when a session ends.</td>
+        <td class="num">2.5</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C4 &nbsp;Secure connector to FabOrchestrator</span><span class="tag">WP3+WP4</span></td>
+        <td>The single server-side component that knows how to talk to FabOrchestrator: sign in, ask
+        which data connections a user has, forward a question, pass the answer straight back, and
+        translate any platform error into something the app can act on.</td>
+        <td>It is the only place in the app that knows FabOrchestrator&rsquo;s interface. Keeping it in
+        one component means that when the platform changes, exactly one thing has to change with it.
+        Spreading that knowledge across the app is how integrations become expensive to maintain.</td>
+        <td>One connector carrying all agent traffic, with every failure returning a predictable,
+        displayable message.</td>
+        <td class="num">2.0</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C5 &nbsp;Live answer streaming</span><span class="tag">WP5+WP6</span></td>
+        <td>Reading FabOrchestrator&rsquo;s answer as it is produced and showing it word by word, plus
+        carrying the conversation so follow-up questions work.</td>
+        <td>A question that involves looking up plant data can take one to three minutes. Waiting in
+        silence for that and then showing everything at once reads as a broken app. Progressive display
+        is the difference between a system that feels responsive and one that feels hung &mdash; and it
+        is the single most visible quality signal in a demo.</td>
+        <td>Answers that appear progressively, survive a poor connection, can be stopped mid-answer,
+        and support follow-up questions.</td>
+        <td class="num">1.5</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C6 &nbsp;Agent selection &amp; access control</span><span class="tag">WP7</span></td>
+        <td>The landing screen presenting FabOrchestrator&rsquo;s agents, each routed to the right
+        service, with the one permission-gated agent shown as unavailable when the platform&rsquo;s own
+        permission check says so.</td>
+        <td>Only one agent &mdash; the Modeling Agent &mdash; requires a role permission, and
+        FabOrchestrator itself enforces it by refusing the request. The app adds presentation, not
+        authorisation: asking the platform up front turns a mid-conversation refusal into a labelled
+        card, which is the difference between a closed door and a broken one.</td>
+        <td>An agent menu where every entry either opens a working conversation or explains why it
+        cannot.</td>
+        <td class="num">1.0</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C7 &nbsp;Operational data answers</span><span class="tag">WP8</span></td>
+        <td>Making sure a question about the plant actually reaches live MES and quality data, and that
+        the resulting figures and tables are readable on a small screen.</td>
+        <td>This is the demo. It is also the most fragile link, because FabOrchestrator only queries
+        the data connections that are explicitly enabled for that user &mdash; if none are, the platform
+        still answers, but from general knowledge rather than from the plant. That failure looks like a
+        wrong answer rather than a missing permission, so the app must detect it and say so.</td>
+        <td>A metric question answered from live plant data on a phone, with wide tables that remain
+        readable, and an explicit warning when a user has no data access.</td>
+        <td class="num">1.5</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C8 &nbsp;Dashboard &amp; visual output</span><span class="tag">WP9</span></td>
+        <td>Displaying the charts and dashboards FabOrchestrator generates, inside a security container
+        that isolates them from the rest of the app, sized for a phone.</td>
+        <td>Dashboards are FabOrchestrator&rsquo;s most persuasive output and the platform produces them
+        in two different forms, which the app has to handle differently. It is also the most
+        security-sensitive part of the build: a generated dashboard is live, interactive content, so it
+        must be strictly isolated from the app&rsquo;s screens and credentials. That isolation, plus
+        making a desktop-shaped chart usable at phone width, is what makes this the largest component.</td>
+        <td>A dashboard request produces a tappable, full-screen chart on the phone, verified to be
+        unable to reach the app around it.</td>
+        <td class="num">3.0</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C9 &nbsp;Progress &amp; failure handling</span><span class="tag">WP10</span></td>
+        <td>What the user sees while waiting, and what they see when something goes wrong: an expired
+        session, a permission they lack, a usage limit, an unreachable data source, a dropped
+        connection.</td>
+        <td>This app sits in front of a live production platform, so failures are normal operating
+        conditions, not edge cases. Each one has a different correct response &mdash; sign in again,
+        ask an administrator, try later, retry now. A single &ldquo;something went wrong&rdquo; sends the
+        user to find whoever set the demo up, which in a customer meeting is the failure that matters.</td>
+        <td>Every identified failure produces a distinct, plain-language message with a clear next
+        step, plus a reference code support can trace.</td>
+        <td class="num">2.0</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C10 &nbsp;Test suite &amp; verification</span><span class="tag">WP11</span></td>
+        <td>Automated tests for each layer separately, a simulated FabOrchestrator so the app can be
+        tested without one, and a scripted live check against the real platform.</td>
+        <td>The chain has five links and two of them &mdash; the platform and the plant data &mdash; are
+        outside this team&rsquo;s control and are not always available. Without layer-by-layer tests,
+        every fault looks identical and diagnosis is guesswork. This is also what makes the app
+        maintainable after handover rather than a demo that decays.</td>
+        <td>A test suite that runs from a clean checkout with no network, plus a live check script that
+        pinpoints which link in the chain has failed.</td>
+        <td class="num">3.0</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C11 &nbsp;Device validation, security review &amp; handover</span><span class="tag">WP12</span></td>
+        <td>End-to-end validation on real handsets, a security review, configuration and logging
+        cleanup, setup documentation, a written demo procedure and a stated list of limitations.</td>
+        <td>The app touches a production identity system and production data, so it needs a review
+        before it is shown outside the team. And a demo nobody but its author can run is not a
+        deliverable &mdash; the runbook and documentation are what let this be presented, and supported,
+        by someone else.</td>
+        <td>Signed-off security review; README that a new engineer can follow; one-page demo runbook;
+        written limitations.</td>
+        <td class="num">2.5</td>
+      </tr>
+      <tr>
+        <td><span class="comp">C12 &nbsp;Agentic entry point</span><span class="tag">WP13</span></td>
+        <td>An ask box on the landing screen that takes a plain request, works out which part of
+        FabOrchestrator should serve it, sends it there, and shows which one answered &mdash; with one tap
+        to send it somewhere else instead.</td>
+        <td>Confirmed requirement: people should not have to know the product&rsquo;s internal structure
+        to ask a question, and on a phone the choice costs a screen before anything is typed. Checked
+        against the platform&rsquo;s code first: choosing the tools and the data for a question is already
+        the platform&rsquo;s own work, so the only genuinely new decision is which agent &mdash; and even
+        that judgement is asked of the platform rather than made in the app.</td>
+        <td>A landing question answered without an agent being chosen, labelled with the agent that
+        served it and correctable in one tap, with agent-by-name selection still working.</td>
+        <td class="num">2.0</td>
+      </tr>
+      <tr class="total">
+        <td colspan="4">Core implementation</td><td class="num">23.0</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <p style="font-size:15px;color:var(--ink-3)">The <code>WP</code> tags map each component to the
+  corresponding work package in the detailed engineering plan, where the file-level breakdown,
+  interface contracts and test cases behind each estimate are recorded.</p>
+</section>
+
+<section id="milestones">
+  <div class="sechead"><div class="secno">05</div><h2>Milestones</h2></div>
+  <p>Six gates. Each is defined by a capability we can <em>show</em>, not by work completed &mdash;
+  so progress is demonstrable at every stage rather than only at the end.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:6%"></th><th style="width:22%">Milestone</th>
+      <th style="width:8%">Phase</th>
+      <th style="width:30%">Capability achieved</th><th>Proof required before the next stage begins</th></tr></thead>
+    <tbody>
+      <tr><td><b>M0</b></td><td>Baseline confirmed</td><td>Phase 0</td>
+        <td>We know the running environment behaves as designed, and the codebase builds cleanly for
+        anyone on the team.</td>
+        <td>Clean checkout builds; the five environment questions answered with evidence.</td></tr>
+      <tr><td><b>M1</b></td><td>Architecture proven end to end</td><td>Phase 1</td>
+        <td>A signed-in operator holds a live, streaming conversation with FabOrchestrator through the
+        app. The whole design is validated.</td>
+        <td>A live conversation, demonstrated; the FabOrchestrator credential shown to be absent from
+        the phone; answers arriving progressively rather than all at once.</td></tr>
+      <tr><td><b>M2</b></td><td>All agents reachable, and reachable without choosing one</td><td>Phase 2</td>
+        <td>A question asked from the landing page is routed to the right agent automatically, and every
+        agent on the landing screen either works or explains why it is unavailable.</td>
+        <td>A plant question answered with nothing selected, labelled with the agent that served it and
+        re-routable in one tap; each agent also opened in turn; a permission-restricted agent shown as
+        unavailable on the menu rather than failing inside a conversation.</td></tr>
+      <tr><td><b>M3</b></td><td>Real plant data on a phone</td><td>Phase 3</td>
+        <td>The core business demonstration works: a metric question answered from live MES data on an
+        installed app.</td>
+        <td>Installed from the home screen on a real handset; a yield or downtime question returns a
+        readable table drawn from plant data.</td></tr>
+      <tr><td><b>M4</b></td><td>Dashboards and failures behave</td><td>Phase 4</td>
+        <td>Visual output works, and every failure path is safe and understandable.</td>
+        <td>A dashboard request renders on the phone and is proven isolated; every identified failure
+        produces its own message and next step.</td></tr>
+      <tr><td><b>M5</b></td><td>Ready to hand over</td><td>Phase 5</td>
+        <td>The app can be demonstrated, supported and maintained by someone who did not build it.</td>
+        <td>Test suite green from a clean checkout; security review signed off; a colleague reproduces
+        the demo from the documentation alone.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout">
+    <h3>Each technical milestone closes one business phase</h3>
+    <p>The six gates and the six phases in &sect;03 are the same sequence seen from two sides: the phase is
+    the capability the business gets, the milestone is the technical proof that closes it. M1&ndash;M5
+    pair with B1&ndash;B5; M0 closes Phase 0, which delivers certainty rather than capability and so
+    carries no business milestone. M1 &mdash; the end of Phase 1, by the end of
+    week two &mdash; is the decision point, because the entire architecture is proven there with a real
+    question and a real answer. Everything after it is capability and quality on a validated design.</p>
+  </div>
+</section>
+<section id="timeline">
+  <div class="sechead"><div class="secno">06</div><h2>Timeline</h2></div>
+  <p>One engineer, five working days per week. The sequence is set by genuine dependencies: nothing can
+  talk to FabOrchestrator before sign-in works, and plant data cannot be proven before the connection
+  is proven.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:9%">Week</th><th style="width:8%">Phase</th>
+      <th style="width:30%">Focus</th>
+      <th class="num">Days</th><th style="width:10%">Milestone</th><th>What is demonstrated</th></tr></thead>
+    <tbody>
+      <tr><td><b>Week 1</b></td><td>0</td>
+        <td>Baseline and environment checks; live answer streaming; the connector&rsquo;s platform-facing
+        half</td>
+        <td class="num">4.0</td><td>M0</td>
+        <td>Environment report; the platform confirmed to stream answers progressively end to end</td></tr>
+      <tr><td><b>Weeks 1&ndash;2</b></td><td>1</td>
+        <td>Sign-in and session security; the connector completed</td>
+        <td class="num">3.5</td><td>M1</td>
+        <td>A live conversation with FabOrchestrator through the app, credential held server-side</td></tr>
+      <tr><td><b>Weeks 2&ndash;3</b></td><td>2</td>
+        <td>Conversation handling; agent menu and access control; the agentic entry point</td>
+        <td class="num">3.5</td><td>M2</td>
+        <td>A landing question routed and answered with no agent chosen; all agents also reachable by
+        name, each either opening or explaining itself on its card</td></tr>
+      <tr><td><b>Week 3</b></td><td>3</td>
+        <td>Mobile foundation and installability; live plant data answers</td>
+        <td class="num">3.0</td><td>M3</td>
+        <td>App installed from a QR code; a yield question answered from MES data, on a handset</td></tr>
+      <tr><td><b>Weeks 3&ndash;4</b></td><td rowspan="2">4</td>
+        <td>Dashboard and visual output</td>
+        <td class="num">3.0</td><td rowspan="2">M4</td>
+        <td>A dashboard generated and displayed safely on the phone</td></tr>
+      <tr><td><b>Week 4</b></td>
+        <td>Progress indicators and failure handling</td>
+        <td class="num">2.0</td>
+        <td>Every failure path producing a clear message and next step</td></tr>
+      <tr><td><b>Weeks 4&ndash;5</b></td><td rowspan="2">5</td>
+        <td>Test suite and verification (built alongside throughout, completed here)</td>
+        <td class="num">3.0</td><td rowspan="2">M5</td>
+        <td>Full test suite running from a clean checkout</td></tr>
+      <tr><td><b>Week 5</b></td>
+        <td>Device validation, security review, documentation, demo runbook</td>
+        <td class="num">2.5</td>
+        <td>A colleague reproduces the demo from documentation alone</td></tr>
+      <tr class="total"><td colspan="3">Core implementation</td><td class="num">24.5</td>
+        <td colspan="2">&asymp; 5 working weeks</td></tr>
+    </tbody>
+  </table></div>
+
+  <p style="font-size:15px;color:var(--ink-3)">The 24.5 days here exceeds the 23.0 in &sect;04 by
+  1.5 days of environment probing and milestone demonstrations scheduled into week 1. The
+  component estimates cover build effort only; this table covers the calendar.</p>
+
+  <h3>With a second engineer</h3>
+  <p>Four components &mdash; mobile foundation, answer streaming, the dashboard display work and the
+  test suite &mdash; can start on day one without waiting for anything else. A second engineer taking
+  those compresses delivery to <strong>about 4 weeks</strong>. It does not halve the
+  schedule: sign-in, the connector and final handover run in sequence regardless, and both engineers
+  need the week-one environment answers before either can trust their work.</p>
+</section>
+
+<section id="effort">
+  <div class="sechead"><div class="secno">07</div><h2>Effort summary</h2></div>
+
+  <div class="grid3">
+    <div class="kpi"><div class="k">Core implementation</div><div class="v">24.5 d</div>
+      <div class="s">Build, test and hand over the twelve components. Derived from the work, not fitted
+      to a target date.</div></div>
+    <div class="kpi"><div class="k">Integration contingency</div><div class="v">9.0 d</div>
+      <div class="s">Reserve for things outside this team&rsquo;s control. Held separately and released
+      as each is resolved.</div></div>
+    <div class="kpi"><div class="k">Total</div><div class="v">33.5 d</div>
+      <div class="s">&asymp; 7 working weeks with one engineer; about 4 weeks with two.</div></div>
+  </div>
+
+  <p>The two numbers have different causes and should be tracked separately. <strong>Core effort is a
+  function of the work</strong> &mdash; we control it and it is unlikely to move much.
+  <strong>Contingency is a function of the environment</strong> &mdash; hosting behaviour, plant-data
+  availability, platform deployment state and physical devices. None of it can be settled by writing
+  code; all of it can be settled by checking.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:32%">Contingency driver</th><th>Why we cannot size it from the code</th><th class="num">Days</th></tr></thead>
+    <tbody>
+      <tr><td><b>Answer streaming through the hosting layers</b></td>
+        <td>Our hosting and the platform&rsquo;s hosting each sit in front of the connection. Either can
+        hold an answer back and deliver it in one block, which would undo the most visible quality of
+        the app. This has already happened once on this platform: FabOrchestrator was moved to different
+        infrastructure specifically because the previous host broke streaming. A fix may be an
+        infrastructure change rather than a code change.</td><td class="num">2.0</td></tr>
+      <tr><td><b>Plant data availability</b></td>
+        <td>The data connectors are separate services, not in this codebase and not maintained by this
+        team. Two of ten were failing at the last recorded check. The plant databases are also reachable
+        only from a specific network, so a locally run platform may prove the app works without proving
+        it can reach data.</td><td class="num">2.0</td></tr>
+      <tr><td><b>Platform deployment currency</b></td>
+        <td>The live FabOrchestrator deployment is known to be behind the current code, and at least one
+        agent&rsquo;s service may not be present on it yet. Bringing it current is another team&rsquo;s
+        release schedule, not ours.</td><td class="num">1.5</td></tr>
+      <tr><td><b>iPhone install behaviour</b></td>
+        <td>Apple provides no automatic install prompt and no way to test the installed experience
+        except on a physical device. This app has already had one defect that appeared only on a
+        cold launch of the installed copy.</td><td class="num">1.5</td></tr>
+      <tr><td><b>Account and permission provisioning</b></td>
+        <td>The demonstration account needs a role with live data connections enabled, and the
+        Modeling Agent permission. Both are granted by an administrator, not by us.</td>
+        <td class="num">1.0</td></tr>
+      <tr><td><b>Dashboard fit on a phone</b></td>
+        <td>Dashboards are generated for a desktop-sized screen. Some will simply be wide. Changing that
+        means changing how the platform generates them, which is outside this project&rsquo;s scope.</td>
+        <td class="num">1.0</td></tr>
+      <tr class="total"><td colspan="2">Integration contingency &mdash; approximately 39% of core</td><td class="num">9.0</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout">
+    <h3>Roughly 4 of the 9 contingency days can be released in week one</h3>
+    <p>Four of the six drivers above are answered by the environment checks in component C1 &mdash; half
+    a day of work, run in the first two days. If streaming behaves, the data connections are live, the
+    platform deployment is current and the demo account is provisioned, that reserve is freed at the M0
+    gate and the total falls to about <strong>29.5 days</strong>. If any of them fails, we know at the
+    beginning rather than in week four, and we can decide what to do about it while there is still time.</p>
+  </div>
+</section>
+<section id="risks">
+  <div class="sechead"><div class="secno">08</div><h2>Dependencies and risks</h2></div>
+
+  <h3>External dependencies</h3>
+  <p>Four things this project needs from outside the engineering team. All four are small asks, and all
+  four are on the critical path if they arrive late.</p>
+  <div class="tw"><table>
+    <thead><tr><th style="width:32%">We need</th><th>From</th><th>Needed by</th></tr></thead>
+    <tbody>
+      <tr><td>A demonstration FabOrchestrator account with a role that has live data connections
+        enabled, and the Modeling Agent permission</td><td>Platform administrator</td>
+        <td><b>Week 1</b> &mdash; the environment checks depend on it</td></tr>
+      <tr><td>Confirmation of which FabOrchestrator instance the demo runs against, and that it is
+        current</td><td>Platform owners</td><td><b>Week 1</b></td></tr>
+      <tr><td>One iPhone and one Android handset available for testing</td><td>Internal</td>
+        <td><b>Week 3</b> and <b>Week 5</b></td></tr>
+      <tr><td>A small database for storing user sessions</td><td>Infrastructure</td>
+        <td><b>Week 2</b> &mdash; without it, every deployment signs everyone out</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Principal risks</h3>
+  <div class="callout">
+    <h3>Automatic routing can send a request to the wrong agent</h3>
+    <p>Some requests genuinely sit between two agents, and the platform has no router of its own whose
+    accuracy we could inherit. Four things keep this from being a delivery risk: the default is the agent
+    that can answer the widest range of questions, so an unclear request still gets answered; the agent
+    that served the answer is shown, and can be changed in one tap; picking an agent by name remains a
+    first-class path; and a fixed set of about twenty real questions is scored, so accuracy is a number we
+    can watch rather than an anecdote. No contingency is held against it &mdash; it is our own code, not
+    an external dependency.</p>
+  </div>
+  <div class="tw"><table>
+    <thead><tr><th style="width:26%">Risk</th><th style="width:9%"></th><th style="width:34%">Impact if it occurs</th><th>How we handle it</th></tr></thead>
+    <tbody>
+      <tr><td>Hosting layers hold answers back instead of streaming them</td>
+        <td><span class="sev s-hi">High</span></td>
+        <td>The app works but feels broken &mdash; a two-minute silence then a wall of text. The most
+        visible quality of the product is lost.</td>
+        <td>Checked in week one, before anything is built on the assumption. If it fails, it becomes an
+        infrastructure request, raised early rather than discovered at the demo.</td></tr>
+      <tr><td>The demo account has no live data connections</td>
+        <td><span class="sev s-hi">High</span></td>
+        <td>The platform still answers, but from general knowledge rather than plant data &mdash; which
+        reads as a wrong answer, not a missing permission. Worst case, this is discovered in front of a
+        customer.</td>
+        <td>Checked in week one. The app is also built to detect it and say so explicitly rather than
+        answer anyway.</td></tr>
+      <tr><td>The generated dashboard container is misconfigured</td>
+        <td><span class="sev s-hi">High if wrong</span></td>
+        <td>A generated dashboard is live interactive content. Weak isolation would let it reach the
+        app around it.</td>
+        <td>Isolation is a fixed rule in the design, verified by an automated test that attempts to
+        break out and must fail.</td></tr>
+      <tr><td>Sessions time out during a demonstration</td>
+        <td><span class="sev s-md">Medium</span></td>
+        <td>The platform ends a session after 30 minutes of inactivity, which a pocketed phone reaches
+        easily. The user is asked to sign in again mid-demo.</td>
+        <td>The app handles it cleanly &mdash; sign in again and continue where you were. Worth briefing
+        whoever runs the demo. Changing the 30-minute policy is a platform decision, not ours.</td></tr>
+      <tr><td>Data connector services unavailable</td>
+        <td><span class="sev s-md">Medium</span></td>
+        <td>Certain questions cannot be answered. Two of ten connectors were failing at the last check.</td>
+        <td>Outside this codebase entirely. Mitigated by choosing demo questions that use confirmed-live
+        connections, and by clear messaging when one is down.</td></tr>
+      <tr><td>The live platform is behind the current code</td>
+        <td><span class="sev s-md">Medium</span></td>
+        <td>One agent may not be available until the platform is redeployed.</td>
+        <td>That agent ships visibly unavailable rather than broken. Checked in week one so the
+        conversation with the platform team happens early.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="callout warnbox">
+    <h3>Two decisions we need from this review</h3>
+    <p><strong>1. Scope of the app.</strong> The current codebase also carries a separate production-order
+    review workflow that runs on sample data and does not connect to FabOrchestrator. The estimate above
+    assumes it is set aside so the app is one clear thing: a mobile front door to the platform. Keeping
+    it adds roughly <strong>3 days</strong> and leaves two different sign-in routes to secure, test and
+    explain.</p>
+    <p><strong>2. Which platform the demo runs against.</strong> The live deployment gives us real plant
+    data but is behind the current code. A local instance gives us the newest code but may not reach
+    plant data at all. These cannot both be the answer, and the choice affects what we can promise to
+    show.</p>
+  </div>
+
+  <p style="font-size:15px;color:var(--ink-3)">Two optional half-day improvements to FabOrchestrator
+  itself were identified &mdash; correcting an out-of-date interface document, and adding a simple
+  availability check that would let the app distinguish &ldquo;the platform is down&rdquo; from
+  &ldquo;your session expired&rdquo;. Neither is required for delivery; both would need the platform
+  team&rsquo;s agreement.</p>
+</section>
+
+<section id="done">
+  <div class="sechead"><div class="secno">09</div><h2>Definition of done</h2></div>
+  <p>The project is complete when all of the following are true and demonstrated.</p>
+
+  <div class="grid2">
+    <div class="card">
+      <h3>The app works</h3>
+      <ul>
+        <li>Scanning a QR code opens the app; it installs to the home screen on iPhone and Android and
+        opens in its own window.</li>
+        <li>A user signs in with their own FabOrchestrator account and reaches the landing screen.</li>
+        <li>A question asked from the landing screen, with nothing selected, is routed to the right part
+        of FabOrchestrator, answered, and labelled with which one answered it &mdash; and the route can be
+        changed in one tap.</li>
+        <li>Every agent is also reachable by name, and either opens a working conversation or states why
+        it is unavailable.</li>
+        <li>Answers appear progressively &mdash; text, tables and dashboards &mdash; and follow-up
+        questions keep their context.</li>
+        <li>A metric question returns figures drawn from live plant data.</li>
+        <li>Every failure produces a clear message and an obvious next step.</li>
+        <li>Sessions expire and resume cleanly; signing out ends access.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>It is safe and supportable</h3>
+      <ul>
+        <li>The FabOrchestrator credential is provably absent from the phone.</li>
+        <li>Generated dashboards are verified isolated from the app around them.</li>
+        <li>No permission decision can be influenced by anything the phone sends.</li>
+        <li>The app contains no plant logic, no data queries and no AI reasoning of its own &mdash; the
+        boundary the project was built on is verifiable, not just intended.</li>
+        <li>Automated tests run from a clean checkout with no network access.</li>
+        <li>A security review is signed off.</li>
+        <li>A colleague reproduces the full demo from the written documentation alone.</li>
+        <li>Limitations are written down, not discovered by a customer.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout">
+    <h3>The one-sentence test</h3>
+    <p>A supervisor scans a code on the shop floor, installs the app, asks what yield looked like this
+    week, and reads FabOrchestrator&rsquo;s answer &mdash; computed by FabOrchestrator, from
+    FabOrchestrator&rsquo;s data, under that supervisor&rsquo;s own permissions &mdash; on their phone.
+    Every component in this plan exists to make that sentence true without a second copy of
+    FabOrchestrator being built to do it.</p>
+  </div>
+
+  <div class="foot">
+    Companion documents: the business-phase view, which carries &sect;03 as a single shareable table;
+    the work-package table, which shows the same work in build order; and the detailed engineering
+    implementation plan, which records the interface contracts, test cases and source references behind
+    every estimate above. All four carry the same estimates and the same six phases.
+  </div>
+</section>
+
+</div>

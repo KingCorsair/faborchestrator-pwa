@@ -1,0 +1,102 @@
+# Fly.io configuration.
+#
+# Chosen over Vercel because `lib/decisions.ts` is a module-level Map: on
+# serverless each invocation may be a fresh instance, so you approve an order
+# and Activity shows nothing. One long-lived machine keeps that Map. Chosen
+# over Render because Render's free tier sleeps after ~15 minutes idle, and a
+# 50-second cold start on a link someone opened unprompted reads as broken.
+#
+# Deployed from this directory with `flyctl deploy` — no GitHub connection,
+# so the host is never granted read access to anything but what the Docker
+# build context sends it.
+
+# Must be globally unique across Fly. Change it, then `flyctl apps create <name>`.
+# Created 2026-08-13 under the `personal` org; the URL is faborch-demo.fly.dev.
+#
+# Note that a Fly app cannot be renamed — the name *is* the hostname. Changing
+# it means a new app, a fresh copy of every secret, a redeploy and a new QR
+# code, which is cheap now and expensive once the link has been handed out.
+app = "faborch-demo"
+
+# Nearest region to whoever opens the demo, not to you — every request pays the
+# round trip. `flyctl platform regions` lists them all.
+#
+# `bom` (Mumbai) is the natural choice from here and was tried first: it
+# returned "no capacity available in bom" at machine creation on 2026-08-13.
+# Capacity is per-region and transient, so bom is worth retrying later; `sin`
+# (Singapore) is the nearest reliable fallback.
+primary_region = "sin"
+
+# ── FabInsight ────────────────────────────────────────────────────────────────
+#
+# The FabOrchestrator this demo forwards prompts to. FabInsight is not built in
+# this app: `/fabinsight` sends the prompt to the running FO application, whose
+# agent and approved MCP tools answer it, and the answer is streamed back here.
+#
+# `[env]`, not `flyctl secrets`, because it is not a secret — it is the public
+# CloudFront distribution `docs/05-deployment-and-ci.md` names as the end-user
+# entry point for FabOrchestrator. Keeping it here means the deployed
+# configuration is readable in the repo rather than only in the Fly dashboard.
+#
+# **HTTPS is load-bearing.** The EB origin behind this distribution also answers
+# on plain http, and pointing at it directly would put FabOrchestrator passwords
+# and session tokens in cleartext across the public internet. CloudFront
+# terminates TLS.
+#
+# Unset, `/fabinsight` says it is not connected to a FabOrchestrator and the
+# production order workflow is unaffected.
+[env]
+  FABORCH_BASE_URL = "https://d7y8a8whrch88.cloudfront.net"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  # Redirects http → https. Not cosmetic here: outside a secure context the
+  # service worker will not register and the camera is unavailable, so the
+  # scanner degrades silently rather than erroring.
+  force_https = true
+
+  # The two settings that make this "openable whenever" rather than
+  # "openable while it happens to be warm".
+  #
+  # A stopped machine costs a cold start AND empties the in-memory decision
+  # store, so a decision recorded yesterday is gone today. Keeping one machine
+  # running is what buys both. It is also the line to change if this becomes
+  # too expensive to leave up — at which point read the note above about what
+  # stopping actually costs.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  # ⚠ **These settings did not hold on 2026-08-13.** `flyctl config show`
+  # confirmed all three were applied server-side, and the machine was still
+  # found `stopped` minutes after deploying — it answered a request only
+  # because `auto_start_machines` woke it. So treat this block as a request,
+  # not a guarantee, and check `flyctl machine list` after every deploy;
+  # `flyctl machine start <id>` puts it back.
+  #
+  # It matters more here than the cold start suggests. A *stopped* machine
+  # loses its memory, and `lib/decisions.ts` is an in-memory Map — so an idle
+  # period silently empties the decision log. The Activity screen already
+  # reports `durable: false`, which keeps it honest, but the real fix is Tier 3
+  # persistence rather than a scheduler flag anyone can outvote.
+
+  # ⚠ **Deploy with `--ha=false`.** `min_machines_running` sets a floor, not a
+  # ceiling: Fly's default is to create *two* machines for high availability,
+  # and the first deploy here announced exactly that. Two machines round-robin
+  # requests, and `lib/decisions.ts` is a per-process in-memory Map — so a
+  # decision recorded on one machine is invisible on the other, and the Activity
+  # feed shows roughly half of what you did. That is the same defect that rules
+  # out Vercel, arriving by a different route.
+  #
+  # There is no fly.toml key for this; it is a deploy-time flag, which is why it
+  # is a comment rather than a setting. When Tier 3 gives decisions real
+  # persistence, drop the flag and let it run HA properly.
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 256 MB is enough until an analysis is in flight. An OOM mid-demo restarts
+  # the machine, which loses every recorded decision along with it.
+  memory = "512mb"

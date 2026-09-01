@@ -1,0 +1,54 @@
+{
+  "name": "faborchestrator-pwa-demo",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 3002",
+    "build": "next build",
+    "start": "next start --port 3002",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/copy-zxing-wasm.mjs",
+    "test:mes": "npx tsx --test \"__tests__/mes/*.test.ts\"",
+    "icons": "npx tsx scripts/generate-icons.ts",
+    "test:ai": "npx tsx --test \"__tests__/ai/*.test.ts\"",
+    "test:scan": "npx tsx --test \"__tests__/scan/*.test.ts\"",
+    "test:decisions": "npx tsx --test \"__tests__/decisions/*.test.ts\"",
+    "test:platform": "npx tsx --test \"__tests__/platform/*.test.ts\"",
+    "test": "npm run test:mes && npm run test:ai && npm run test:scan && npm run test:decisions && npm run test:platform && npm run test:faborch",
+    "labels": "npx tsx scripts/generate-demo-labels.ts",
+    "qr": "npx tsx scripts/generate-qr.ts",
+    "test:faborch": "npx tsx --test \"__tests__/faborch/*.test.ts\""
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.473.0",
+    "next": "16.1.4",
+    "pg": "^8.23.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^2.6.0",
+    "zod": "^4.3.6",
+    "zxing-wasm": "^3.1.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.4",
+    "qrcode": "^1.5.4",
+    "tailwindcss": "^4",
+    "tsx": "^4.19.2",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20.11"
+  }
+}

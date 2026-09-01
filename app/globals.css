@@ -1,0 +1,297 @@
+@import "tailwindcss";
+/* FabOrchestrator V2 — the design language the product actually ships.
+   Scoped to `.fab`; see app/faborch-theme.css. */
+@import "./faborch-theme.css";
+
+/*
+ * Full-height without `overflow: hidden`.
+ *
+ * The parent product pins <html>/<body> to `h-full overflow-hidden` because its
+ * chat app scrolls its own panes — and the root CLAUDE.md records the defect
+ * that caused on an ordinary document-flow page, where everything below the
+ * fold became unreachable. This is a handheld app read on a shop floor, so the
+ * height is here for the app shell to fill and the scroll is left alone.
+ */
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #f6f7fc;
+  color: #161c34;
+  -webkit-font-smoothing: antialiased;
+  /* iOS Safari: keep content clear of the home indicator and the notch when
+     the PWA runs standalone.
+
+     This covers everything in normal document flow and **nothing that is
+     `position: fixed`** — a fixed element is placed against the viewport, not
+     against this padded box, so it ignores these insets entirely. The scan
+     sheet is the one such element in the app and carries its own; see
+     `components/fab/scan-sheet.tsx`. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* iOS rubber-band. Dragging past the top on a page with a sticky header
+     shows the header floating over the page surface with a gap above it, which
+     reads as the header having come loose rather than as an overscroll. */
+  overscroll-behavior-y: none;
+}
+
+/*
+ * Touch targets.
+ *
+ * The V2 control scale is a desktop scale: a button at 13.5px with 9px of
+ * vertical padding is about 33px tall, which is fine for a mouse and too small
+ * for a gloved thumb. WCAG 2.2 puts the floor at 44px, and a shop floor is
+ * exactly the place that number was written for.
+ *
+ * Applied only under `pointer: coarse` so the desktop density — which is what
+ * makes the screens read as FabOrchestrator — is untouched. `min-width` is safe
+ * on every control here: the wide ones already exceed it, and it is what rescues
+ * the 34px square icon buttons in the top nav.
+ */
+/*
+ * The review panel on /orders.
+ *
+ * It sits at the top of the screen at every width. From 1024px up it also
+ * **pins** there, so the controls stay in view while the list scrolls past.
+ *
+ * It shared this rule with a decision dock on the order screen until
+ * 2026-08-19, when that section was removed — the review panel is now the only
+ * place a decision is taken.
+ *
+ * ── Why a class and not Tailwind utilities ──────────────────────────────────
+ * Tailwind has no variant for "sticky under a header of variable height", and
+ * this is the same shape the two panels share.
+ *
+ * ── Width only, as of 2026-08-19 ───────────────────────────────────────────
+ * It used to require `hover: hover` and `pointer: fine` as well, because a
+ * touch device got F-11's fixed bottom bar and the in-card button row was
+ * hidden — so pinning an iPad would have docked a card whose buttons were
+ * somewhere else. **The bar is gone**: the buttons are in the card at every
+ * width, which is what was asked for. With a complete card to dock, a
+ * landscape tablet should get the same treatment as a laptop.
+ *
+ * Phones stay unpinned. The panel is the first thing on the page there, and a
+ * card with a field and three buttons would cost a third of the viewport for
+ * the whole scroll.
+ *
+ * ── `--shell-h` ────────────────────────────────────────────────────────────
+ * The header's exact height, so the card's top edge meets the nav's bottom edge
+ * with no gap for content to show through. It is a token because touch grows
+ * the nav's controls to the 44px minimum and the header with them — the number
+ * differs by device, and getting it wrong tucks the card under the nav.
+ */
+@media (min-width: 1024px) {
+  /*
+   * The review panel at the top of /orders pins on the same terms and for the
+   * same reason: it is the page's primary control, and the list it acts on is
+   * long enough to scroll past it. On touch it stays in flow at the top of the
+   * page, where it is the first thing rendered — a pinned form with a select, a
+   * note field and three buttons would cost most of a phone viewport for the
+   * whole scroll.
+   */
+  .fab .fab-review-panel {
+    position: sticky;
+    top: var(--shell-h);
+    /* Under the nav's z-10, so the nav always wins the overlap; above the
+       page's own content, so the evidence scrolls beneath the card. */
+    z-index: 5;
+    /* The section's "Your decision" label sits on the page surface, not on the
+       card, so without a background the text scrolling underneath would show
+       through beside it. */
+    background: var(--page-surface);
+    padding-bottom: 10px;
+    /* A tall sticky element pins its top and carries its own bottom off-screen
+       where page scrolling cannot reach it — the failure F-09 capped the right
+       column for. The card is short, but an order with a long decision history
+       is not, so the cap is here rather than left to chance. */
+    max-height: calc(100vh - var(--shell-h));
+    overflow-y: auto;
+  }
+}
+
+/* `pointer: coarse` on its own misses a touchscreen laptop or a Surface: those
+   report a *fine* pointer because a trackpad is attached, while still being
+   poked with a gloved thumb on the shop floor. `hover: none` catches them. */
+@media (pointer: coarse), (hover: none) {
+  /* The 44px minimum below grows the nav's control row from 34px, and with it
+     the header that the decision dock and the review panel sit beneath. */
+  .fab {
+    --shell-h: 65px;
+  }
+
+  .fab button,
+  .fab [role="button"],
+  .fab nav a,
+  .fab input,
+  .fab textarea,
+  .fab select {
+    min-height: 44px;
+  }
+
+  .fab button,
+  .fab [role="button"] {
+    min-width: 44px;
+  }
+
+  /*
+   * iOS zooms the whole page when a focused form control is set below 16px —
+   * and it does not zoom back out when the field blurs. The operator is left
+   * on a page magnified past its layout, panning to find the buttons.
+   *
+   * Every <input> in this app is already 16px for exactly this reason. The two
+   * decision notes (`analysis-panel.tsx`, `decision-review.tsx`) are 14px,
+   * which is the correct V2 body size on a desktop and a trap on a phone: the
+   * one control a supervisor types into at length is the one that strands
+   * them. `!important` because the size is a Tailwind utility on the element.
+   *
+   * Coarse pointers only, so the desktop density that makes these screens read
+   * as FabOrchestrator is untouched.
+   */
+  .fab input,
+  .fab textarea,
+  .fab select {
+    font-size: 16px !important;
+  }
+
+  /*
+   * Status pills, 12px → 14px on touch.
+   *
+   * The pill's word is the status — the dot beside it is decorative and
+   * `aria-hidden`, so if the word cannot be read the pill carries nothing at
+   * all. 12px is a comfortable desktop caption and a poor label at arm's length
+   * on a lit shop floor, read through safety glasses. Round 2 fixed these for
+   * contrast (`--status-*-ink`); this fixes them for size, on touch only, so
+   * the desktop density that makes the screens read as FabOrchestrator is
+   * untouched.
+   */
+  .fab .fab-pill {
+    font-size: 14px;
+  }
+}
+
+/* ── The assistant's answer ────────────────────────────────────────────────
+ *
+ * FabOrchestrator answers in Markdown, and `react-markdown` emits bare `h2`,
+ * `ul`, `table`, `code` and so on. Tailwind's preflight strips those to
+ * nothing, so without this block a two-day yield answer renders as one
+ * undifferentiated paragraph with its table collapsed.
+ *
+ * Every value is a token or a step on the seven-step scale — the answer is set
+ * in the product's type, not in the browser's. Kept here rather than as
+ * per-element `components` props on `<ReactMarkdown>` (the product's own
+ * approach) because this is styling and there is no behaviour to attach: the
+ * stylesheet-only rule the product's `ui-runtime` renderer documents, applied
+ * to a much smaller surface.
+ */
+
+.fab-md {
+  color: var(--text-ink);
+  font-size: var(--fs-body);
+  line-height: 1.65;
+}
+
+.fab-md > :first-child {
+  margin-top: 0;
+}
+.fab-md > :last-child {
+  margin-bottom: 0;
+}
+
+.fab-md p,
+.fab-md ul,
+.fab-md ol,
+.fab-md pre {
+  margin: 0 0 12px;
+}
+
+.fab-md h1,
+.fab-md h2,
+.fab-md h3,
+.fab-md h4 {
+  font-size: var(--fs-strong);
+  margin: 18px 0 8px;
+}
+
+.fab-md ul,
+.fab-md ol {
+  padding-left: 20px;
+}
+
+.fab-md li {
+  margin: 0 0 4px;
+}
+
+.fab-md strong {
+  font-weight: 800;
+}
+
+.fab-md a {
+  color: var(--brand-indigo);
+}
+
+.fab-md code {
+  background: var(--cockpit-surface);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 5px;
+}
+
+.fab-md pre {
+  background: var(--cockpit-surface);
+  border-radius: var(--r-control);
+  overflow-x: auto;
+  padding: 12px 14px;
+}
+
+.fab-md pre code {
+  background: none;
+  padding: 0;
+}
+
+/* A table is the shape a question about yield or OEE comes back in, and it is
+   the one element here that can exceed its column. It scrolls inside its own
+   wrapper rather than widening the page — the rule the whole app follows. */
+.fab-md .fab-md-table,
+.fab-md table {
+  border-collapse: collapse;
+  display: block;
+  font-size: var(--fs-meta);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.fab-md th,
+.fab-md td {
+  border-bottom: 1px solid var(--border-light);
+  padding: 7px 12px 7px 0;
+  text-align: left;
+}
+
+.fab-md th {
+  color: var(--text-subtle);
+  font-size: var(--fs-label);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fab-md blockquote {
+  border-left: 2px solid var(--border-light);
+  color: var(--text-muted-cool);
+  margin: 0 0 12px;
+  padding-left: 12px;
+}
+
+.fab-md hr {
+  border: 0;
+  border-top: 1px solid var(--border-light);
+  margin: 16px 0;
+}

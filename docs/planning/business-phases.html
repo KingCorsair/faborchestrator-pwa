@@ -1,0 +1,233 @@
+<title>FabOrchestrator PWA Business Phases</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@600&display=swap">
+<style>
+:root{
+  --ground:#f6f7fa; --panel:#ffffff; --panel-2:#eff1f7;
+  --ink:#171b28; --ink-2:#464e67; --ink-3:#6f7791;
+  --rule:#e1e4ee; --rule-2:#b9c0d6; --accent-ink:#4038c9; --accent-wash:#eceef8;
+  --ok:#1c6f4e; --ok-wash:#e2f2ea;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+    --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+    --rule:#282e40; --rule-2:#454e6b; --accent-ink:#b6b1ff; --accent-wash:#212739;
+    --ok:#67d3a3; --ok-wash:#12291f;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+  --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+  --rule:#282e40; --rule-2:#454e6b; --accent-ink:#b6b1ff; --accent-wash:#212739;
+  --ok:#67d3a3; --ok-wash:#12291f;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:42px 22px 70px}
+.eyebrow{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+h1{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:clamp(24px,4vw,33px);font-weight:700;letter-spacing:-.02em;
+  margin:10px 0 6px;text-wrap:balance}
+.sub{font-size:15.5px;color:var(--ink-2);margin:0 0 26px;max-width:82ch}
+
+.strip{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:0 0 26px}
+.pz{background:var(--panel);border:1px solid var(--rule);border-radius:9px;
+  padding:11px 12px 12px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.pz.found{background:var(--panel-2)}
+.pz .n{font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:600;
+  color:var(--accent-ink);letter-spacing:.06em}
+.pz .t{font-family:Archivo,sans-serif;font-size:13px;font-weight:600;
+  color:var(--ink);line-height:1.3;text-wrap:balance}
+.pz .w{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--ink-3);margin-top:2px}
+@media (max-width:900px){.strip{grid-template-columns:repeat(2,1fr)}}
+
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:1080px;
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;font-size:13px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:13px;border-bottom:1px solid var(--rule);vertical-align:top;
+  line-height:1.5}
+th{background:var(--panel-2);font-weight:600;font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr td{border-bottom:1px solid var(--rule-2)}
+.pn{display:block;font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:600;
+  color:var(--accent-ink);letter-spacing:.06em;margin-bottom:3px}
+.name{font-weight:600;color:var(--ink)}
+.cap{color:var(--ink-2)}
+.cap b{color:var(--ink);font-weight:600}
+.can{display:block;font-family:Archivo,sans-serif;font-size:11.5px;color:var(--ink-3);
+  margin-top:6px;line-height:1.45}
+.wps{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:600;
+  color:var(--ink-2);white-space:nowrap;line-height:1.7}
+.wpn{display:inline-block;background:var(--accent-wash);color:var(--accent-ink);
+  border-radius:4px;padding:1.5px 6px;margin:0 3px 3px 0}
+.wpn.nw{background:var(--ok-wash);color:var(--ok)}
+.wpsub{display:block;font-family:Archivo,sans-serif;font-size:11.5px;color:var(--ink-3);
+  margin-top:5px;line-height:1.45;white-space:normal}
+.tm{white-space:nowrap}
+.tm .wk{font-family:Archivo,sans-serif;font-size:13px;font-weight:600;color:var(--ink)}
+.tm .dy{display:block;font-family:"JetBrains Mono",monospace;font-size:11.5px;
+  color:var(--ink-3);margin-top:2px}
+.ms{display:inline-block;margin-top:6px;font-family:"JetBrains Mono",monospace;font-size:11px;
+  font-weight:600;color:var(--ok);background:var(--ok-wash);border-radius:4px;padding:2px 7px}
+.ms.tech{color:var(--accent-ink);background:var(--accent-wash);margin-right:4px}
+tfoot td{background:var(--panel-2);font-family:Archivo,sans-serif;font-size:12.5px;
+  color:var(--ink-2);padding:8px 13px;border-bottom:0;border-top:1px solid var(--rule)}
+tfoot b{color:var(--ink)}
+.num{text-align:right;white-space:nowrap;font-weight:600;color:var(--ink)}
+.legend{margin-top:16px;font-family:Archivo,sans-serif;font-size:12px;color:var(--ink-3);
+  max-width:94ch;line-height:1.6}
+.legend b{color:var(--ink-2)}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Implementation plan &middot; business-value phases</div>
+  <h1>FabOrchestrator PWA Business Phases</h1>
+  <p class="sub">What the app will let people do, and when. Delivery runs in six phases: the first week
+  proves the groundwork, and every phase after that switches something on that a person can actually use
+  &mdash; signing in and talking to FabOrchestrator, asking anything from the front page, real plant
+  answers on a phone, dashboards, and finally an app the business can rely on. Each row says <b>what
+  becomes possible, what we can show you, and the week it is ready</b>. The small WP codes just point to
+  the matching detail in the engineering plan.</p>
+
+  <div class="strip">
+    <div class="pz found"><span class="n">PHASE 0</span><span class="t">Foundation and proven link</span><span class="w">done in week 1 &middot; M0</span></div>
+    <div class="pz"><span class="n">PHASE 1</span><span class="t">Secure access to FabOrchestrator</span><span class="w">done in week 2 &middot; M1 &middot; B1</span></div>
+    <div class="pz"><span class="n">PHASE 2</span><span class="t">Usable and agentic conversations</span><span class="w">done in week 3 &middot; M2 &middot; B2</span></div>
+    <div class="pz"><span class="n">PHASE 3</span><span class="t">Real plant value on mobile</span><span class="w">done in week 3 &middot; M3 &middot; B3</span></div>
+    <div class="pz"><span class="n">PHASE 4</span><span class="t">Rich operational output</span><span class="w">done in week 4 &middot; M4 &middot; B4</span></div>
+    <div class="pz"><span class="n">PHASE 5</span><span class="t">Ready for reliable use</span><span class="w">done in week 5 &middot; M5 &middot; B5</span></div>
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr>
+      <th style="width:15%">Phase</th>
+      <th style="width:29%">Business capability unlocked</th>
+      <th style="width:13%">Work packages included</th>
+      <th style="width:28%">Demonstrable outcome</th>
+      <th style="width:15%">When it is reached</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="pn">PHASE 0</span><span class="name">Foundation and proven link</span></td>
+        <td class="cap">None yet, deliberately. What this phase buys is <b>certainty</b>: one codebase
+        anyone on the team can build, written evidence of how the live platform actually behaves, and the
+        app&rsquo;s ability to receive an answer while it is being written rather than after it is
+        finished.
+        <span class="can">User can do: nothing new &mdash; this is the phase that stops the project
+        discovering an environment problem in week four.</span></td>
+        <td class="wps"><span class="wpn">WP0</span><span class="wpn">WP6</span><span class="wpn">WP3</span>
+        <span class="wpsub">Baseline &amp; environment validation, live answer streaming, platform client
+        layer.</span></td>
+        <td class="cap">A clean checkout that builds; a one-page report answering the open questions about
+        the live environment with evidence; a recorded exchange showing FabOrchestrator delivering an
+        answer progressively.</td>
+        <td class="tm"><span class="wk">Week 1</span><span class="dy">4.0 days of work</span>
+        <span class="ms tech">M0 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="pn">PHASE 1</span><span class="name">Secure access to FabOrchestrator</span></td>
+        <td class="cap"><b>A named person can reach FabOrchestrator through the app and hold a live
+        conversation, under their own account and their own permissions.</b> The credential stays on our
+        server and never reaches the handset, so every question is attributable and every answer respects
+        that person&rsquo;s data access, limits and audit trail.
+        <span class="can">User can do: sign in and ask FabOrchestrator a question through the app,
+        watching the answer arrive as it is written.</span></td>
+        <td class="wps"><span class="wpn">WP2</span><span class="wpn">WP4</span>
+        <span class="wpsub">Sign-in &amp; session security, secure connector.</span></td>
+        <td class="cap">A live conversation with FabOrchestrator, signed in as a real user, shown end to
+        end &mdash; with the platform credential demonstrably absent from the phone.</td>
+        <td class="tm"><span class="wk">Week 2</span><span class="dy">3.5 days of work</span>
+        <span class="ms tech">M1 &check;</span><span class="ms">B1 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="pn">PHASE 2</span><span class="name">Usable and agentic conversations</span></td>
+        <td class="cap"><b>A user asks for what they want from the landing page and the system works out
+        where the request belongs</b> &mdash; which agent, which tools, which data &mdash; then does the
+        work and returns the answer. Follow-up questions stay in the same thread. Choosing an agent by
+        name remains available as a direct path for anyone who prefers it.
+        <span class="can">User can do: type a question without knowing the product&rsquo;s internal
+        structure, and get it answered by the right part of the platform.</span></td>
+        <td class="wps"><span class="wpn">WP5</span><span class="wpn">WP7</span><span class="wpn nw">WP13</span>
+        <span class="wpsub">Conversation handling, agent selection &amp; access control, and the new
+        agentic entry point.</span></td>
+        <td class="cap">A plant question typed on the landing screen with nothing selected, answered by
+        the right agent and labelled with which one served it; the route changed in one tap; a
+        multi-question conversation held; every agent still directly reachable, and the
+        permission-restricted one still explaining itself on its card.</td>
+        <td class="tm"><span class="wk">Week 3</span><span class="dy">3.5 days of work</span>
+        <span class="ms tech">M2 &check;</span><span class="ms">B2 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="pn">PHASE 3</span><span class="name">Real plant value on mobile</span></td>
+        <td class="cap"><b>A supervisor installs the app from a QR code and asks real MES and quality
+        questions from the floor</b> &mdash; yield, downtime, scrap &mdash; and reads the answer as a
+        table on their phone. No app store, no IT deployment. This is the phase the business case rests
+        on.
+        <span class="can">User can do: get a plant answer, on a phone, standing next to the line it is
+        about.</span></td>
+        <td class="wps"><span class="wpn">WP1</span><span class="wpn">WP8</span>
+        <span class="wpsub">Mobile app foundation, live plant data answers.</span></td>
+        <td class="cap">Installed on one iPhone and one Android handset from a QR code; a yield or
+        downtime question answered from live MES data and read as a table on the phone itself.</td>
+        <td class="tm"><span class="wk">Week 3</span><span class="dy">3.0 days of work</span>
+        <span class="ms tech">M3 &check;</span><span class="ms">B3 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="pn">PHASE 4</span><span class="name">Rich operational output</span></td>
+        <td class="cap"><b>Answers stop being only text.</b> Dashboards and charts the platform generates
+        open full-screen on the phone; a long-running question shows what it is doing rather than sitting
+        silent; and anything that goes wrong explains itself in plain language with a next step and a
+        reference support can trace.
+        <span class="can">User can do: ask for a chart and get one, and know what to do when the answer
+        cannot be produced.</span></td>
+        <td class="wps"><span class="wpn">WP9</span><span class="wpn">WP10</span>
+        <span class="wpsub">Dashboard &amp; visual output, progress &amp; failure handling.</span></td>
+        <td class="cap">A dashboard requested and rendered on the handset, proven isolated from the app
+        around it; each identified failure &mdash; expired session, data connection down, platform busy
+        &mdash; producing its own message and next step.</td>
+        <td class="tm"><span class="wk">Week 4</span><span class="dy">5.0 days of work</span>
+        <span class="ms tech">M4 &check;</span><span class="ms">B4 &check;</span></td>
+      </tr>
+      <tr>
+        <td><span class="pn">PHASE 5</span><span class="name">Ready for reliable use and handover</span></td>
+        <td class="cap"><b>The app can be run, supported, demonstrated and maintained by people who did
+        not build it.</b> Nothing new appears on screen; what changes is that the capability delivered in
+        Phases 1&ndash;4 becomes something the business can depend on and put in front of a customer.
+        <span class="can">User can do: rely on it &mdash; and someone other than the author can run the
+        demo.</span></td>
+        <td class="wps"><span class="wpn">WP11</span><span class="wpn">WP12</span>
+        <span class="wpsub">Test suite &amp; verification, device validation, security review &amp;
+        handover.</span></td>
+        <td class="cap">Test suite green from a clean checkout with no network; security review signed
+        off; a colleague who did not build the app reproduces the full demo from the documentation
+        alone.</td>
+        <td class="tm"><span class="wk">Week 5</span><span class="dy">5.5 days of work</span>
+        <span class="ms tech">M5 &check;</span><span class="ms">B5 &check;</span></td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr><td colspan="4"><b>Core implementation</b></td><td class="num">23 engineer-days</td></tr>
+      <tr><td colspan="4">Planned engineering schedule including probes/demonstrations</td><td class="num">24.5 engineer-days &asymp; 5 weeks</td></tr>
+      <tr><td colspan="4">Integration contingency</td><td class="num">up to 9 engineer-days</td></tr>
+      <tr><td colspan="4"><b>Upper planning envelope</b></td><td class="num">33.5 engineer-days &asymp; 7 weeks</td></tr>
+    </tfoot>
+  </table></div>
+
+  <p class="legend">Phases run in this order because the dependencies require it: nothing can reach
+  FabOrchestrator before sign-in works, automatic routing needs working
+  agents to route to, and plant data cannot be proven before the connection is proven.
+  <b>B1&ndash;B5 are business milestones</b>, each closing a phase; they sit alongside the technical
+  milestones <b>M0&ndash;M5</b> in the engineering plan rather than replacing them. Phase 0 has no
+  business milestone because it delivers certainty, not capability. Each phase is dated by <b>the one week in which it is finished</b>, assuming one engineer at five
+  days a week: the running total of work reaches 4.0 days inside week 1, 7.5 by week 2, 11.0 and then
+  14.0 during week 3, 19.0 in week 4, and 24.5 in week 5. Phases 2 and 3 both finish in week 3
+  because Phase 3 is small. The days shown are the scheduled figures including probe and
+  demonstration time, which is why they total 24.5 rather than the 23.0 of build effort alone; with
+  two engineers the phases overlap and delivery compresses to about 4 weeks. <b>Phase 1 is the decision point</b> &mdash; the whole
+  architecture is proven there, about a fifth of the way into the budget, not at the end.</p>
+</div>

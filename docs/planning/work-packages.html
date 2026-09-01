@@ -1,0 +1,332 @@
+<title>FabOrchestrator PWA Work Packages</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400&family=JetBrains+Mono:wght@600&display=swap">
+<style>
+:root{
+  --ground:#f6f7fa; --panel:#ffffff; --panel-2:#eff1f7;
+  --ink:#171b28; --ink-2:#464e67; --ink-3:#6f7791;
+  --rule:#e1e4ee; --rule-2:#b9c0d6; --accent-ink:#4038c9; --tech:#2f3a66; --tech-bg:#eceef8;
+  --ok:#1c6f4e; --ok-wash:#e2f2ea;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+    --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+    --rule:#282e40; --rule-2:#454e6b; --accent-ink:#b6b1ff; --tech:#c3c9e6; --tech-bg:#212739;
+    --ok:#67d3a3; --ok-wash:#12291f;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+  --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+  --rule:#282e40; --rule-2:#454e6b; --accent-ink:#b6b1ff; --tech:#c3c9e6; --tech-bg:#212739;
+  --ok:#67d3a3; --ok-wash:#12291f;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1260px;margin:0 auto;padding:42px 22px 70px}
+.eyebrow{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+h1{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:clamp(24px,4vw,33px);font-weight:700;letter-spacing:-.02em;
+  margin:10px 0 6px;text-wrap:balance}
+.sub{font-size:15.5px;color:var(--ink-2);margin:0 0 22px;max-width:80ch}
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:1080px;
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;font-size:13px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--rule);vertical-align:top;
+  line-height:1.5}
+th{background:var(--panel-2);font-weight:600;font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tr.phase td{background:var(--panel-2);border-top:1px solid var(--rule-2);
+  border-bottom:1px solid var(--rule);padding:8px 13px}
+tr.phase:first-child td{border-top:0}
+.ph{font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:600;
+  color:var(--accent-ink);letter-spacing:.07em;margin-right:9px}
+.phn{font-family:Archivo,sans-serif;font-size:13px;font-weight:600;color:var(--ink)}
+.phw{font-family:Archivo,sans-serif;font-size:11.5px;color:var(--ink-3);float:right;
+  letter-spacing:.02em}
+td:nth-child(4),td:nth-child(5){color:var(--ink-2)}
+.step{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;color:var(--ink-3);
+  text-align:right;white-space:nowrap}
+.wp{display:block;font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:600;
+  color:var(--accent-ink);letter-spacing:.04em;margin-bottom:3px}
+.name{font-weight:600;color:var(--ink)}
+.tt{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:600;
+  color:var(--tech);background:var(--tech-bg);border-radius:4px;padding:1.5px 6px;
+  margin-bottom:4px;line-height:1.45}
+.gloss{display:block;color:var(--ink-2)}
+.ms{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:600;
+  color:var(--accent-ink);background:var(--tech-bg);border-radius:4px;padding:2px 7px;
+  white-space:nowrap}
+.ms.done{color:var(--ok);background:var(--ok-wash)}
+.msnote{display:block;font-size:11.5px;color:var(--ink-3);margin-top:4px;line-height:1.4}
+.bp{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:600;
+  color:var(--accent-ink);background:var(--tech-bg);border-radius:4px;padding:2px 7px;
+  white-space:nowrap}
+.bm{display:inline-block;margin-top:4px;font-family:"JetBrains Mono",monospace;font-size:11px;
+  font-weight:600;color:var(--ok);background:var(--ok-wash);border-radius:4px;padding:2px 7px;
+  white-space:nowrap}
+.bmn{display:block;font-size:11.5px;color:var(--ink-3);margin-top:4px;line-height:1.4}
+.phcap{display:block;clear:right;font-family:Archivo,sans-serif;font-size:12px;color:var(--ink-2);
+  margin-top:5px;line-height:1.5;max-width:120ch;font-weight:400}
+.phcap b{color:var(--ink);font-weight:600}
+.num{text-align:right;white-space:nowrap;font-weight:600;color:var(--ink)}
+tfoot td{background:var(--panel-2);font-family:Archivo,sans-serif;font-size:12.5px;
+  color:var(--ink-2);padding:8px 13px;border-bottom:0;border-top:1px solid var(--rule)}
+tfoot b{color:var(--ink)}
+.legend{margin-top:14px;font-family:Archivo,sans-serif;font-size:12px;color:var(--ink-3);max-width:92ch}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Implementation plan &middot; planning table</div>
+  <h1>FabOrchestrator PWA Work Packages</h1>
+  <p class="sub">The engineering work required to deliver the mobile app, in build order, grouped into
+  the business-value phases. Estimates are engineer-days. Each row carries both its <b>technical</b>
+  milestone and the <b>business</b> phase and milestone it serves. Technical milestones M0&ndash;M5:
+  <b>M0</b> baseline confirmed &middot;
+  <b>M1</b> architecture proven end to end &middot; <b>M2</b> all agents reachable, chosen or routed &middot;
+  <b>M3</b> real plant data on a phone &middot; <b>M4</b> dashboards and failures behave &middot;
+  <b>M5</b> ready to hand over. Business milestones: <b>B1</b> secure access &middot; <b>B2</b> ask-first
+  conversations &middot; <b>B3</b> plant value on mobile &middot; <b>B4</b> operational output &middot;
+  <b>B5</b> reliable use and handover. Phase 0 carries no business milestone &mdash; it removes
+  uncertainty rather than delivering capability.</p>
+
+  <div class="tw"><table>
+    <thead><tr>
+      <th style="width:3%">#</th>
+      <th style="width:13%">Work Package</th>
+      <th style="width:21%">What needs to be built</th>
+      <th style="width:20%">Why it is needed</th>
+      <th style="width:17%">Technical deliverable</th>
+      <th style="width:9%">Technical milestone</th>
+      <th style="width:9%">Business phase &amp; milestone</th>
+      <th class="num">Estimate</th>
+    </tr></thead>
+    <tbody>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 0</span><span class="phn">Foundation and proven link</span><span class="phw">done in week 1 &middot; closes M0</span><span class="phcap">No business capability yet, by design. What this phase buys is certainty: one codebase the team can build, evidence of how the live platform behaves, and answers arriving as they are written.</span></td></tr>
+      <tr>
+        <td class="step">1</td>
+        <td><span class="wp">WP0</span><span class="name">Baseline &amp; environment validation</span></td>
+        <td><span class="tt">Branch consolidation + live environment probes</span>
+        <span class="gloss">Bring the code onto one reviewable branch and run short checks against the
+        running FabOrchestrator to confirm it behaves as the design assumes.</span></td>
+        <td>Several things that could delay the project are properties of the live environment, not our
+        code. Checking them first turns assumptions into facts.</td>
+        <td>One build-able codebase, plus a one-page report evidencing how the live platform actually
+        behaves: streaming, data access, deployment currency and demo-account readiness.</td>
+        <td><span class="ms done">M0 &check;</span><span class="msnote">completes M0</span></td>
+        <td><span class="bp">P0</span><span class="bmn">foundation &mdash; no business capability by design</span></td>
+        <td class="num">0.5</td>
+      </tr>
+      <tr>
+        <td class="step">2</td>
+        <td><span class="wp">WP6</span><span class="name">Live answer streaming</span></td>
+        <td><span class="tt">Server-Sent Events stream parser</span>
+        <span class="gloss">Reading the platform's answer piece by piece as it is generated and putting
+        each piece on screen as it arrives.</span></td>
+        <td>A question involving plant data can take one to three minutes. Silence followed by a wall of
+        text reads as a broken app.</td>
+        <td>Answers that appear progressively, survive a poor connection, and detect a stalled stream.</td>
+        <td><span class="ms">M1</span><span class="msnote">contributes &mdash; streaming</span></td>
+        <td><span class="bp">P0</span><span class="bmn">foundation</span></td>
+        <td class="num">1.0</td>
+      </tr>
+      <tr>
+        <td class="step">3</td>
+        <td><span class="wp">WP3</span><span class="name">Platform client layer</span></td>
+        <td><span class="tt">FabOrchestrator API client module</span>
+        <span class="gloss">One server-side component that owns every call to the platform and turns
+        platform errors into something the app can display.</span></td>
+        <td>Keeping that knowledge in one place means exactly one thing changes when the platform
+        changes, instead of a dozen.</td>
+        <td>A single client module carrying every platform call, with all errors reduced to one
+        predictable shape.</td>
+        <td><span class="ms">M1</span><span class="msnote">contributes &mdash; platform link</span></td>
+        <td><span class="bp">P0</span><span class="bmn">foundation</span></td>
+        <td class="num">1.0</td>
+      </tr>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 1</span><span class="phn">Secure access to FabOrchestrator</span><span class="phw">done in week 2 &middot; closes M1 &amp; B1</span><span class="phcap"><b>A named person can reach FabOrchestrator through the app and hold a live conversation, under their own account and their own permissions</b> &mdash; with the platform credential held on our server, never on the handset.</span></td></tr>
+      <tr>
+        <td class="step">4</td>
+        <td><span class="wp">WP2</span><span class="name">Sign-in &amp; session security</span></td>
+        <td><span class="tt">Credential exchange + server-side session store + httpOnly cookie</span>
+        <span class="gloss">Users sign in with their own FabOrchestrator account; the credential stays
+        on our server and the phone holds only a meaningless, revocable identifier.</span></td>
+        <td>Every question must be attributable to a real person, because the platform applies that
+        person's permissions, data access, usage limits and audit record.</td>
+        <td>Working sign-in, sign-out and session expiry; the platform credential provably absent from
+        the phone.</td>
+        <td><span class="ms">M1</span><span class="msnote">contributes &mdash; identity</span></td>
+        <td><span class="bp">P1</span><span class="bmn">contributes to B1</span></td>
+        <td class="num">2.5</td>
+      </tr>
+      <tr>
+        <td class="step">5</td>
+        <td><span class="wp">WP4</span><span class="name">Secure connector</span></td>
+        <td><span class="tt">Authenticated reverse-proxy route, streaming pass-through</span>
+        <span class="gloss">The backend route that forwards a question to the right agent and pipes the
+        answer straight back without holding on to it.</span></td>
+        <td>The platform does not accept direct calls from a browser page; this hop keeps the credential
+        and the permission decisions on our server.</td>
+        <td>A live, streaming conversation with FabOrchestrator through the app, demonstrated end to
+        end.</td>
+        <td><span class="ms done">M1 &check;</span><span class="msnote">completes M1</span></td>
+        <td><span class="bp">P1</span><span class="bm">B1 &check;</span><span class="bmn">unlocks secure access</span></td>
+        <td class="num">1.0</td>
+      </tr>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 2</span><span class="phn">Usable and agentic conversations</span><span class="phw">done in week 3 &middot; closes M2 &amp; B2</span><span class="phcap"><b>A user can ask from the landing page without choosing anything and the system routes the request to the right agent</b>, follow-up questions work, and every agent is still directly reachable by name for anyone who prefers to choose.</span></td></tr>
+      <tr>
+        <td class="step">6</td>
+        <td><span class="wp">WP5</span><span class="name">Conversation handling</span></td>
+        <td><span class="tt">Client-side conversation state + message-history payload</span>
+        <span class="gloss">The app keeps the thread and sends the whole conversation with each new
+        question, so the platform has context for follow-ups.</span></td>
+        <td>One question is rarely enough. Follow-ups are how a supervisor actually arrives at a usable
+        answer.</td>
+        <td>Multi-turn conversations that survive interruption and can be stopped mid-answer without
+        losing what arrived.</td>
+        <td><span class="ms">M2</span><span class="msnote">contributes</span></td>
+        <td><span class="bp">P2</span><span class="bmn">contributes to B2</span></td>
+        <td class="num">0.5</td>
+      </tr>
+      <tr>
+        <td class="step">7</td>
+        <td><span class="wp">WP7</span><span class="name">Agent selection &amp; access control</span></td>
+        <td><span class="tt">Agent registry, endpoint routing, platform availability query</span>
+        <span class="gloss">A fixed list mapping each agent to its own platform service, plus asking the
+        platform up front whether the one permission-gated agent is enabled for this user.</span></td>
+        <td>Verified in source: only the Modeling Agent is permission-gated, and the platform enforces
+        that itself by refusing the request. Asking its own availability check first turns that refusal
+        into a labelled card instead of a dead conversation.</td>
+        <td>An agent menu where every entry either opens a working conversation or explains, on the card,
+        why it cannot.</td>
+        <td><span class="ms">M2</span><span class="msnote">contributes &mdash; agent menu</span></td>
+        <td><span class="bp">P2</span><span class="bmn">contributes to B2</span></td>
+        <td class="num">1.0</td>
+      </tr>
+      <tr>
+        <td class="step">8</td>
+        <td><span class="wp">WP13</span><span class="name">Agentic entry point &mdash; ask first</span></td>
+        <td><span class="tt">Server-side request routing, classification on the platform</span>
+        <span class="gloss">One ask box on the landing screen. The user types what they want and the
+        system works out which agent and which data should answer it, then sends it there.</span></td>
+        <td>People on a fab floor should not have to know the product&rsquo;s internal structure to ask a
+        question. Verified in source: the platform already chooses its own tools and queries inside an
+        agent, so only the choice <em>between</em> agents is new work &mdash; and that judgement is asked
+        of the platform, not made in the app.</td>
+        <td>A landing question answered without an agent being chosen, labelled with the agent that
+        served it and correctable in one tap, with manual selection still available.</td>
+        <td><span class="ms done">M2 &check;</span><span class="msnote">completes M2</span></td>
+        <td><span class="bp">P2</span><span class="bm">B2 &check;</span><span class="bmn">unlocks ask-first working</span></td>
+        <td class="num">2.0</td>
+      </tr>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 3</span><span class="phn">Real plant value on mobile</span><span class="phw">done in week 3 &middot; closes M3 &amp; B3</span><span class="phcap"><b>A supervisor installs the app from a QR code and asks real MES and quality questions from the floor</b> &mdash; yield, downtime, scrap &mdash; and reads the answer as a table on their phone. This is the phase the business case rests on.</span></td></tr>
+      <tr>
+        <td class="step">9</td>
+        <td><span class="wp">WP1</span><span class="name">Mobile app foundation</span></td>
+        <td><span class="tt">Web app manifest, service worker, responsive layouts</span>
+        <span class="gloss">The packaging that lets a phone install the app to its home screen and open
+        it in its own window, plus screens that work one-handed.</span></td>
+        <td>This is what makes it an app rather than a website, and why no native mobile app has to be
+        built or distributed.</td>
+        <td>An installable app, verified on one iPhone and one Android handset, that degrades honestly
+        when the network drops.</td>
+        <td><span class="ms">M3</span><span class="msnote">contributes &mdash; installability</span></td>
+        <td><span class="bp">P3</span><span class="bmn">contributes to B3</span></td>
+        <td class="num">1.5</td>
+      </tr>
+      <tr>
+        <td class="step">10</td>
+        <td><span class="wp">WP8</span><span class="name">Live plant data answers</span></td>
+        <td><span class="tt">MCP data-connection resolution + markdown table rendering</span>
+        <span class="gloss">Look up which MES and quality data connections the user is approved for,
+        pass them with the question, and render the resulting tables readably on a phone.</span></td>
+        <td>This is the core demonstration. The platform only queries the data connections explicitly
+        enabled for that user, so the app must confirm they exist rather than answer without them.</td>
+        <td>A metric question &mdash; yield, downtime &mdash; answered from live plant data on an
+        installed handset, as a readable table.</td>
+        <td><span class="ms done">M3 &check;</span><span class="msnote">completes M3</span></td>
+        <td><span class="bp">P3</span><span class="bm">B3 &check;</span><span class="bmn">unlocks plant value on a phone</span></td>
+        <td class="num">1.5</td>
+      </tr>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 4</span><span class="phn">Rich operational output</span><span class="phw">done in week 4 &middot; closes M4 &amp; B4</span><span class="phcap"><b>Answers stop being only text</b>: dashboards and charts open full-screen, progress is visible while a long question runs, and every failure explains itself and says what to do next.</span></td></tr>
+      <tr>
+        <td class="step">11</td>
+        <td><span class="wp">WP9</span><span class="name">Dashboard &amp; visual output</span></td>
+        <td><span class="tt">Artifact tag parsing + sandboxed iframe rendering</span>
+        <span class="gloss">Pull the generated chart or dashboard out of the answer and display it in an
+        isolated frame that cannot reach the app around it, sized for a phone.</span></td>
+        <td>Dashboards are the platform's most persuasive output, but they are live interactive content
+        and must be strictly isolated from the app and its credentials.</td>
+        <td>A dashboard request produces a tappable, full-screen chart on the phone, verified unable to
+        reach the app around it.</td>
+        <td><span class="ms">M4</span><span class="msnote">contributes &mdash; visuals</span></td>
+        <td><span class="bp">P4</span><span class="bmn">contributes to B4</span></td>
+        <td class="num">3.0</td>
+      </tr>
+      <tr>
+        <td class="step">12</td>
+        <td><span class="wp">WP10</span><span class="name">Progress &amp; failure handling</span></td>
+        <td><span class="tt">Normalised error contract + streaming progress states</span>
+        <span class="gloss">One predictable shape for every failure the app can hit, and distinct
+        indicators for waiting, working and answering.</span></td>
+        <td>The app fronts a live production platform, so failures are normal operating conditions, and
+        each one needs a different response from the user.</td>
+        <td>Every identified failure produces a distinct plain-language message, a next step, and a
+        reference code support can trace.</td>
+        <td><span class="ms done">M4 &check;</span><span class="msnote">completes M4</span></td>
+        <td><span class="bp">P4</span><span class="bm">B4 &check;</span><span class="bmn">unlocks operational output</span></td>
+        <td class="num">2.0</td>
+      </tr>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 5</span><span class="phn">Ready for reliable use and handover</span><span class="phw">done in week 5 &middot; closes M5 &amp; B5</span><span class="phcap"><b>The app can be run, supported, demonstrated and maintained by people who did not build it</b> &mdash; tested, validated on real handsets, security-reviewed, documented.</span></td></tr>
+      <tr>
+        <td class="step">13</td>
+        <td><span class="wp">WP11</span><span class="name">Test suite &amp; verification</span></td>
+        <td><span class="tt">Unit and route tests, stub platform, live smoke script</span>
+        <span class="gloss">Automated tests for each layer on its own, a simulated FabOrchestrator so
+        the app can be tested without one, and a scripted check against the real platform.</span></td>
+        <td>The chain has five links and two are outside our control. Without layer-by-layer tests every
+        fault looks identical and diagnosis becomes guesswork.</td>
+        <td>A test suite that runs from a clean checkout with no network, plus a live check that
+        pinpoints which link failed.</td>
+        <td><span class="ms">M5</span><span class="msnote">contributes &mdash; verification</span></td>
+        <td><span class="bp">P5</span><span class="bmn">contributes to B5</span></td>
+        <td class="num">3.0</td>
+      </tr>
+      <tr>
+        <td class="step">14</td>
+        <td><span class="wp">WP12</span><span class="name">Device validation, security review &amp; handover</span></td>
+        <td><span class="tt">Device QA, security review, config hygiene, runbook</span>
+        <span class="gloss">End-to-end validation on real handsets, a security review, cleaned-up
+        configuration, setup documentation and a written demo procedure.</span></td>
+        <td>The app touches production identity and production data, and a demo only its author can run
+        is not a deliverable.</td>
+        <td>Signed-off security review, setup documentation a new engineer can follow, and a one-page
+        demo runbook.</td>
+        <td><span class="ms done">M5 &check;</span><span class="msnote">completes M5</span></td>
+        <td><span class="bp">P5</span><span class="bm">B5 &check;</span><span class="bmn">unlocks reliable use</span></td>
+        <td class="num">2.5</td>
+      </tr>
+    </tbody>
+    <tfoot>
+      <tr><td colspan="7"><b>Core implementation</b></td><td class="num">23 engineer-days</td></tr>
+      <tr><td colspan="7">Planned engineering schedule including probes/demonstrations</td><td class="num">24.5 engineer-days &asymp; 5 weeks</td></tr>
+      <tr><td colspan="7">Integration contingency</td><td class="num">up to 9 engineer-days</td></tr>
+      <tr><td colspan="7"><b>Upper planning envelope</b></td><td class="num">33.5 engineer-days &asymp; 7 weeks</td></tr>
+    </tfoot>
+  </table></div>
+
+  <p class="legend">Rows are in build order, set by real dependencies &mdash; nothing can reach
+  FabOrchestrator before sign-in works, and plant data cannot be proven before the connection is. WP
+  numbers are stable identifiers from the engineering plan, so they do not run in sequence here. A
+  milestone marked <b>&check;</b> is completed by that package, and each phase ends on the package that
+  completes its milestone. WP13 is the newest package: the confirmed requirement that a user can ask
+  from the landing page without picking an agent first. Each phase is dated by the one week in which it is finished, on the 24.5-day schedule (which carries
+  1.5 days of probe and demonstration work on top of the 23.0-day package estimates); phases 2 and 3
+  both finish in week 3 because phase 3 is small. Sequence shown is for one engineer; with two, steps 2, 9, 11 and 13 can start
+  earlier.</p>
+</div>

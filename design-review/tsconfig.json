@@ -1,0 +1,11 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    "paths": {
+      "@/*": ["./*"],
+      "next/navigation": ["./design-review/stubs/navigation.tsx"],
+      "next/link": ["./design-review/stubs/link.tsx"]
+    }
+  }
+}

@@ -192,8 +192,10 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
   <div class="grid3" style="margin:24px 0 28px">
     <div class="kpi"><div class="k">Client codebases found</div><div class="v">3</div>
       <div class="s">One near-complete, one skeleton, plus FO itself being made installable. All three uncommitted.</div></div>
-    <div class="kpi"><div class="k">FO agent endpoints</div><div class="v">3</div>
-      <div class="s">Not one. <code>/api/chat</code>, <code>/api/modeling-agent/chat</code>, <code>/api/backend-agent/chat</code>.</div></div>
+    <div class="kpi"><div class="k">FO agent endpoints</div><div class="v">2</div>
+      <div class="s"><code>/api/chat</code> (three of the four cockpit cards) and
+      <code>/api/modeling-agent/chat</code>. Verified against upstream <code>e5a5abd</code>:
+      no backend-agent API exists in any branch.</div></div>
     <div class="kpi"><div class="k">Remaining core work</div><div class="v">21 d</div>
       <div class="s">Engineer-days, one engineer, excluding contingency.</div></div>
   </div>
@@ -251,8 +253,9 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
         <td>All agents go to <code>POST /api/chat</code>.</td>
         <td>Three endpoints. The cockpit&rsquo;s four cards
         (<span class="fp">components/cockpit/agent-cards.tsx:28</span>) route to
-        <code>/chat</code>, <code>/chat</code>, <code>/modeling-agent</code>, <code>/backend-agent</code>;
-        the last two POST to their own routes with different bodies and different gates.</td>
+        <code>/chat</code>, <code>/chat</code>, <code>/modeling-agent</code>, <code>/chat</code>
+        (upstream <code>e5a5abd</code>, 2026-09-01); only the modeling card POSTs to its own
+        route with a different body and gate.</td>
         <td>Keep one parameterised proxy but a per-agent registry of
         <code>foPath</code> + whether <code>activeMcpIds</code> applies.
         <span class="fp">lib/faborch/agents.ts</span> already does this.</td></tr>
@@ -272,12 +275,13 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
         answers with no data access at all. This is the single highest-risk detail in the build.</td></tr>
       <tr><td><b>Dashboard / artifact format</b></td>
         <td>One artifact mechanism, likely <code>&lt;antArtifact&gt;</code>.</td>
-        <td>Two, unrelated. (a) <code>&lt;antArtifact&gt;</code> HTML inline in <code>/api/chat</code>
-        text, parsed by <span class="fp">lib/artifact-parser.ts</span>. (b) The Back-end Agent
-        publishes a <b>UiView JSON spec</b> fetched from <code>/api/views/[key]</code> and rendered by
-        <span class="fp">components/ui-runtime/renderer.tsx</span> at <code>/v/[key]</code> &mdash; never HTML.</td>
-        <td>Build (a) in the PWA; deep-link to FO for (b). Re-implementing the spec renderer is a
-        second copy of a screen FO owns.</td></tr>
+        <td>One that ships: (a) <code>&lt;antArtifact&gt;</code> HTML inline in <code>/api/chat</code>
+        text, parsed by <span class="fp">lib/artifact-parser.ts</span>. The UiView
+        <code>/v/[key]</code> mechanism existed only in the stale local copy &mdash; upstream
+        superseded it with custom dashboards built <em>inside</em> <code>/api/chat</code>, gated
+        by <code>isDashboardAdmin</code> (returned as <code>canCreateDashboards</code> at login).</td>
+        <td>Build (a) in the PWA. Nothing to deep-link to; in-chat dashboards arrive over the
+        same artifact stream the PWA already renders.</td></tr>
       <tr><td><b>Session expiry</b></td>
         <td>A session is valid until it expires.</td>
         <td>Two clocks. 30-day absolute (<span class="fp">app/api/auth/login/route.ts:55</span>)
@@ -349,11 +353,10 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
         <code>modeling_agent</code>. Same stream shape.</td></tr>
       <tr><td>Modeling access probe</td><td><span class="fp">app/api/modeling-agent/access/route.ts</span></td>
         <td><code>GET</code> &rarr; <code>{enabled:boolean}</code>.</td></tr>
-      <tr><td>Back-end Agent</td><td><span class="fp">app/api/backend-agent/chat/route.ts</span></td>
-        <td><code>POST {messages}</code>. Tools built server-side from the user id
-        (<code>buildUiAgentTools(user.id)</code>). Same stream shape.</td></tr>
-      <tr><td>Published dashboards</td><td><span class="fp">app/api/views/[key]/route.ts</span>, <span class="fp">/data</span></td>
-        <td>UiView spec + binding data, rendered at <code>/v/[key]</code>.</td></tr>
+      <tr><td>Back-end Agent</td><td><span class="fp">components/cockpit/agent-cards.tsx</span></td>
+        <td>Routes to <code>/chat</code> &mdash; a card framing of the same conversation
+        service, not a separate API (verified <code>e5a5abd</code>; the standalone route
+        existed only in the stale local copy).</td></tr>
       <tr><td>Artifact CRUD</td><td><span class="fp">app/api/artifacts/</span></td>
         <td>Persisted HTML/code artifacts, keyed to a conversation.</td></tr>
       <tr><td>Installability</td><td><span class="fp">app/manifest.ts</span>, <span class="fp">public/sw.js</span></td>
@@ -492,12 +495,13 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
 
   <div class="callout warnbox">
     <h4>Cannot be proven from source</h4>
-    <p>Whether the <em>deployed</em> CloudFront build carries <code>/api/backend-agent/chat</code>,
-    whether CloudFront buffers the SSE response, and whether the MCP Lambdas are reachable from the
-    EB security group are all runtime properties. <span class="fp">app/backend-agent/page.tsx</span>
-    records that as of 2026-08-24 <code>GET /backend-agent</code> returned Next&rsquo;s own 404 on the
-    deployed build &mdash; the deployment predates that page. Each of these must be settled by the
-    probes in <a href="#s16">&sect;16</a> before the estimate in <a href="#s18">&sect;18</a> holds.</p>
+    <p>Whether CloudFront buffers the SSE response and whether the MCP Lambdas are reachable
+    from the EB security group are runtime properties; the 2026-09-01 probes answered both
+    (streaming progressive; the probe account had zero data connections &mdash; a provisioning
+    gap, not an infrastructure one). The 2026-08-24 backend-agent question dissolved on
+    verification against upstream <code>e5a5abd</code>: <code>GET /backend-agent</code> 404s
+    because no such surface exists in any upstream branch, not because the deployment is
+    behind. Remaining probes in <a href="#s16">&sect;16</a> close at their milestones.</p>
   </div>
 </section>
 <section id="s4">
@@ -526,8 +530,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
     <li><span class="chip c-have">Already implemented</span> REQ-01&ndash;REQ-04 audit trails: error
     catalog, session audit, prompt audit with token and USD cost. Every PWA turn lands in
     <code>prompt_audit_logs</code> attributed to the real operator.</li>
-    <li><span class="chip c-have">Already implemented</span> Modeling Agent permission gate; Back-end
-    Agent dashboard publication and <code>/v/[key]</code> rendering.</li>
+    <li><span class="chip c-have">Already implemented</span> Modeling (Master Data Load) Agent
+        permission gate; custom dashboards inside <code>/api/chat</code>
+        (<code>isDashboardAdmin</code>) &mdash; the earlier <code>/v/[key]</code> mechanism
+        exists only in the stale local copy.</li>
   </ul>
 
   <h3>4.2 From the PWA &mdash; carried forward</h3>
@@ -566,8 +572,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
     <span class="fp">lib/config.ts</span> omits the field so FO picks its own default, avoiding an
     <code>INVALID_PARAMETER</code> on a deployment whose registry allows a different set.</li>
     <li><span class="chip c-risk">Do not carry over</span> Its <code>health()</code> calls a
-    non-existent <code>/api/health</code>; its agent catalog says the Back-end Agent posts to
-    <code>/api/chat</code> and describes it as &ldquo;connectors and code&rdquo;, both wrong.</li>
+        non-existent <code>/api/health</code>. (Its claim that the Back-end Agent posts to
+        <code>/api/chat</code>, judged wrong against the stale local copy, is confirmed correct
+        by upstream <code>e5a5abd</code> &mdash; the defect that disqualifies it is the health
+        check, not the catalog.)</li>
   </ul>
 </section>
 
@@ -588,8 +596,6 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         &mdash; one <code>{code, message}</code> shape for every failure path (WP10).</li>
         <li><span class="chip c-new">New</span> Per-agent availability gating on the landing page,
         driven by <code>/api/modeling-agent/access</code> rather than by a 403 mid-conversation (WP7).</li>
-        <li><span class="chip c-new">New</span> A deep link from a Back-end Agent answer to FO&rsquo;s
-        <code>/v/[key]</code> dashboard (WP9).</li>
         <li><span class="chip c-new">New</span> Proxy, agent-routing, artifact-parser and error-path
         test suites (WP11).</li>
       </ul>
@@ -851,8 +857,8 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
       <dl class="f"><dt>Endpoints used</dt><dd><code>POST /api/auth/login</code>,
         <code>GET /api/auth/me</code>, <code>POST /api/auth/logout</code>,
         <code>GET /api/mcp/connections</code>, <code>GET /api/modeling-agent/access</code>,
-        <code>POST /api/chat</code>, <code>POST /api/modeling-agent/chat</code>,
-        <code>POST /api/backend-agent/chat</code></dd></dl>
+        <code>POST /api/chat</code> and
+        <code>POST /api/modeling-agent/chat</code></dd></dl>
       <dl class="f"><dt>Headers</dt><dd>Out: <code>Authorization: Bearer</code>,
         <code>Content-Type: application/json</code>, <code>Accept: text/event-stream</code> on chat.
         In: <code>Content-Type</code>, and <code>X-FabOrch-Warning</code> /
@@ -1083,9 +1089,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         client; landing cards mirroring the cockpit&rsquo;s numbering and copy.</dd></dl>
       <dl class="f"><dt>Must be implemented</dt><dd><ul>
         <li><code>GET /api/faborch/agents</code> returning the catalog <em>with availability</em>:
-        <code>modeling</code> gated on <code>/api/modeling-agent/access</code>, <code>backend</code>
-        gated on a configurable flag until the deployed FO build is confirmed to serve
-        <code>/api/backend-agent/chat</code>.</li>
+        <code>modeling</code> gated on <code>/api/modeling-agent/access</code>; the other three
+        cards share <code>/api/chat</code> and need no gate (the configurable backend flag the
+        earlier draft planned is unnecessary &mdash; verified <code>e5a5abd</code>, and probe P2
+        confirmed the modeling route live on the deployment, HTTP 200).</li>
         <li>Landing cards read that endpoint and render an unavailable agent as disabled with the
         reason on the card &mdash; not as a door that opens onto a 403.</li>
         <li>Resolve the fourth cockpit card. FO&rsquo;s <b>AI Support Engineer</b> also routes to
@@ -1104,8 +1111,8 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
               <td>Yes</td><td>Same</td><td><span class="chip c-new">Decide</span></td></tr>
             <tr><td>AGENT&nbsp;03 Modeling Agent</td><td><code>/modeling-agent</code></td><td><code>/api/modeling-agent/chat</code></td>
               <td>No &mdash; builds its own CMF tools</td><td>403 unless admin or role has <code>modeling_agent</code></td><td><span class="chip c-mod">Gate it</span></td></tr>
-            <tr><td>AGENT&nbsp;04 Back-end Agent</td><td><code>/backend-agent</code></td><td><code>/api/backend-agent/chat</code></td>
-              <td>No &mdash; <code>buildUiAgentTools(user.id)</code></td><td>None in code</td><td><span class="chip c-risk">Deploy unproven</span></td></tr>
+            <tr><td>AGENT&nbsp;04 Back-end Agent</td><td><code>/chat</code></td><td><code>/api/chat</code></td>
+              <td>Yes</td><td>Same as <code>/chat</code></td><td><span class="chip c-have">Confirmed e5a5abd</span></td></tr>
           </tbody>
         </table></div>
         <p>Only <code>/api/chat</code> reads <code>activeMcpIds</code>. Sending it to the other two would
@@ -1113,8 +1120,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         <p><b>Verified against source 2026-08-31:</b> the <code>modeling_agent</code> role permission
         (admins bypass) at <span class="fp">app/api/modeling-agent/chat/route.ts:158&ndash;172</span>
         is the <em>only</em> agent-level gate in FO. <code>/api/chat</code> checks the model allow-list
-        and quotas but no agent permission, and the Back-end Agent route requires authentication and
-        nothing more. FO enforces the modeling gate itself with a 403, so the PWA&rsquo;s pre-check via
+and quotas but no agent permission, and the Back-end Agent card shares <code>/api/chat</code>,
+so it inherits exactly those checks (re-verified against upstream <code>e5a5abd</code>,
+2026-09-01 &mdash; the separate backend route existed only in the stale local copy).
+FO enforces the modeling gate itself with a 403, so the PWA&rsquo;s pre-check via
         <code>/api/modeling-agent/access</code> is presentation, never authorisation.</p></dd></dl>
       <dl class="f"><dt>Modified files</dt><dd><span class="fp">lib/faborch/agents.ts</span>,
         <span class="fp">components/fab/screens/landing.tsx</span>,
@@ -1131,8 +1140,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         a user with it can converse.</dd></dl>
       <dl class="f"><dt>Done when</dt><dd>Every card either opens a working conversation or explains, on
         the card, why it cannot.</dd></dl>
-      <dl class="f"><dt>Risks</dt><dd>Whether the deployed FO carries the Back-end Agent API is a live
-        unknown &mdash; probe P2.</dd></dl>
+      <dl class="f"><dt>Risks</dt><dd>Resolved 2026-09-01: no backend-agent API exists upstream by
+        design, so there is nothing for the deployment to lack; the card maps to
+        <code>/api/chat</code>. Probe P2 now checks the modeling route instead &mdash; present
+        on the deployment, HTTP 200.</dd></dl>
     </div>
   </div>
 
@@ -1219,12 +1230,13 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
           <thead><tr><th></th><th>A &mdash; inline artifact</th><th>B &mdash; published dashboard</th></tr></thead>
           <tbody>
             <tr><th>Produced by</th><td><code>/api/chat</code> &mdash; any agent, when the user
-              explicitly asks for visual output</td><td>Back-end Agent&rsquo;s
-              <code>create_dashboard</code> &rarr; <code>publish_dashboard</code> tools</td></tr>
+              explicitly asks for visual output</td><td><em>Superseded upstream</em> &mdash;
+              existed only in the stale local copy; current FO builds custom dashboards inside
+              <code>/api/chat</code> (<code>isDashboardAdmin</code>)</td></tr>
             <tr><th>Trigger</th><td>The system prompt&rsquo;s <code>&lt;artifacts&gt;</code> block: only on
               explicit request &mdash; &ldquo;create a dashboard&rdquo;, &ldquo;visualize&rdquo;,
               &ldquo;make a chart&rdquo;. Never for explanations or code snippets.</td>
-              <td>The user describes a screen to the Back-end Agent.</td></tr>
+              <td>&mdash;</td></tr>
             <tr><th>Transport</th><td>Inline in the <code>text-delta</code> stream, wrapped in
               <code>&lt;antArtifact identifier type title&gt;…&lt;/antArtifact&gt;</code></td>
               <td>Not in the stream at all. Stored as a UiView; fetched from
@@ -1273,11 +1285,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         <li><b>Fallbacks.</b> Unclosed tag at stream end &rarr; keep the placeholder and offer &ldquo;show
         source&rdquo;. Unknown <code>type</code> &rarr; render as a code block. Frame fails to load &rarr;
         a message plus the source, never a blank rectangle.</li>
-        <li><b>Back-end Agent deep link.</b> When an answer names a published dashboard, offer
-        &ldquo;Open in FabOrchestrator&rdquo; &rarr; <code>{FABORCH_BASE_URL}/v/&lt;key&gt;</code>. That
-        opens FO&rsquo;s own screen, authenticated by the FO session in that browser &mdash; a different
-        session from the PWA&rsquo;s, so the operator may have to sign in there. Say so on the link
-        rather than letting it look broken.</li></ul></dd></dl>
+        <li><b>No deep link needed.</b> The earlier draft planned an &ldquo;Open in
+        FabOrchestrator&rdquo; link to <code>/v/&lt;key&gt;</code>; that surface does not exist
+        upstream. Custom dashboards arrive inside the <code>/api/chat</code> stream, which the
+        artifact path above already renders.</li></ul></dd></dl>
       <dl class="f"><dt>New files</dt><dd><span class="fp">lib/faborch/artifacts.ts</span>,
         <span class="fp">lib/faborch/enforce-light.ts</span>,
         <span class="fp">components/fab/artifact-tile.tsx</span>,
@@ -1458,10 +1469,9 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         <span class="fp">app/api/chat/route.ts:454</span> loads the MCP tools for the authorised
         connections and <code>buildSystemPromptWithTools()</code>
         (<span class="fp">lib/system-prompts.ts:109</span>) injects their descriptions, so FO&rsquo;s model
-        chooses which MES or quality tool to call and writes the query itself. The Back-end Agent does the
-        equivalent through <code>list_data_sources</code> and <code>list_components</code>
-        (<span class="fp">lib/ui-agent/tools.ts:44</span>), which enumerate exactly the connections that
-        user is entitled to. <b>None of this is rebuilt in the PWA.</b></li>
+        chooses which MES or quality tool to call and writes the query itself; upstream&rsquo;s custom
+        dashboards work the same way inside <code>/api/chat</code>. <b>None of this is rebuilt in
+        the PWA.</b></li>
         <li><span class="chip c-have">Already implemented</span> <b>FO&rsquo;s own landing page already has
         the ask-first shape.</b> <span class="fp">components/cockpit/cockpit-ask.tsx:125</span> &mdash;
         &ldquo;Ask anything, or describe a task to orchestrate&hellip;&rdquo; &mdash; posts straight to
@@ -1473,12 +1483,10 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         knowledge. The pattern is right; the wiring is not. The PWA must attach the user&rsquo;s
         authorised connections (WP8) on this path or it reproduces that defect on a phone, where it is
         harder to spot.</li>
-        <li><span class="chip c-new">Absent</span> <b>FO has no cross-agent router.</b> A grep across
-        <span class="fp">app/</span>, <span class="fp">lib/</span> and <span class="fp">components/</span>
-        finds <code>/api/modeling-agent/chat</code> and <code>/api/backend-agent/chat</code> referenced
-        only by their own screens (<span class="fp">components/agent-chat/modeling-chat-app.tsx:881</span>,
-        <span class="fp">backend-agent-app.tsx:131</span>). No endpoint, prompt or library takes a
-        free-form request and decides between the three. <b>That single decision is the only new
+        <li><span class="chip c-new">Absent</span> <b>FO has no cross-agent router.</b> At upstream
+        <code>e5a5abd</code>, three of the four cockpit cards route to <code>/chat</code> and the
+        fourth to <code>/modeling-agent</code>; nothing takes a free-form request and decides
+        between them. <b>That single decision &mdash; now a binary one &mdash; is the only new
         reasoning this package adds.</b></li></ul></dd></dl>
       <dl class="f"><dt>Must be implemented</dt><dd><ul>
         <li><b>Default without deciding.</b> Unless a request clearly belongs elsewhere it goes to
@@ -1486,10 +1494,11 @@ Phone  ── readFoStream() → text | tool | error → React state → markdow
         most questions the routing is then finished, because FO picks the tools and the data path itself.
         This is the most important design point in the package: the requirement is largely satisfied by
         <em>not</em> building a router.</li>
-        <li><b>One classification turn, executed on FO.</b> Where a request may belong to the Modeling or
-        Back-end agent, the PWA asks FabOrchestrator rather than deciding for itself: a short call to
-        <code>/api/chat</code> with a fixed prompt that returns one token &mdash; <code>insight</code>,
-        <code>modeling</code> or <code>backend</code>. The judgement runs on FO&rsquo;s model, under
+        <li><b>One classification turn, executed on FO.</b> Where a request may belong to the Master
+        Data Load (modeling) Agent, the PWA asks FabOrchestrator rather than deciding for itself: a
+        short call to <code>/api/chat</code> with a fixed prompt that returns one token &mdash;
+        <code>chat</code> or <code>modeling</code> (upstream <code>e5a5abd</code> made the decision
+        binary: every other card shares <code>/api/chat</code>). The judgement runs on FO&rsquo;s model, under
         FO&rsquo;s credential, inside FO&rsquo;s quota and audit trail. No classifier, keyword table,
         model key or prompt library is added to the PWA.</li>
         <li><b>Fail towards the working path.</b> A timeout, an unparseable reply, or a route the user is
@@ -1801,16 +1810,16 @@ SIGN OUT
   <a href="#s6">WP7</a> is the whole mapping. Three consequences worth stating separately:</p>
   <ul>
     <li><b>Agent selection is mostly framing, but not entirely.</b> FabInsight and the AI Support
-    Engineer are the same endpoint with the same tools &mdash; the difference is the card and the
-    suggested prompts. The Modeling and Back-end agents are genuinely different backends with
-    different tools and different gates. A design that treated all four as pure framing would send
-    <code>activeMcpIds</code> to endpoints that ignore it and would miss the modeling permission gate.</li>
+    Engineer &mdash; and, verified against upstream <code>e5a5abd</code>, the Back-end Agent too &mdash;
+    are the same endpoint with the same tools; the difference is the card and the suggested
+    prompts. Only the Master Data Load (modeling) Agent is a genuinely different backend with its
+    own tools and its own gate. A design that treated all four as pure framing would still miss
+    that gate and would send <code>activeMcpIds</code> to a route that ignores it.</li>
     <li><b>Do not invent services.</b> One proxy route, one registry. The exploratory plan&rsquo;s
     <code>/api/faborch/insight/chat</code> becomes <code>/api/faborch/[agent]/chat</code>.</li>
-    <li><b>Unsupported agents must say so on the card.</b> The Modeling Agent&rsquo;s file upload,
-    download tiles and parent-options picker are not proxied; the Back-end Agent&rsquo;s
-    &ldquo;Open dashboard&rdquo; button is replaced by a deep link. Each omission is a sentence on the
-    screen, not a silent difference.</li>
+    <li><b>Unsupported features must say so on the card.</b> The Master Data Load Agent&rsquo;s file
+    upload, download tiles and parent-options picker are not proxied. Each omission is a sentence
+    on the screen, not a silent difference.</li>
   </ul>
 
   <h3>11.1 The agentic entry point (WP13)</h3>
@@ -1825,8 +1834,8 @@ SIGN OUT
         <td><b>FabOrchestrator, today</b></td>
         <td><span class="fp">app/api/chat/route.ts:454</span> loads MCP tools for the authorised
         connections; <code>buildSystemPromptWithTools()</code> injects their descriptions and the model
-        chooses. The Back-end Agent equivalents are <code>list_data_sources</code> /
-        <code>list_components</code> in <span class="fp">lib/ui-agent/tools.ts:44</span>.</td>
+        chooses. Upstream&rsquo;s custom dashboards work the same way inside <code>/api/chat</code>
+        (<code>isDashboardAdmin</code>).</td>
         <td>Attach the authorised connection ids (WP8). Nothing else.</td></tr>
       <tr><td>Whether a free-form question should go to a single ask box at all</td>
         <td><b>FabOrchestrator, today</b></td>
@@ -2019,10 +2028,10 @@ SIGN OUT
         &mdash; the test that actually proves nothing buffers; client abort closes the upstream socket;
         an upstream stream that stops mid-frame surfaces <code>connection_lost</code> and keeps partial
         text.</td></tr>
-      <tr><td><b>Agent routing</b></td><td><code>insight</code> forwards to <code>/api/chat</code> with
-        <code>activeMcpIds</code>; <code>modeling</code> and <code>backend</code> forward to their own
-        paths <b>without</b> it; a user lacking <code>modeling_agent</code> gets a disabled card from
-        <code>/api/faborch/agents</code>.</td></tr>
+      <tr><td><b>Agent routing</b></td><td><code>insight</code> and <code>backend</code> forward to
+        <code>/api/chat</code> with <code>activeMcpIds</code>; <code>modeling</code> forwards to its
+        own path <b>without</b> it; a user lacking <code>modeling_agent</code> gets a disabled card
+        from <code>/api/faborch/agents</code>.</td></tr>
       <tr><td><b>FabInsight tools</b></td><td>Two connected + one errored &rarr; two ids forwarded;
         <code>[]</code> &rarr; the guard fires before FO is called; connections endpoint 500 &rarr; the
         turn still proceeds without tools.</td></tr>
@@ -2189,7 +2198,8 @@ curl -N -X POST "$FO/api/chat" \
     <thead><tr><th>#</th><th>Question</th><th>How</th><th>If it fails</th></tr></thead>
     <tbody>
       <tr><td>P1</td><td>Does the working tree build from a clean clone?</td><td><code>npm ci &amp;&amp; npm run build</code> on a fresh checkout</td><td>WP0 grows; everything slips</td></tr>
-      <tr><td>P2</td><td>Does the deployed FO serve <code>/api/backend-agent/chat</code>?</td><td><code>curl -i -X POST</code> with a valid token</td><td>The Back-end Agent card is disabled until FO redeploys &mdash; not this team&rsquo;s call</td></tr>
+      <tr><td>P2</td><td>Does the deployed FO serve <code>/api/modeling-agent/chat</code> &mdash; the one
+        agent route that is not <code>/api/chat</code>?</td><td><code>curl -i -X POST</code> with a valid token</td><td>Answered 2026-09-01: HTTP 200 on the deployment. The Back-end Agent needs no probe &mdash; its card shares <code>/api/chat</code></td></tr>
       <tr><td>P3</td><td>Does CloudFront or Fly buffer SSE?</td><td>E0 against CloudFront and against the EB origin; then E1 against the deployed PWA</td><td>Streaming is the product; a fix may require CloudFront behaviour changes, i.e. an infrastructure ticket</td></tr>
       <tr><td>P4</td><td>Does the demo account&rsquo;s role have connected MCPs, and are the Lambdas up?</td><td>E0 step 2, then smoke check 6</td><td>No data answers. An admin must assign role MCPs; a dead Lambda is outside this repo entirely</td></tr>
       <tr><td>P5</td><td>Does the account have <code>modeling_agent</code>?</td><td><code>GET /api/modeling-agent/access</code></td><td>The Modeling Agent card ships disabled</td></tr>
@@ -2212,7 +2222,7 @@ curl -N -X POST "$FO/api/chat" \
         <td>E1&rsquo;s five pass criteria, demonstrated live. Especially: the FO token is not findable in
         DevTools, and tokens arrive progressively.</td></tr>
       <tr><td><b>M2</b></td><td>All three agents reachable, and reachable without choosing one</td><td>Phase 2</td><td>WP5, WP7, WP13</td>
-        <td>FabInsight, Modeling and Back-end agents, each on its own screen with honest availability &mdash; plus a landing ask box that routes a free-form question to the right one</td>
+        <td>FabInsight, Master Data Load and Back-end agent cards, each on its own screen with honest availability &mdash; plus a landing ask box that routes a free-form question to the right one</td>
         <td>Each card either opens a working conversation or states, on the card, why it cannot. A
         permission failure is a disabled card, not a dead conversation. A question typed without choosing an agent is answered, labelled with the agent that served it, and the route can be overridden in one tap.</td></tr>
       <tr><td><b>M3</b></td><td>Real data on a phone</td><td>Phase 3</td><td>WP1, WP8</td>
@@ -2277,7 +2287,10 @@ curl -N -X POST "$FO/api/chat" \
     <tbody>
       <tr><td><b>SSE through two proxies</b></td><td>Neither CloudFront (in front of FO) nor Fly (in front of the PWA) can be checked from source. FO was migrated off App Runner <em>because</em> its 120 s timeout broke streaming, so this failure mode has already happened once here. A fix may be an infrastructure ticket, not a code change.</td><td class="num">2.0</td></tr>
       <tr><td><b>MES / MCP availability</b></td><td>Two of ten servers were 500ing on the last recorded check; MES sits behind a VPN reachable only from the CMF VPC; the Lambdas are not in this repository and nobody on this side can fix one.</td><td class="num">2.0</td></tr>
-      <tr><td><b>Deployed FO version drift</b></td><td>The deployed build is known to predate <code>/backend-agent</code>. Whether it carries the Back-end Agent API, and which <code>ai</code> version it streams, are both runtime facts. An FO redeploy is somebody else&rsquo;s schedule.</td><td class="num">1.5</td></tr>
+      <tr><td><b>Deployed FO version drift</b></td><td>Largely resolved 2026-09-01: the backend-agent
+question dissolved (no such API upstream), and probes confirmed the modeling route live and
+streaming progressive. Residual exposure: upstream ships fast (several feature commits in the
+last week alone), so the deployment&rsquo;s behaviour can still drift mid-project.</td><td class="num">1.5</td></tr>
       <tr><td><b>iOS install &amp; standalone behaviour</b></td><td>Safari fires no <code>beforeinstallprompt</code>; install is a manual Share-sheet path; the app has already had one reported false-offline defect that only reproduced on a cold standalone launch. Needs a physical device and iteration.</td><td class="num">1.5</td></tr>
       <tr><td><b>Account &amp; permission provisioning</b></td><td>A demo FO account needs a role with connected MCPs and, for the Modeling Agent, the <code>modeling_agent</code> permission. Both are granted in the admin console by someone else.</td><td class="num">1.0</td></tr>
       <tr><td><b>Artifact fidelity on a phone</b></td><td>FO&rsquo;s prompt says nothing about mobile widths. Some dashboards will simply be wide. Improving that means changing FO&rsquo;s prompt, which is out of scope.</td><td class="num">1.0</td></tr>
@@ -2308,7 +2321,7 @@ curl -N -X POST "$FO/api/chat" \
       <tr><td>Parser breaks on an FO SDK upgrade</td><td><span class="chip c-mod">Medium</span></td><td>Hand-written parser pinned to <code>ai@6.0.97</code> frame names</td><td>Pinned tests are the alarm; add a version note in the file header</td></tr>
       <tr><td>Nested error envelope reaches React</td><td><span class="chip c-mod">Medium</span></td><td>Confirmed defect, &sect;01</td><td>WP3/WP4, with a property test</td></tr>
       <tr><td>30-minute idle eviction interrupts a demo</td><td><span class="chip c-mod">Medium</span></td><td><code>IDLE_TIMEOUT_MS</code>, <span class="fp">lib/session-audit.ts:23</span></td><td>Clean re-auth with the destination preserved; brief the demo operator</td></tr>
-      <tr><td>Back-end Agent API absent from the deployed build</td><td><span class="chip c-mod">Medium</span></td><td>Recorded 2026-08-24: <code>GET /backend-agent</code> &rarr; 404</td><td>Probe P2; ship the card disabled if needed</td></tr>
+      <tr><td>Back-end Agent API absent from the deployed build</td><td><span class="chip c-have">Resolved</span></td><td>Verified 2026-09-01 against upstream <code>e5a5abd</code>: the API exists in no branch by design</td><td>Card maps to <code>/api/chat</code>; nothing to ship disabled</td></tr>
       <tr><td>Artifact sandbox misconfigured</td><td><span class="chip c-risk">High if wrong</span></td><td>New code executing model output</td><td>Never <code>allow-same-origin</code> with <code>allow-scripts</code>; escape test in CI</td></tr>
       <tr><td>Two MCP servers down</td><td><span class="chip c-mod">Medium</span></td><td>Genealogy and Scrap Pareto, HTTP 500 on 2026-07-24</td><td>Outside the repo. Avoid those use cases in the demo script</td></tr>
       <tr><td>Manifest <code>id</code> change orphans installed copies</td><td><span class="chip c-mod">Low but permanent</span></td><td><code>id:"/orders"</code> vs <code>start_url:"/"</code></td><td>Decide in WP1, before anyone installs</td></tr>

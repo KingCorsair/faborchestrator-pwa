@@ -673,9 +673,11 @@ tbody tr:last-child td{border-bottom:0}
         only from a specific network, so a locally run platform may prove the app works without proving
         it can reach data.</td><td class="num">2.0</td></tr>
       <tr><td><b>Platform deployment currency</b></td>
-        <td>The live FabOrchestrator deployment is known to be behind the current code, and at least one
-        agent&rsquo;s service may not be present on it yet. Bringing it current is another team&rsquo;s
-        release schedule, not ours.</td><td class="num">1.5</td></tr>
+        <td>Largely resolved by the 1 September checks: every service the app calls is present on
+        the live deployment, and the one agent thought to be missing turned out not to be a
+        separate service at all &mdash; the platform serves it through its main conversation
+        service. Residual exposure: the platform ships frequently, so behaviour can still drift
+        mid-project.</td><td class="num">1.5</td></tr>
       <tr><td><b>iPhone install behaviour</b></td>
         <td>Apple provides no automatic install prompt and no way to test the installed experience
         except on a physical device. This app has already had one defect that appeared only on a

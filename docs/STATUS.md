@@ -81,6 +81,37 @@ Closes **M2 / B2**. WP7 is smaller than planned now that no non-agent screens
 remain. WP13's routing decision is binary (chat or modeling), because three of
 the four cockpit cards share `/api/chat`.
 
+### The next work package, in detail — WP5
+
+**Why it is next.** Its dependencies (WP2, WP4, WP6) are done, and it blocks the
+other two: WP7's menu opens conversations, and WP13 carries a typed question
+*into* a conversation thread. Building either first means building against a
+conversation layer that is not finished.
+
+**What already exists** — checked in the code, not assumed.
+`components/fab/screens/agent-chat.tsx` already holds the turn list, sends the
+full history on every turn, and has an `AbortController` behind Stop.
+`lib/validation.ts` already caps the payload at 64 messages of 20,000
+characters.
+
+**What is actually left:**
+
+- **No test coverage at all.** The conversation layer is the one part of the
+  FabOrchestrator path with nothing behind it in the suite.
+- **Stop must keep what already arrived.** The acceptance line is explicit:
+  survive interruption *without losing what arrived*. Aborting mid-stream is
+  exactly where partial text gets dropped.
+- **A hazard the code already records.** A comment in `agent-chat.tsx` warns
+  that `send` closes over `turns`, so it is a new function on every token, and
+  calls the seeding effect "delicate". That is the shape of a bug that works in
+  testing and drops a follow-up in a demo.
+- **The 64-message cap needs a decision.** Today a longer conversation is
+  silently truncated rather than refused, so the model quietly loses the
+  beginning of the thread.
+
+**Done when:** ask, read, follow up, stop, ask again — on each agent, with
+tests.
+
 ### Phases 3–5 — unchanged
 
 Phase 3 (install + live plant data, M3/B3) is **blocked** — see below. Phase 4

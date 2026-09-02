@@ -1,0 +1,824 @@
+<title>FabOrchestrator PWA Requirements</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+:root{
+  --ground:#f6f7fa; --panel:#ffffff; --panel-2:#eff1f7;
+  --ink:#171b28; --ink-2:#464e67; --ink-3:#6f7791;
+  --rule:#e1e4ee; --rule-2:#b9c0d6;
+  --accent-ink:#4038c9; --accent-wash:#eceef8;
+  --ok:#1c6f4e;   --ok-wash:#e2f2ea;
+  --warn:#8a5a00; --warn-wash:#fbf0d9;
+  --off:#6f7791;  --off-wash:#eef0f6;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+    --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+    --rule:#282e40; --rule-2:#454e6b;
+    --accent-ink:#b6b1ff; --accent-wash:#212739;
+    --ok:#67d3a3;   --ok-wash:#12291f;
+    --warn:#e3ae55; --warn-wash:#2c2211;
+    --off:#7e869e;  --off-wash:#1c2130;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e111b; --panel:#161a27; --panel-2:#1d2230;
+  --ink:#e7e9f2; --ink-2:#a8afc6; --ink-3:#7e869e;
+  --rule:#282e40; --rule-2:#454e6b;
+  --accent-ink:#b6b1ff; --accent-wash:#212739;
+  --ok:#67d3a3;   --ok-wash:#12291f;
+  --warn:#e3ae55; --warn-wash:#2c2211;
+  --off:#7e869e;  --off-wash:#1c2130;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  line-height:1.55;-webkit-font-smoothing:antialiased}
+
+/* ── masthead ───────────────────────────────────────────────────────────── */
+.mast{position:sticky;top:0;z-index:10;background:var(--ground);
+  border-bottom:1px solid var(--rule)}
+.mast .in{max-width:1080px;margin:0 auto;padding:20px 22px 14px}
+.eyebrow{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--accent-ink)}
+h1{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;
+  font-size:clamp(23px,3.4vw,31px);font-weight:700;letter-spacing:-.02em;
+  margin:8px 0 4px;text-wrap:balance}
+.stamp{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--ink-3);
+  letter-spacing:.02em}
+
+.legend{display:flex;flex-wrap:wrap;gap:7px;margin-top:13px}
+.lg{display:flex;align-items:center;gap:7px;background:var(--panel);
+  border:1px solid var(--rule);border-left-width:3px;border-radius:7px;
+  padding:5px 10px 5px 9px}
+.lg .k{font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:600;
+  letter-spacing:.07em;text-transform:uppercase}
+.lg .c{font-family:Archivo,sans-serif;font-size:13px;font-weight:700;
+  font-variant-numeric:tabular-nums;color:var(--ink)}
+.lg.confirmed{border-left-color:var(--ok)}      .lg.confirmed .k{color:var(--ok)}
+.lg.proposed{border-left-color:var(--accent-ink)}.lg.proposed .k{color:var(--accent-ink)}
+.lg.open{border-left-color:var(--warn)}         .lg.open .k{color:var(--warn)}
+.lg.out{border-left-color:var(--off)}           .lg.out .k{color:var(--off)}
+
+/* ── page ───────────────────────────────────────────────────────────────── */
+.wrap{max-width:1080px;margin:0 auto;padding:30px 22px 80px}
+.lede{font-size:16px;color:var(--ink-2);max-width:70ch;margin:0 0 8px}
+.lede b{color:var(--ink);font-weight:600}
+.rule{height:1px;background:var(--rule);margin:30px 0}
+
+section{margin:0 0 34px;scroll-margin-top:150px}
+h2{font-family:Archivo,sans-serif;font-size:19px;font-weight:700;
+  letter-spacing:-.01em;margin:0 0 4px;display:flex;gap:11px;align-items:baseline;
+  text-wrap:balance}
+h2 .num{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent-ink);flex:none;min-width:2ch}
+.sechint{font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-3);
+  margin:0 0 14px 0;padding-left:calc(2ch + 11px);max-width:74ch;line-height:1.5}
+
+/* ── the statement, with its label rail ─────────────────────────────────── */
+.stmt{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--rule-2);
+  border-radius:0 8px 8px 0;padding:12px 15px;margin:0 0 8px;max-width:78ch}
+.stmt p{margin:0;font-size:15.5px;color:var(--ink-2);max-width:66ch}
+.stmt p + p{margin-top:8px}
+.stmt b{color:var(--ink);font-weight:600}
+.stmt em{color:var(--ink-3);font-style:italic}
+.lab{display:inline-block;font-family:"JetBrains Mono",monospace;font-size:10px;
+  font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+  border-radius:4px;padding:2.5px 7px;margin-bottom:7px}
+.stmt.confirmed{border-left-color:var(--ok)}
+.stmt.confirmed .lab{color:var(--ok);background:var(--ok-wash)}
+.stmt.proposed{border-left-color:var(--accent-ink)}
+.stmt.proposed .lab{color:var(--accent-ink);background:var(--accent-wash)}
+.stmt.open{border-left-color:var(--warn);background:var(--panel)}
+.stmt.open .lab{color:var(--warn);background:var(--warn-wash)}
+.stmt.out{border-left-color:var(--off)}
+.stmt.out .lab{color:var(--off);background:var(--off-wash)}
+.stmt.key{box-shadow:0 1px 0 var(--rule),0 0 0 1px var(--warn) inset}
+
+.note{font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-3);
+  margin:6px 0 0;line-height:1.5}
+.xref{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--accent-ink);
+  text-decoration:none;border-bottom:1px solid var(--rule-2)}
+.xref:hover{border-bottom-color:var(--accent-ink)}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--accent-ink);outline-offset:2px}
+
+ul{margin:0;padding-left:19px}
+li{font-size:15.5px;color:var(--ink-2);margin-bottom:5px;max-width:66ch}
+li b{color:var(--ink);font-weight:600}
+code{font-family:"JetBrains Mono",monospace;font-size:.88em;
+  background:var(--panel-2);border-radius:4px;padding:1px 5px;color:var(--ink-2)}
+
+/* ── tables ─────────────────────────────────────────────────────────────── */
+.tw{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;
+  background:var(--panel);margin:4px 0 10px}
+table{border-collapse:collapse;width:100%;min-width:620px;
+  font-family:Archivo,"Helvetica Neue",Arial,sans-serif;font-size:13px;
+  font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:11px 13px;border-bottom:1px solid var(--rule);
+  vertical-align:top;line-height:1.5;color:var(--ink-2)}
+th{background:var(--panel-2);font-weight:600;font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td b{color:var(--ink);font-weight:600}
+.mono{font-family:"JetBrains Mono",monospace;font-size:11.5px}
+.yes{color:var(--warn);font-weight:600}
+.shared{color:var(--ink-3)}
+
+/* ── conflicts ──────────────────────────────────────────────────────────── */
+.conflict{border:1px solid var(--rule);border-left:3px solid var(--warn);
+  border-radius:0 8px 8px 0;background:var(--panel);padding:14px 16px;margin:0 0 10px;
+  max-width:78ch}
+.conflict h3{font-family:Archivo,sans-serif;font-size:14.5px;font-weight:600;
+  margin:0 0 7px;color:var(--ink);display:flex;gap:9px;align-items:baseline}
+.conflict h3 .n{font-family:"JetBrains Mono",monospace;font-size:11.5px;
+  color:var(--warn);flex:none}
+.conflict p{margin:0 0 7px;font-size:15px;color:var(--ink-2);max-width:66ch}
+.conflict p:last-child{margin-bottom:0}
+.conflict b{color:var(--ink);font-weight:600}
+
+/* ── questions ──────────────────────────────────────────────────────────── */
+.who{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--warn);
+  margin:16px 0 8px}
+.q{display:flex;gap:12px;padding:10px 14px;background:var(--panel);
+  border:1px solid var(--rule);border-radius:8px;margin-bottom:6px;max-width:78ch}
+.q .qn{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:600;
+  color:var(--warn);flex:none;padding-top:2px}
+.q p{margin:0;font-size:15px;color:var(--ink-2)}
+.q b{color:var(--ink);font-weight:600}
+.q.first{border-color:var(--warn);background:var(--warn-wash)}
+.q.first p{color:var(--ink)}
+
+footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-3);max-width:74ch}
+footer b{color:var(--ink-2)}
+@media (max-width:640px){
+  .stmt,.conflict,.q{border-radius:0 7px 7px 0}
+  .sechint{padding-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<header class="mast">
+  <div class="in">
+    <div class="eyebrow">Product requirements · version 1.0</div>
+    <h1>FabOrchestrator PWA Requirements</h1>
+    <div class="stamp">1 September 2026 · what the product is, not how it is built</div>
+    <div class="legend">
+      <div class="lg confirmed"><span class="k">Confirmed</span><span class="c" data-count="confirmed">–</span></div>
+      <div class="lg proposed"><span class="k">Proposed</span><span class="c" data-count="proposed">–</span></div>
+      <div class="lg open"><span class="k">Open question</span><span class="c" data-count="open">–</span></div>
+      <div class="lg out"><span class="k">Out of scope</span><span class="c" data-count="out">–</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <p class="lede">Every statement below carries exactly one label. <b>Confirmed</b> means
+  agreed or already proven. <b>Proposed</b> means a reasonable current design that nobody
+  outside the engineering work has agreed — and a proposed item that has been <em>built</em>
+  is still proposed, because building something is not the same as agreeing it.
+  <b>Open question</b> means it needs an answer from Jothi or Yogita, and is deliberately
+  not guessed at here.</p>
+
+  <p class="lede">This document exists so that product decisions stop being settled by
+  accident inside implementation work. The engineering plan lives separately, and
+  progress against it lives in <code>docs/STATUS.md</code>.</p>
+
+  <div class="rule"></div>
+
+  <!-- 1 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s1">
+    <h2><span class="num">1</span>Product goal</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Give operations staff access to FabOrchestrator from a phone, without
+      building a second version of the product.</b></p>
+      <p>The app is a front door and a secure connector. It contains no manufacturing
+      intelligence of its own. Every answer it shows is produced by FabOrchestrator: the
+      reasoning, the MES and quality data, the dashboards, the permissions, the usage
+      limits and the audit trail all stay where they are.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The app must never become a second product.</b> A production-order workflow
+      running on mock data was removed on 1 September 2026 for exactly this reason. If a
+      screen can answer a question without asking FabOrchestrator, it does not belong here.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Success is one sentence.</b> A supervisor scans a code on the floor, installs
+      the app, asks what yield looked like this week, and reads FabOrchestrator's answer —
+      computed by FabOrchestrator, from its data, under that supervisor's own permissions —
+      on their phone.</p>
+    </div>
+  </section>
+
+  <!-- 2 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s2">
+    <h2><span class="num">2</span>Target users</h2>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Primary: a production supervisor on the fab floor.</b> Holding a phone,
+      one-handed, possibly gloved, in a noisy place. Wants an answer about a line, an order,
+      a metric. Does not know — and should not need to know — how FabOrchestrator is
+      organised internally.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Secondary: managers and engineers who already use FabOrchestrator</b> on a
+      desktop and want the same answers away from it.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Is the supervisor the real first user, or is the first audience actually a
+      demonstration audience?</b> The two want different things: a supervisor needs speed
+      and reliability on one narrow task; a demonstration needs breadth and visible
+      capability. Several design choices below depend on this.</p>
+    </div>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <p><b>Administrators.</b> Role assignment, MCP configuration, user management and
+      quota setting stay in the FabOrchestrator admin console. The PWA never administers
+      anything.</p>
+    </div>
+  </section>
+
+  <!-- 3 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s3">
+    <h2><span class="num">3</span>Main user journeys</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>J1. Ask and read.</b> Open the app, sign in with a FabOrchestrator account, ask
+      a question, read the answer as it is written. <em>Proven end to end against the live
+      platform.</em></p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>J2. Follow up.</b> Ask a second question in the same thread and have it
+      understood in the context of the first.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>J3. Install and return.</b> Scan a QR code, install the app to the home screen,
+      reopen it later straight into a signed-in session.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>J4. Ask about live plant data.</b> Ask a metric question and get an answer drawn
+      from MES and quality systems, rendered readably on a phone.
+      <em>Blocked — see <a class="xref" href="#s16">§16</a>.</em></p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>J5. See a dashboard.</b> Ask for a chart and get one, full-screen and tappable.</p>
+    </div>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <p><b>Acting on what you learn.</b> Approving, rejecting, escalating, recording a
+      decision. The app answers questions; it does not change anything in any system.</p>
+    </div>
+  </section>
+
+  <!-- 4 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s4">
+    <h2><span class="num">4</span>Landing-page experience</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The landing page is the front door and mirrors FabOrchestrator's own
+      cockpit.</b> It is not a menu invented for this app.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>It offers a single ask box first.</b> A person can type a question without
+      choosing anything (see <a class="xref" href="#s5">§5</a>).</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>It also lists the platform's agents as cards</b>, in the product's own numbering
+      and wording, as a direct path for anyone who prefers to choose.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>It names the platform's wider capabilities without pretending to offer
+      them.</b> Master-data loading, generated dashboards, roles and access control, usage
+      and cost tracking, the audit trail. These are stated as facts about FabOrchestrator
+      and are <b>not links</b> — the app does not open them.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>The navigation mirrors the product's cockpit nav</b> — Cockpit, Agents,
+      Workflows, Sites, Reports — with sections this app cannot open shown greyed and
+      non-clickable, carrying the reason. Two of them are placeholders in FabOrchestrator
+      itself.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Should the landing page show activity figures?</b> It currently shows counters
+      ("1,284 queries today", "6 connectors deployed") carried over from the product's own
+      cockpit. They are <b>placeholders, not live data</b>. In a demonstration they read as
+      real. Options: make them live, label them clearly as illustrative, or remove them.</p>
+      <p class="note">See also the conflict in <a class="xref" href="#c4">§18.4</a>.</p>
+    </div>
+  </section>
+
+  <!-- 5 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s5">
+    <h2><span class="num">5</span>Agentic entry-point behaviour</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>A user should be able to ask from the landing page without manually choosing an
+      agent first; the system determines the appropriate FabOrchestrator route/agent and
+      returns the result.</b></p>
+      <p><em>Confirmed by Jothi, 1 September 2026. This is the defining interaction of the
+      product.</em> The user's mental model is "I ask FabOrchestrator a question", not "I
+      select a subsystem and then ask it a question".</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The intelligence stays in FabOrchestrator.</b> Choosing which tools and which
+      data answer a question is already the platform's own work. The app must not add
+      reasoning of its own; where a routing judgement is genuinely needed, it is asked of
+      the platform.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Anything unclear resolves to the general-purpose agent.</b> An ambiguous,
+      unanswerable or not-permitted request goes to the agent that can answer the widest
+      range of questions, rather than failing.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>The route is visible and reversible.</b> The answer says which agent produced
+      it, and can be re-asked elsewhere in one tap. A route the user cannot see is a route
+      they cannot correct.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Routing never blocks a normal answer.</b> Any decision step is capped in time;
+      if it is slow or fails, the question proceeds to the default agent.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>What should the user see while routing happens?</b> Nothing, a generic
+      "working", or the choice as it is made? This is the first impression of the product's
+      intelligence and has not been decided.</p>
+    </div>
+    <div class="conflict">
+      <h3><span class="n">Conflict</span>The ask box promises this today, and does not do it</h3>
+      <p>The box exists on the landing page but sends every question to FabInsight.
+      See <a class="xref" href="#c1">§18.1</a>.</p>
+    </div>
+  </section>
+
+  <!-- 6 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s6">
+    <h2><span class="num">6</span>Manual agent-selection behaviour</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Manual selection stays.</b> Ask-first is the default door, not the only one.
+      Choosing an agent by name remains a first-class path.</p>
+      <p>Three reasons, all still true: some flows are entered deliberately rather than
+      inferred from a sentence; a misrouted request needs a one-tap correction; and an agent
+      a person is not permitted to use must explain itself on a card rather than fail inside
+      a conversation.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>An unavailable agent shows as a disabled card with the reason on it</b>, never
+      as a door that opens onto a refusal.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The platform decides permissions, not the app.</b> Any availability check the
+      app performs is presentation only. FabOrchestrator's own refusal is authoritative and
+      its message is shown as sent.</p>
+    </div>
+  </section>
+
+  <!-- 7 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s7">
+    <h2><span class="num">7</span>Which FabOrchestrator agents are exposed</h2>
+    <p class="sechint">The most consequential open question in this document. It decides
+    what the landing page shows, what manual selection offers, and — because of
+    <a class="xref" href="#c2">§18.2</a> — whether routing has anything to choose between
+    at all.</p>
+
+    <div class="stmt open key"><span class="lab">Open question</span>
+      <p><b>Which FO agents should the PWA actually expose, and therefore which agents may
+      the landing-page router choose from?</b></p>
+      <p><em>Raised by Yogita.</em> Not every FabOrchestrator agent necessarily belongs in a
+      mobile app — in particular the <b>Master Data Load Agent</b>, depending on the intended
+      user and data workflow. A supervisor on a fab floor is not obviously the person who
+      loads MES master data, and that agent's real workflow involves file upload and staged
+      review.</p>
+    </div>
+
+    <p class="sechint">What is known today, verified against the platform's source
+    (upstream <code>e5a5abd</code>):</p>
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>Cockpit card</th><th>Platform route</th>
+          <th>Distinct service?</th><th>In the PWA today</th>
+        </tr></thead>
+        <tbody>
+          <tr><td><b>Agent · 01</b> FabInsight™</td><td class="mono">/chat</td>
+              <td class="shared">Shared</td><td>Exposed</td></tr>
+          <tr><td><b>Agent · 02</b> AI Support Engineer</td><td class="mono">/chat</td>
+              <td class="shared">Shared</td><td>Card points at FabInsight's screen</td></tr>
+          <tr><td><b>Agent · 03</b> Master Data Load Agent</td><td class="mono">/modeling-agent</td>
+              <td class="yes">Yes — its own service and its own permission</td>
+              <td>Exposed</td></tr>
+          <tr><td><b>Agent · 04</b> Back-end Agent</td><td class="mono">/chat</td>
+              <td class="shared">Shared</td><td>Exposed, own screen and prompts</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Three of the four cards are framings of one conversation service.</b> Only the
+      Master Data Load Agent is a separate service with its own permission gate, which
+      FabOrchestrator enforces itself.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Should the app present four cards when three are the same service?</b> It is
+      faithful to how the product presents itself, and honest about nothing else. If a
+      customer asks "what is the difference between these three?", today's answer is "the
+      suggested prompts and the label."</p>
+    </div>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <p><b>Agents that do not exist in FabOrchestrator.</b> The app never invents one.</p>
+    </div>
+  </section>
+
+  <!-- 8 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s8">
+    <h2><span class="num">8</span>Authentication and logout behaviour</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>FabOrchestrator is the only identity.</b> Every person signs in with their own
+      FabOrchestrator account, which the platform verifies. There is no demo credential, no
+      shared account and no service account.</p>
+      <p class="note"><em>Rationale, agreed: a shared identity would make every prompt in
+      the platform's audit trail attributable to a machine rather than a person, and hand
+      whoever holds the link somebody else's data access.</em></p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The platform credential never reaches the phone.</b> It is held server-side and
+      is not readable by any script in the browser. <em>Proven.</em></p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Signing out ends the session on FabOrchestrator itself</b>, not just locally, so
+      the platform's own logs record a sign-out. <em>Proven against the live platform.</em>
+      It affects only the session the app was given; other sessions that person holds are
+      untouched.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Signing out works even when the platform is unreachable.</b> The local session
+      always ends; the app reports honestly whether the platform was told.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>An expired or evicted session asks for a fresh sign-in and says why.</b> The
+      platform ends sessions after 30 minutes of inactivity — a pocketed phone reaches that
+      easily — and the app must recover cleanly rather than fail the same way on every
+      retry.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Sign-in returns the user to where they were headed.</b></p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Should the app stay signed in between launches, and for how long?</b> It
+      currently holds a session for up to 12 hours, capped by the platform's own expiry. On
+      a shared shop-floor handset that may be too long; for a single named user it may be
+      too short.</p>
+    </div>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <p><b>Password reset, registration, SSO.</b> All belong to FabOrchestrator.</p>
+    </div>
+  </section>
+
+  <!-- 9 ─────────────────────────────────────────────────────────────────── -->
+  <section id="s9">
+    <h2><span class="num">9</span>Conversation behaviour</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Answers appear progressively, as they are written.</b> A question involving
+      plant data can take one to three minutes; silence followed by a wall of text reads as
+      a broken app. <em>Proven through the live hosting chain.</em></p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Follow-up questions keep their context.</b></p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>A turn can be stopped mid-answer, and what already arrived is kept.</b></p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Tool activity is visible in plain language</b> — the app says the platform is
+      looking something up, without exposing internals.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Should conversations persist between visits?</b> Today a thread lives only as
+      long as the screen is open; closing the app loses it. The platform has its own
+      conversation history the app does not currently use. Persisting raises questions about
+      where history lives and who can see it.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>What happens to a very long conversation?</b> The app sends the whole thread
+      each turn, with a cap. Beyond it, the beginning is silently lost. Silent truncation,
+      an explicit warning, or a fresh thread?</p>
+    </div>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <p><b>Editing or deleting past messages, branching, sharing a transcript.</b></p>
+    </div>
+  </section>
+
+  <!-- 10 ────────────────────────────────────────────────────────────────── -->
+  <section id="s10">
+    <h2><span class="num">10</span>Real MES / MCP data behaviour</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The app performs no plant queries of its own.</b> It has no MES logic, no SQL
+      and no model call. It passes the question to FabOrchestrator with the data connections
+      that person is entitled to, and renders what comes back.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The platform only queries the data connections explicitly enabled for that
+      user.</b> With none enabled it still answers, from general knowledge.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>The app must detect that state and say so.</b> An answer from general knowledge
+      presented as a plant answer is worse than no answer: it looks like a wrong number
+      rather than a missing permission. <em>Not yet built.</em></p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Tables must be readable on a phone</b>, scrolling inside their own container
+      rather than making the page scroll sideways.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>What should the app do when a data connection is down?</b> Two of the platform's
+      ten connectors were failing at the last recorded check. Say which one and continue, or
+      refuse the question?</p>
+    </div>
+  </section>
+
+  <!-- 11 ────────────────────────────────────────────────────────────────── -->
+  <section id="s11">
+    <h2><span class="num">11</span>Mobile / PWA requirements</h2>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Reached by scanning a QR code.</b> No app store, no IT deployment.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Installable to the home screen</b> on iPhone and Android, opening in its own
+      window. On iOS this needs an explicit prompt, because Safari offers no automatic one.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Usable one-handed at 360 px</b>, respecting notch and safe-area insets.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Honest offline behaviour.</b> The app never claims to be offline when it is not,
+      and never shows a stale answer as a fresh one.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Which devices must be supported?</b> iPhone and Android are assumed. Nothing has
+      been said about tablets, ruggedised shop-floor devices, or minimum OS versions.</p>
+    </div>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <p><b>A native app, an app-store release, push notifications, camera or barcode
+      features, offline answering.</b></p>
+    </div>
+  </section>
+
+  <!-- 12 ────────────────────────────────────────────────────────────────── -->
+  <section id="s12">
+    <h2><span class="num">12</span>Loading, progress, empty and error states</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Every failure produces a distinct, plain-language message with a next step.</b>
+      The app fronts a live production platform, so failures are normal operating
+      conditions, not edge cases. "Something went wrong" sends the user to find whoever set
+      the demo up.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Every failure carries a reference support can trace.</b> The platform issues an
+      error id; it is kept and shown, because it is the only handle support has.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Platform messages are relayed as sent</b> where they are actionable — a
+      permission refusal names the permission an administrator must grant.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Distinct states for waiting, working and answering</b>, so a long tool call does
+      not look like a hang.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>Empty states say what to do</b>, not merely that there is nothing.</p>
+    </div>
+    <div class="stmt open"><span class="lab">Open question</span>
+      <p><b>Should the app retry automatically on a transient failure, or always ask?</b></p>
+    </div>
+  </section>
+
+  <!-- 13 ────────────────────────────────────────────────────────────────── -->
+  <section id="s13">
+    <h2><span class="num">13</span>Security and product constraints</h2>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Every question is attributable to a real person</b>, carrying that person's
+      permissions, data access, usage limits and audit record.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>No permission decision can be influenced by anything the phone sends.</b> Which
+      data connections and which model are used are decided server-side; the platform then
+      checks again independently.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The platform credential is never in client JavaScript, local storage, a
+      readable cookie, a log line or a cached file.</b></p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>Generated dashboards are isolated</b> from the app and its credentials.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>No changes to FabOrchestrator are required</b> for the app to work.</p>
+    </div>
+    <div class="stmt proposed"><span class="lab">Proposed</span>
+      <p><b>The app holds no plant data at rest.</b> It renders answers and forgets them.</p>
+    </div>
+  </section>
+
+  <!-- 14 ────────────────────────────────────────────────────────────────── -->
+  <section id="s14">
+    <h2><span class="num">14</span>Out of scope</h2>
+    <div class="stmt out"><span class="lab">Out of scope</span>
+      <ul>
+        <li><b>The production-order review workflow</b> and its mock MES data.
+            <em>Removed 1 September 2026; decision recorded in the delivery plan.</em></li>
+        <li><b>Any AI, prompt, model or manufacturing logic in the app.</b></li>
+        <li><b>Administration of any kind.</b></li>
+        <li><b>Writing to MES, ERP or quality systems.</b></li>
+        <li><b>Barcode scanning, offline answering, push notifications, native apps.</b></li>
+        <li><b>Opening FabOrchestrator screens the app does not implement</b> (Workflows,
+            Sites, Reports). They are shown greyed, not linked.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 15 ────────────────────────────────────────────────────────────────── -->
+  <section id="s15">
+    <h2><span class="num">15</span>Acceptance criteria</h2>
+    <p class="sechint">The product is right when all of these are true and demonstrable.</p>
+    <div class="stmt confirmed" data-nocount><span class="lab">Confirmed — already met</span>
+      <ul>
+        <li>A person signs in with their own FabOrchestrator account and reaches the landing
+            page.</li>
+        <li>A question is answered, and the answer appears progressively rather than all at
+            once.</li>
+        <li>Follow-up questions keep their context.</li>
+        <li>The platform credential is provably absent from the phone.</li>
+        <li>Signing out ends the session on the platform as well as locally.</li>
+        <li>The app contains no plant logic, data queries or AI reasoning of its own.</li>
+      </ul>
+    </div>
+    <div class="stmt confirmed" data-nocount><span class="lab">Confirmed — not yet met</span>
+      <ul>
+        <li>A question asked from the landing page <b>with nothing selected</b> is routed to
+            the right agent and answered, labelled with which agent served it.</li>
+      </ul>
+    </div>
+    <div class="stmt proposed" data-nocount><span class="lab">Proposed — not yet met</span>
+      <ul>
+        <li>Every agent is reachable by name, and either opens a conversation or explains on
+            its card why it cannot.</li>
+        <li>The app installs to a home screen on iPhone and Android from a QR code.</li>
+        <li>A metric question returns figures drawn from live plant data, readable on a
+            phone.</li>
+        <li>A dashboard request renders full-screen and is proven isolated.</li>
+        <li>Every identified failure produces its own message, next step and reference.</li>
+        <li>A user with no data connections is told so explicitly, rather than given a
+            general-knowledge answer.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 16 ────────────────────────────────────────────────────────────────── -->
+  <section id="s16">
+    <h2><span class="num">16</span>Dependencies and blockers</h2>
+    <div class="stmt open key" data-nocount><span class="lab">Blocker</span>
+      <p><b>The demonstration account has no data connections.</b> Verified 1 September:
+      zero connected, zero visible. Plant questions are answered from general knowledge.
+      <b>Blocks acceptance criteria 10 and 13 entirely</b> — the criteria the business case
+      rests on. Cleared by a FabOrchestrator administrator assigning MCP connections to that
+      account's role. <em>Nothing in engineering can work around this.</em></p>
+    </div>
+    <div class="stmt proposed" data-nocount><span class="lab">Dependency</span>
+      <p><b>Physical devices.</b> One iPhone and one Android handset are needed to accept
+      criterion 9. iOS install behaviour cannot be verified any other way.</p>
+    </div>
+    <div class="stmt proposed" data-nocount><span class="lab">Dependency</span>
+      <p><b>A reachable deployment</b> for anything demonstrated from a URL rather than a
+      laptop.</p>
+    </div>
+    <div class="stmt confirmed" data-nocount><span class="lab">Not a blocker</span>
+      <p><b>A database.</b> Previously believed necessary for revocable sessions; resolved
+      without one.</p>
+    </div>
+  </section>
+
+  <!-- 17 ────────────────────────────────────────────────────────────────── -->
+  <section id="s17">
+    <h2><span class="num">17</span>Confirmed decisions</h2>
+    <p class="sechint">Recorded so they are not silently reopened.</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th style="width:2.5rem">#</th><th>Decision</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">1</td><td>A user can ask from the landing page without choosing an agent; the system routes it</td><td class="mono">1 Sep 2026, Jothi</td></tr>
+          <tr><td class="mono">2</td><td>Manual agent selection remains, alongside ask-first</td><td class="mono">1 Sep 2026</td></tr>
+          <tr><td class="mono">3</td><td>FabOrchestrator is the only identity; the demo credential is removed</td><td class="mono">1 Sep 2026</td></tr>
+          <tr><td class="mono">4</td><td>The production-order workflow is removed; the app is only a front door</td><td class="mono">1 Sep 2026</td></tr>
+          <tr><td class="mono">5</td><td>The navigation mirrors the platform's cockpit; unopenable sections are greyed, not invented</td><td class="mono">1 Sep 2026</td></tr>
+          <tr><td class="mono">6</td><td>Sign-out ends the platform session, not just the local one</td><td class="mono">1 Sep 2026</td></tr>
+          <tr><td class="mono">7</td><td>The demonstration runs against the live deployment</td><td class="mono">1 Sep 2026</td></tr>
+          <tr><td class="mono">8</td><td>The app makes no changes to FabOrchestrator</td><td class="mono">Throughout</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 18 ────────────────────────────────────────────────────────────────── -->
+  <section id="s18">
+    <h2><span class="num">18</span>Conflicts between current plans/code and product decisions</h2>
+    <p class="sechint">Recorded rather than resolved. <b>Each needs a product decision.</b></p>
+
+    <div class="conflict" id="c1">
+      <h3><span class="n">18.1</span>The ask box implies routing that does not exist</h3>
+      <p>The landing page already carries an ask box reading <em>"Ask anything, or describe a
+      task to orchestrate…"</em>, but it sends every question to FabInsight regardless of
+      content. Confirmed decision 1 is therefore <b>stated in the interface and not yet
+      true</b>. Anyone demonstrating the app today would be showing behaviour the product
+      does not have. Either the routing is built, or the box should not promise it.</p>
+    </div>
+
+    <div class="conflict" id="c2">
+      <h3><span class="n">18.2</span>The open agent question may remove the need for routing entirely</h3>
+      <p><b>This is the important one.</b> Three of the four cockpit cards are the same
+      conversation service; only the Master Data Load Agent is separate. So the routing
+      decision confirmed in <a class="xref" href="#s5">§5</a> is, in practice, <em>"is this a
+      master-data request or not?"</em></p>
+      <p>If Yogita's question (<a class="xref" href="#s7">§7</a>) resolves to
+      <b>excluding</b> the Master Data Load Agent from the PWA, then every exposed agent
+      shares one service and <b>there is nothing left to route between</b>. The confirmed
+      requirement would be satisfied by sending every question to the one service — no
+      routing logic at all.</p>
+      <p>The engineering plan currently budgets 2 days for a routing package. <b>That
+      estimate depends entirely on an unanswered product question.</b> It should not be
+      scheduled until <a class="xref" href="#s7">§7</a> is answered.</p>
+    </div>
+
+    <div class="conflict" id="c3">
+      <h3><span class="n">18.3</span>The plans still assume four agents</h3>
+      <p>The engineering plans describe exposing FabInsight, the Master Data Load Agent and
+      the Back-end Agent, with an open item about the AI Support Engineer card. They were
+      written before Yogita's question and do not treat agent exposure as undecided. They
+      need updating once <a class="xref" href="#s7">§7</a> is answered — not before.</p>
+    </div>
+
+    <div class="conflict" id="c4">
+      <h3><span class="n">18.4</span>Placeholder metrics presented as real</h3>
+      <p>The landing page shows counters from the product's own cockpit as though they were
+      live figures. This is a factual claim the app cannot support. It conflicts with the
+      honesty principle applied elsewhere — greyed navigation, explicit unavailability. See
+      the open question in <a class="xref" href="#s4">§4</a>.</p>
+    </div>
+
+    <div class="conflict" id="c5">
+      <h3><span class="n">18.5</span>An installed-app identifier points at a removed screen</h3>
+      <p>The app's install identifier still refers to the removed order workflow. It is
+      invisible to users and changing it would orphan every installed copy, so it was
+      deliberately left. Recorded so it is not mistaken for an oversight.</p>
+    </div>
+  </section>
+
+  <!-- 19 ────────────────────────────────────────────────────────────────── -->
+  <section id="s19">
+    <h2><span class="num">19</span>Open product questions</h2>
+
+    <div class="who">For Yogita</div>
+    <div class="q first">
+      <span class="qn">01</span>
+      <p><b>Which FabOrchestrator agents should the PWA expose</b> — and therefore which
+      agents may the landing-page router choose from? In particular, does the <b>Master Data
+      Load Agent</b> belong in a mobile app, given the intended user and data workflow?
+      <em>(<a class="xref" href="#s7">§7</a> — and note
+      <a class="xref" href="#c2">§18.2</a>: the answer may remove the need for routing
+      entirely.)</em></p>
+    </div>
+
+    <div class="who">For Jothi</div>
+    <div class="q"><span class="qn">02</span><p>Should the app present <b>four agent cards when three are the same service</b>? <em>(<a class="xref" href="#s7">§7</a>)</em></p></div>
+    <div class="q"><span class="qn">03</span><p>Should the landing page's <b>activity counters</b> be made live, labelled as illustrative, or removed? <em>(<a class="xref" href="#s4">§4</a>, <a class="xref" href="#c4">§18.4</a>)</em></p></div>
+    <div class="q"><span class="qn">04</span><p>Should <b>conversations persist</b> between visits? <em>(<a class="xref" href="#s9">§9</a>)</em></p></div>
+    <div class="q"><span class="qn">05</span><p>What should happen to a <b>very long conversation</b> — silent truncation, a warning, or a fresh thread? <em>(<a class="xref" href="#s9">§9</a>)</em></p></div>
+    <div class="q"><span class="qn">06</span><p>What should the user <b>see while a question is being routed</b>? <em>(<a class="xref" href="#s5">§5</a>)</em></p></div>
+    <div class="q"><span class="qn">07</span><p>Should the app <b>stay signed in between launches</b>, and for how long? <em>(<a class="xref" href="#s8">§8</a>)</em></p></div>
+    <div class="q"><span class="qn">08</span><p>What should happen when a <b>data connection is down</b> — name it and continue, or refuse? <em>(<a class="xref" href="#s10">§10</a>)</em></p></div>
+    <div class="q"><span class="qn">09</span><p>Should transient failures <b>retry automatically</b>? <em>(<a class="xref" href="#s12">§12</a>)</em></p></div>
+    <div class="q"><span class="qn">10</span><p>Is the <b>first audience a supervisor or a demonstration</b>? Several choices above depend on it. <em>(<a class="xref" href="#s2">§2</a>)</em></p></div>
+    <div class="q"><span class="qn">11</span><p>Which <b>devices</b> must be supported? <em>(<a class="xref" href="#s11">§11</a>)</em></p></div>
+  </section>
+
+  <footer>
+    <b>FabOrchestrator PWA — Product Requirements, version 1.0.</b> This document says what
+    the product is and how it should behave. It does not say how to build it — that is the
+    engineering plan, and progress against it is in <code>docs/STATUS.md</code>. The
+    canonical copy is <code>docs/PRD.md</code> in the repository; this page is published from
+    it.
+  </footer>
+</div>
+
+<script>
+// The legend counts what the document actually contains, so the reader sees how
+// settled the product is before reading a word of it. Counting the rendered
+// statements rather than a hand-kept tally means the two can never disagree.
+(function () {
+  var map = { confirmed: 0, proposed: 0, open: 0, out: 0 };
+  document.querySelectorAll(".stmt:not([data-nocount])").forEach(function (el) {
+    Object.keys(map).forEach(function (k) {
+      if (el.classList.contains(k)) map[k]++;
+    });
+  });
+  Object.keys(map).forEach(function (k) {
+    var t = document.querySelector('[data-count="' + k + '"]');
+    if (t) t.textContent = String(map[k]);
+  });
+})();
+</script>

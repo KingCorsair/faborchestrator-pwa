@@ -15,6 +15,10 @@ labelled CONFIRMED, PROPOSED, OPEN QUESTION or OUT OF SCOPE.
 Read it before changing what the app *does*; read the planning documents before
 changing *how* it is built.
 
+`PRD.html` is the same document laid out for reading and sharing, published as an
+artifact. As with the planning documents, the markdown here is canonical: when a
+product decision changes, it changes in `PRD.md` first.
+
 ## STATUS.md
 
 **Start here.** Where the project stands, what is proved and how, what is left,

@@ -11,20 +11,28 @@
  * obtain a session is for FO to verify the password against its own `users`
  * table, and this file mints the shell session for whoever FO vouched for.
  *
- * ⚠ **This is still not the product's session store.** FO issues opaque tokens
- * recorded in PostgreSQL (`claudeai_athena/lib/auth-middleware.ts`); this app
- * issues a **stateless HMAC**, so nothing server-side records that a session
- * exists and sign-out cannot revoke one — it clears the client and drops the FO
- * cookie. What that is worth is bounded now that FO is the only identity: this
- * token alone reaches the order workflow's mock data and `/api/auth/me`, and
- * nothing in FabOrchestrator, because every FO call needs the httpOnly cookie
- * that sign-out removes.
+ * ── Sign-out revokes, and no database was needed ────────────────────────────
+ * The plan expected this file to be replaced by a server-side session store, so
+ * that signing out could delete a row. It is not, because the same property
+ * falls out of binding the two credentials together: the payload carries a
+ * fingerprint of the FabOrchestrator token it was minted beside, and
+ * `requireAuth` refuses any request whose FO cookie does not match. Sign-out
+ * deletes that cookie, so the bearer token left in `localStorage` authenticates
+ * nothing — verified end to end, not argued.
  *
- * Replacing the HMAC with a revocable server-side session is the remaining WP2
- * item; it needs a database, which this app deliberately does not yet require.
+ * The approach that was rejected is worth recording: validating each request
+ * against FO's own `/api/auth/me`. Every authenticated call to FabOrchestrator
+ * sets `last_activity_at = NOW()` (`claudeai_athena/lib/session-audit.ts`), so
+ * that would have been a keep-alive — silently defeating FO's 30-minute idle
+ * eviction and corrupting the idle figures in its session audit, which is
+ * somebody else's compliance record.
+ *
+ * What remains true: this is a **stateless HMAC**, so an administrator still
+ * cannot revoke somebody else's session centrally. Only the holder can, by
+ * signing out. A shared session store is the answer if that is ever needed.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 /**
  * The operator, as this app labels them. Every field except `roleName` comes
@@ -40,6 +48,29 @@ export interface SessionUser {
 export interface SessionPayload extends SessionUser {
   /** Expiry, epoch milliseconds. */
   exp: number;
+  /**
+   * Fingerprint of the FabOrchestrator token this session was minted beside.
+   *
+   * **This is what makes sign-out a revocation.** The session is only accepted
+   * on a request that also carries the matching FO cookie, so dropping that
+   * cookie — which is all sign-out can do without a database — leaves the
+   * bearer token unable to authenticate anything. A copy of the token taken
+   * from `localStorage` is inert on its own.
+   *
+   * A truncated SHA-256, never the token: this payload is base64, not
+   * encrypted, and readable by anyone holding it.
+   */
+  fp: string;
+}
+
+/**
+ * A short, one-way fingerprint of an FO token.
+ *
+ * Truncated to 128 bits, which is far beyond what a collision would need to be
+ * useful here, and keeps the session token short enough to sit in a header.
+ */
+export function foFingerprint(foToken: string): string {
+  return createHash("sha256").update(foToken).digest("base64url").slice(0, 22);
 }
 
 function secret(): string {
@@ -106,8 +137,14 @@ export interface LoginResult {
  * that can be predicted at sign-in — that is handled where it becomes
  * observable, in the chat proxy's 401 path, which drops the cookie and asks for
  * a fresh sign-in (`app/api/faborch/[agent]/chat/route.ts`).
+ *
+ * ── `foToken` binds this session to that one ────────────────────────────────
+ * Its fingerprint goes in the payload, and `requireAuth` refuses any request
+ * whose FO cookie does not match. That is what lets sign-out revoke without a
+ * server-side session store: sign-out deletes the cookie, and the bearer token
+ * left behind authenticates nothing.
  */
-export function sessionFor(user: SessionUser, notAfter?: string): LoginResult {
+export function sessionFor(user: SessionUser, notAfter: string, foToken: string): LoginResult {
   let exp = Date.now() + ttlMs();
 
   if (notAfter) {
@@ -118,7 +155,7 @@ export function sessionFor(user: SessionUser, notAfter?: string): LoginResult {
     if (Number.isFinite(foExpiry)) exp = Math.min(exp, foExpiry);
   }
 
-  const payload: SessionPayload = { ...user, exp };
+  const payload: SessionPayload = { ...user, exp, fp: foFingerprint(foToken) };
   const body = b64url(JSON.stringify(payload));
 
   return {

@@ -32,13 +32,20 @@ import { sessionFor } from "@/lib/auth";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { POST } from "@/app/api/faborch/[agent]/chat/route";
 
-const PWA_TOKEN = sessionFor({
-  id: "u1",
-  email: "supervisor@athenatech.example",
-  name: "A. Supervisor",
-  roleName: "Supervisor",
-}).token;
 const FO_TOKEN = "fo-token-not-real";
+
+// Minted against FO_TOKEN, because the session is only valid beside the
+// FabOrchestrator cookie it was issued with — see lib/auth-middleware.ts.
+const PWA_TOKEN = sessionFor(
+  {
+    id: "u1",
+    email: "supervisor@athenatech.example",
+    name: "A. Supervisor",
+    roleName: "Supervisor",
+  },
+  new Date(Date.now() + 864e5).toISOString(),
+  FO_TOKEN,
+).token;
 
 /** Every outbound call the route made during a test. */
 let calls: { url: string; init: RequestInit }[] = [];
@@ -110,13 +117,31 @@ describe("the request never reaches FabOrchestrator unless it should", () => {
     assert.equal(calls.length, 0);
   });
 
-  test("signed in here but not to FO says so, and asks for FO credentials", async () => {
+  test("a session without its FabOrchestrator cookie is rejected outright", async () => {
+    // The session is bound to the FO token it was minted with, so losing the
+    // cookie — which is what sign-out does — invalidates the bearer token too.
+    // It never reaches the route's own `no_faborch_session` branch.
     stubFo(() => sse([]));
     const res = await call(request({ foCookie: false }));
     assert.equal(res.status, 401);
-    const body = (await res.json()) as { code: string; error: string };
-    assert.equal(body.code, "no_faborch_session");
-    assert.match(body.error, /FabOrchestrator/);
+    assert.equal(calls.length, 0, "and FabOrchestrator is never contacted");
+  });
+
+  test("a session presented with somebody else's FO cookie is rejected", async () => {
+    stubFo(() => sse([]));
+    const req = new NextRequest("https://pwa.test/api/faborch/insight/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${PWA_TOKEN}`,
+        cookie: `${FO_TOKEN_COOKIE}=a-different-fo-token`,
+      },
+      body: JSON.stringify({
+        messages: [{ role: "user", parts: [{ type: "text", text: "hi" }] }],
+      }),
+    });
+    const res = await call(req);
+    assert.equal(res.status, 401);
     assert.equal(calls.length, 0);
   });
 

@@ -36,8 +36,8 @@ is expanded, with evidence, further down.
 - Next: asking from the front page, with the system picking the right agent —
   the behaviour Jothi confirmed he wanted.
 - After that: installing on a phone, and answering from real plant data.
-- One security item is deferred: sign-out cannot yet cancel the app's own
-  session. Low impact — that session can reach nothing in FabOrchestrator.
+- Nothing security-related is outstanding: sign-out now genuinely cancels the
+  app's session, and it turned out no database was needed for it.
 
 **Waiting on someone else**
 
@@ -97,18 +97,28 @@ carried forward:
 
 ## Remaining
 
-### WP2 — one item, blocked on infrastructure
+### WP2 — complete. No database was needed after all
 
-Replace the stateless HMAC session with a **revocable server-side session**
-(`pwa_sessions` table, opaque id in a second httpOnly cookie). Today sign-out
-drops the FabOrchestrator cookie — which does end this app's platform access —
-but the app's own token stays valid until it expires, because nothing
-server-side records it.
+The last item was "sign-out revokes", which the plan expected to need a
+`pwa_sessions` table and therefore a `DATABASE_URL`. It does not. The session
+token now carries a fingerprint of the FabOrchestrator token it was minted
+beside, and `requireAuth` refuses any request whose FO cookie does not match, so
+deleting that cookie — which is all sign-out can do — leaves the bearer token
+authenticating nothing.
 
-Needs `DATABASE_URL`. Its practical impact is smaller than when the plan was
-written: with FabOrchestrator as the only identity, a stolen app token alone
-reaches `/api/auth/me` and nothing in FabOrchestrator, because every platform
-call needs the httpOnly cookie that sign-out removes.
+Verified in a browser: sign in, keep the token, sign out, then reuse the token
+still sitting in `localStorage` → **401 on both `/api/auth/me` and the agent
+route.**
+
+The approach that was rejected, and why: validating each request against FO's
+own `/api/auth/me`. Every authenticated FabOrchestrator call sets
+`last_activity_at = NOW()`, so that would have been a keep-alive — silently
+defeating FO's 30-minute idle eviction and corrupting the idle figures in its
+session audit.
+
+Still true: an administrator cannot revoke somebody else's session centrally,
+only the holder can by signing out. A shared session store is the answer if that
+is ever required.
 
 ### Phase 2 — the next build step, nothing blocking it
 
@@ -166,8 +176,7 @@ security review, handover) follow.
 | # | Blocker | Blocks | Who clears it |
 |---|---|---|---|
 | 1 | **The probe account has zero data connections.** Probe P4: `0 connected of 0 visible`. Plant questions are answered from the model's general knowledge, which reads as a wrong answer rather than a missing permission | **Phase 3 entirely** — the phase the business case rests on | A FabOrchestrator administrator, assigning MCP connections to that account's role |
-| 2 | `DATABASE_URL` | The last WP2 item | Infrastructure |
-| 3 | The Fly deployment is stale — it carries none of these nine commits | Anything demonstrated from a URL rather than localhost | Us, on your word |
+| 2 | The Fly deployment is stale — it carries none of this work | Anything demonstrated from a URL rather than localhost | Us, on your word |
 
 Blocker 1 is the one worth chasing. Everything through Phase 2 proceeds without
 it; nothing in Phase 3 does.

@@ -153,13 +153,18 @@ describe("the two expiry clocks are reconciled", () => {
     const s = sessionFor(
       { id: "u", email: "e@x.y", name: "N", roleName: "Supervisor" },
       soon,
+      "fo-token",
     );
     assert.equal(s.expiresAt, soon);
     assert.ok(verifyToken(s.token), "a capped session is still a valid one");
   });
 
   test("an unparseable FO expiry is ignored rather than minting a dead session", () => {
-    const s = sessionFor({ id: "u", email: "e@x.y", name: "N", roleName: "Supervisor" }, "nonsense");
+    const s = sessionFor(
+      { id: "u", email: "e@x.y", name: "N", roleName: "Supervisor" },
+      "nonsense",
+      "fo-token",
+    );
     assert.ok(new Date(s.expiresAt).getTime() > Date.now(), "must not be already expired");
     assert.ok(verifyToken(s.token));
   });

@@ -20,8 +20,15 @@
 
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+
+// Needed to mint a session below. Read lazily inside `sessionFor`, so setting
+// it before the imports run is not required — but it must be set before any
+// test calls it.
+process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+
 import { NextRequest, NextResponse } from "next/server";
 
+import { foFingerprint, sessionFor, verifyToken } from "@/lib/auth";
 import {
   FO_TOKEN_COOKIE,
   setFoTokenCookie,
@@ -158,5 +165,47 @@ describe("the token never appears in a response body", () => {
     setFoTokenCookie(reqWith(), res, TOKEN, IN_30_DAYS);
     assert.ok(!JSON.stringify(body).includes(TOKEN));
     assert.ok(setCookieOf(res).includes(TOKEN)); // header only
+  });
+});
+
+describe("sign-out revokes, without a session store", () => {
+  // The WP2 acceptance line is "sign-out revokes". The plan expected that to
+  // need a database: a server-side session row to delete. It does not. The
+  // bearer token carries a fingerprint of the FabOrchestrator token it was
+  // minted beside, and `requireAuth` refuses any request whose cookie does not
+  // match — so deleting the cookie, which is all sign-out can do, leaves the
+  // token authenticating nothing.
+  test("a token is worthless once its FabOrchestrator cookie is gone", () => {
+    const minted = sessionFor(
+      { id: "u1", email: "a@b.c", name: "A", roleName: "Supervisor" },
+      IN_30_DAYS,
+      TOKEN,
+    );
+    const payload = verifyToken(minted.token);
+    assert.ok(payload, "the token itself is still well-formed and unexpired");
+
+    // What requireAuth checks: the fingerprint against the cookie on the request.
+    assert.equal(payload!.fp, foFingerprint(TOKEN), "matches its own FO token");
+    assert.notEqual(payload!.fp, foFingerprint("some-other-token"), "and no other");
+  });
+
+  test("the fingerprint is one-way — the FO token is not recoverable from it", () => {
+    const minted = sessionFor(
+      { id: "u1", email: "a@b.c", name: "A", roleName: "Supervisor" },
+      IN_30_DAYS,
+      TOKEN,
+    );
+    // The payload is base64, not encryption: anyone holding the token can read
+    // it, so it must not contain the FO token.
+    const body = Buffer.from(minted.token.split(".")[0]!, "base64url").toString("utf8");
+    assert.ok(!body.includes(TOKEN), "the FO token must not appear in the payload");
+    assert.ok(body.includes(foFingerprint(TOKEN)), "only its fingerprint does");
+  });
+
+  test("two sessions for the same person against different FO tokens do not interchange", () => {
+    const user = { id: "u1", email: "a@b.c", name: "A", roleName: "Supervisor" } as const;
+    const a = verifyToken(sessionFor({ ...user }, IN_30_DAYS, "fo-token-A").token)!;
+    const b = verifyToken(sessionFor({ ...user }, IN_30_DAYS, "fo-token-B").token)!;
+    assert.notEqual(a.fp, b.fp);
   });
 });

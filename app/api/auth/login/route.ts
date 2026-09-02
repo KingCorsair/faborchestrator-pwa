@@ -122,6 +122,7 @@ export async function POST(req: NextRequest) {
       roleName: DEFAULT_ROLE_LABEL,
     },
     fo.expiresAt,
+    fo.token,
   );
 
   clearLoginFailures(address);

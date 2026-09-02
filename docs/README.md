@@ -5,6 +5,16 @@ work completes, its operational documentation. The code and the plans live in
 one repository on purpose: a plan that cannot drift silently away from the
 commit history it describes.
 
+## PRD.md
+
+**What we are building, and how it should behave.** Product requirements, kept
+separate from the engineering roadmap so product decisions and open questions do
+not get settled by accident inside implementation work. Every statement is
+labelled CONFIRMED, PROPOSED, OPEN QUESTION or OUT OF SCOPE.
+
+Read it before changing what the app *does*; read the planning documents before
+changing *how* it is built.
+
 ## STATUS.md
 
 **Start here.** Where the project stands, what is proved and how, what is left,

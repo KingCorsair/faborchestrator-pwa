@@ -9,6 +9,48 @@ file is wrong and should be corrected.
 
 ---
 
+## Update in plain English — 1 September 2026
+
+For sending to Jothi or anyone else who wants the short version. Everything here
+is expanded, with evidence, further down.
+
+**Done today**
+
+- **Sign-in and live conversation work, end to end.** You sign in with your own
+  FabOrchestrator account, ask a question in the app, and the answer comes back
+  word by word. Tested against the live system, not a copy.
+- **Answers stream properly.** This was the biggest worry in the plan — that an
+  answer would arrive in one lump after a long silence. It doesn't. First words
+  in under half a second.
+- **The app is now only a door to FabOrchestrator.** We deleted the fake
+  production-order screens and the demo login. They made the app look like it
+  was working when it could not reach the platform at all.
+- **The menu now matches FabOrchestrator's own.** Sections the platform has but
+  this app doesn't open yet are greyed out, not invented.
+- **Two things the plan assumed were wrong.** We checked the platform's source
+  and corrected them rather than building on them.
+- **143 automated tests pass.** They run without a network.
+
+**Pending**
+
+- Next: asking from the front page, with the system picking the right agent —
+  the behaviour Jothi confirmed he wanted.
+- After that: installing on a phone, and answering from real plant data.
+- One security item is deferred: sign-out cannot yet cancel the app's own
+  session. Low impact — that session can reach nothing in FabOrchestrator.
+
+**Waiting on someone else**
+
+- **The demo account has no data connections.** Plant questions are answered
+  from general knowledge, which looks like a wrong answer rather than a missing
+  permission. An administrator has to switch them on. This is the only thing
+  blocking the phone-with-real-data demonstration.
+
+**Not claimed:** nobody has clicked through the app by hand yet. Tests, scripted
+checks and an automated browser — but not a person.
+
+---
+
 ## In one paragraph
 
 The app is a mobile front door to FabOrchestrator and nothing else. A person

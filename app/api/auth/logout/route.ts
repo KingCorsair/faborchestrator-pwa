@@ -15,12 +15,21 @@ import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
  *     and deletes the session record, so the token stops working everywhere —
  *     and FO's own logs record a sign-out rather than a session that went quiet.
  *
- * ── The earlier decision, and why it changed ────────────────────────────────
+ * ── The earlier decision, and why it was wrong ─────────────────────────────
  * This route used to skip step 2 deliberately, so as not to sign the operator
- * out of a FabOrchestrator tab they might have open. That case has stopped being
- * the likely one: this app is a mobile front door used on a fab floor, not a
- * second window beside the desktop product. Truthful audit logs are worth more
- * than protecting a tab that probably is not there.
+ * out of a FabOrchestrator tab they might have open. **That objection does not
+ * hold, and the mechanics say so** (verified against upstream `e5a5abd`):
+ *
+ *  - FO's logout is **per token**: `deleteSession(token)` is
+ *    `prisma.session.delete({ where: { token } })`, one row. The `deleteMany`
+ *    variants exist but only the admin force-logout path calls them.
+ *  - Every login **mints a new token**: `generateToken()` then a plain
+ *    `session.create`, with no delete-first and no reuse. One person can hold
+ *    many concurrent sessions.
+ *
+ * So a desktop tab holds a *different* token from a *different* login, and this
+ * call cannot reach it. Ending the session the PWA was given is not a
+ * trade-off against anything — it is simply the correct scope.
  *
  * ── Order matters ──────────────────────────────────────────────────────────
  * FO is told first, because that call needs the token; the cookie is dropped on

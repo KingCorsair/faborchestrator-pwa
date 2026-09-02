@@ -161,11 +161,12 @@ export async function foConnectedMcpIds(token: string): Promise<string[]> {
  *
  * ── Why this app calls it, having once decided not to ───────────────────────
  * The original argument was that ending FO's session would sign the operator
- * out of a FabOrchestrator tab they might have open elsewhere. That reasoning
- * has expired: this app is a mobile front door, its user is on a fab floor, and
- * a desktop FabOrchestrator tab in the same browser profile is not the case to
- * optimise for. Against it stands the audit trail — FO's own logs should record
- * a sign-out as a sign-out, not as a session that mysteriously went idle.
+ * out of a FabOrchestrator tab open elsewhere. It does not, and cannot: FO's
+ * logout deletes **one row by token** (`deleteSession`), while every login mints
+ * a fresh token and inserts another row. Other sessions belong to other tokens
+ * and are untouched. What this call ends is exactly the session the PWA was
+ * handed — which is also what makes FO's own logs record a sign-out rather than
+ * a session that went quiet.
  *
  * **Never throws, and never blocks sign-out.** If FO is unreachable the local
  * cookie is still dropped, which is the part that protects the handset in the

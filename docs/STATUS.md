@@ -116,9 +116,19 @@ own `/api/auth/me`. Every authenticated FabOrchestrator call sets
 defeating FO's 30-minute idle eviction and corrupting the idle figures in its
 session audit.
 
-Still true: an administrator cannot revoke somebody else's session centrally,
-only the holder can by signing out. A shared session store is the answer if that
-is ever required.
+**Sign-out now ends the FabOrchestrator session too**, not just this app's copy
+of it. FO's `/api/auth/logout` deletes the session record and closes its audit
+row, so its logs record a sign-out rather than a session that went quiet.
+Verified against the live platform: a token that answered `200` before sign-out
+answers `401` after. If FO is unreachable the cookie is still dropped, and the
+response says honestly whether the platform was told.
+
+**An administrator has full central revocation, and this app inherits it.** FO's
+admin console can force-logout a user (deleting every session row), suspend an
+account, or force a password change. The PWA holds no independent access — only
+a token FO validates on every call — so an admin action lands on the next
+request as a 401, which the proxy already handles by clearing the cookie and
+asking for a fresh sign-in.
 
 ### Phase 2 — the next build step, nothing blocking it
 

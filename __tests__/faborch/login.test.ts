@@ -20,6 +20,7 @@ process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign"
 import { NextRequest } from "next/server";
 import { sessionFor, verifyToken } from "@/lib/auth";
 import { POST } from "@/app/api/auth/login/route";
+import { POST as LOGOUT } from "@/app/api/auth/logout/route";
 
 const realFetch = globalThis.fetch;
 let calls: string[] = [];
@@ -167,5 +168,52 @@ describe("the two expiry clocks are reconciled", () => {
     );
     assert.ok(new Date(s.expiresAt).getTime() > Date.now(), "must not be already expired");
     assert.ok(verifyToken(s.token));
+  });
+});
+
+describe("sign-out ends the FabOrchestrator session, not just the cookie", () => {
+  const withCookie = () =>
+    new NextRequest("https://pwa.test/api/auth/logout", {
+      method: "POST",
+      headers: { cookie: "faborch_token=fo-session-token" },
+    });
+
+  test("FabOrchestrator's own logout is called with the token", async () => {
+    stubFo(() => Response.json({ success: true }));
+    const res = await LOGOUT(withCookie());
+
+    assert.equal(res.status, 200);
+    assert.ok(
+      calls.some((u) => u.endsWith("/api/auth/logout")),
+      "FO must be told, or its session outlives the sign-out",
+    );
+    assert.equal((await res.json()).faborchRevoked, true);
+  });
+
+  test("the cookie is dropped even when FabOrchestrator is unreachable", async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+
+    const res = await LOGOUT(withCookie());
+    assert.equal(res.status, 200, "sign-out must not fail because a server is down");
+    assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);
+    assert.equal((await res.json()).faborchRevoked, false, "and it says so honestly");
+  });
+
+  test("a 404 from FabOrchestrator counts as revoked — the session was already gone", async () => {
+    stubFo(() => new Response("", { status: 404 }));
+    const res = await LOGOUT(withCookie());
+    assert.equal((await res.json()).faborchRevoked, true);
+  });
+
+  test("signing out with no cookie still clears and does not call FO", async () => {
+    stubFo(() => Response.json({ success: true }));
+    const res = await LOGOUT(
+      new NextRequest("https://pwa.test/api/auth/logout", { method: "POST" }),
+    );
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 0);
+    assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);
   });
 });

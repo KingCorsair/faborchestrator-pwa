@@ -152,6 +152,41 @@ export async function foConnectedMcpIds(token: string): Promise<string[]> {
   }
 }
 
+/**
+ * End the FabOrchestrator session behind this token.
+ *
+ * FO's `/api/auth/logout` is a real revocation: it closes the audit row and
+ * **deletes** the session record (`claudeai_athena/app/api/auth/logout`), so the
+ * token stops working everywhere rather than just here.
+ *
+ * ── Why this app calls it, having once decided not to ───────────────────────
+ * The original argument was that ending FO's session would sign the operator
+ * out of a FabOrchestrator tab they might have open elsewhere. That reasoning
+ * has expired: this app is a mobile front door, its user is on a fab floor, and
+ * a desktop FabOrchestrator tab in the same browser profile is not the case to
+ * optimise for. Against it stands the audit trail — FO's own logs should record
+ * a sign-out as a sign-out, not as a session that mysteriously went idle.
+ *
+ * **Never throws, and never blocks sign-out.** If FO is unreachable the local
+ * cookie is still dropped, which is the part that protects the handset in the
+ * room. A sign-out that fails because a server is down is worse than one that
+ * revokes late.
+ */
+export async function foLogout(token: string): Promise<boolean> {
+  try {
+    const res = await fetchFo("/api/auth/logout", {
+      method: "POST",
+      headers: authHeader(token),
+    });
+    // 404 means FO had already dropped it — idle eviction, or an admin force
+    // logout. The session is gone either way, which is the outcome asked for.
+    return res.ok || res.status === 404;
+  } catch (error) {
+    console.error("[faborch] sign-out could not reach FabOrchestrator:", error);
+    return false;
+  }
+}
+
 /** One turn of a conversation, in the shape `ChatRequestSchema` accepts. */
 export interface FoUiMessage {
   role: "user" | "assistant";

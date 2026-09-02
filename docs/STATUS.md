@@ -29,7 +29,10 @@ is expanded, with evidence, further down.
   this app doesn't open yet are greyed out, not invented.
 - **Two things the plan assumed were wrong.** We checked the platform's source
   and corrected them rather than building on them.
-- **143 automated tests pass.** They run without a network.
+- **Signing out now really signs you out.** It ends the session on
+  FabOrchestrator itself, not just on the phone. Checked against the live
+  system: the same credential works before, and is refused after.
+- **151 automated tests pass.** They run without a network.
 
 **Pending**
 
@@ -71,12 +74,12 @@ connections, so plant questions cannot be answered from plant data.
 | **WP0** Baseline & environment probes | `docs/probes/2026-09-01-probe-report.md`. P1 sign-in, P2 modeling API, P3 streaming, P5 permission all pass; P4 fails (see blockers) |
 | **WP6** Streaming parser | 37 tests, including the transcript split at **every byte offset**, a multi-byte character cut in half, and 13 frame types that must be ignored |
 | **WP3** Platform client | One error normaliser for both of FabOrchestrator's error shapes; 21 tests, 14 of them hostile bodies that must never render `[object Object]` |
-| **WP2** Sign-in & session security | 17 cookie tests + 11 identity tests. FabOrchestrator is the only identity; the two expiry clocks are reconciled. **One item outstanding — see below** |
+| **WP2** Sign-in & session security | **Complete.** 20 cookie/revocation tests + 15 identity and sign-out tests. FabOrchestrator is the only identity, the two expiry clocks are reconciled, and sign-out revokes on both sides |
 | **WP4** Secure connector | 15 tests against a stubbed FabOrchestrator, so the suite runs with no network |
 | **M1 / B1** Architecture proven end to end | `docs/probes/2026-09-01-e1-report.md` — 5/5 against the live CloudFront deployment: sign-in, token httpOnly and absent from the body, a real answer through the proxy, **13 network arrivals over 2.6 s** (progressive, not buffered), sign-out dropping the cookie |
 | Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit |
 
-**143 tests, all passing.** Typecheck and lint clean. Production build compiles.
+**151 tests, all passing.** Typecheck and lint clean. Production build compiles.
 
 ### What "proved" bought us
 
@@ -122,6 +125,13 @@ row, so its logs record a sign-out rather than a session that went quiet.
 Verified against the live platform: a token that answered `200` before sign-out
 answers `401` after. If FO is unreachable the cookie is still dropped, and the
 response says honestly whether the platform was told.
+
+The scope of that call was checked before relying on it, because the original
+code refused to make it on the grounds that it would sign the operator out of a
+FabOrchestrator tab open elsewhere. **It cannot.** FO's logout deletes one row
+by token (`deleteSession`), and every login mints a fresh token with no reuse,
+so other sessions belong to other tokens. The old objection was wrong about the
+mechanics, not merely outweighed.
 
 **An administrator has full central revocation, and this app inherits it.** FO's
 admin console can force-logout a user (deleting every session row), suspend an
@@ -226,7 +236,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 143 tests, no network needed
+npm test                          # 151 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 ```

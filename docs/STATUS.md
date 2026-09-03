@@ -9,28 +9,25 @@ file is wrong and should be corrected.
 
 ---
 
-## Start here tomorrow
+## Where this stands
 
-**Every build package in the plan is done.** Phases 0 to 4 are complete and
-proved against the live deployment. What remains is Phase 5, which builds
-nothing: tests, device validation, security review, handover.
+**Phases 0 to 5 are complete.** Every build package is done, and the handover
+pass is finished: the whole suite re-run against the deployed app, a security
+review of the running deployment, the five user journeys walked end to end, and
+the operating documentation written.
 
-**Next: Phase 5.** No build work. The pass that turns what exists into
-something handed over:
+**Nothing is outstanding in this app.** What remains is external and listed in
+`docs/OPEN_ISSUES.md` — most urgently, a **shared demo password that must be
+rotated** because it reached the Fly request logs during today's sign-in
+investigation.
 
-1. **A full regression run against the deployment**, not localhost — today
-   proved why that distinction matters (see the sign-in defect below).
-2. **Security review.** The app now renders model-authored HTML in a frame and
-   holds an httpOnly FabOrchestrator token. The sandbox rule is asserted in two
-   test files; a review should cover the whole surface rather than that one
-   rule.
-3. **Handover.** `docs/` already carries the PRD, the plans and this file. What
-   is missing is the operating note: what to do when FabOrchestrator is down,
-   how to rotate the demo credential, who owns the Fly app.
+**Where to start reading:** `docs/HANDOVER.md` is the operating note — how to
+run it, what every failure message means, and the four decisions that look odd
+until you know why. `docs/OPEN_ISSUES.md` is everything still open, all of it
+external to this app.
 
-**And one credential job:** the probe account's password reached the Fly
-request logs during today's checks — see the sign-in section below. It is a
-shared demo account rather than a personal one, but it should be rotated.
+**The one job that needs a person:** rotate the shared FabOrchestrator demo
+password. `OPEN_ISSUES.md` §1.
 
 **The deployment is current**, and deploying found a defect that every local
 check had missed — see "Sign-in could silently do nothing" below. WP10 is live
@@ -117,16 +114,22 @@ is expanded, with evidence, further down.
   If nothing arrives for 45 seconds it says so rather than spinning silently.
 - **272 automated tests pass** here, and 21 more on the platform side. They run
   without a network.
+- **The whole suite was re-run against the live URL, not a laptop**, plus a
+  security review of the running app (24 checks) and the five user journeys
+  walked end to end (13 steps). All pass.
 
 **Pending**
 
-- No build work remains. Next is the handover pass: a regression run against
-  the deployed URL, a security review, and an operating note.
+- Nothing. The build and the handover pass are both finished.
 - The four planning documents still describe four agents and budget work that
   no longer exists.
 
-**Waiting on someone else**
+**Waiting on someone else** — the full list is `docs/OPEN_ISSUES.md`
 
+- **A shared demo password must be rotated.** During the sign-in investigation
+  the login form briefly put credentials in a URL, which reached Fly's request
+  logs. The bug is fixed and cannot recur; the exposure already happened. It is
+  the shared demo account, not a personal one, and not an administrator.
 - **The FabOrchestrator fix has not been shipped.** We found the platform
   inventing plant figures when someone without dashboard permission asks for a
   dashboard. The fix is written and tested but sits in another team's
@@ -407,10 +410,11 @@ FabOrchestrator fix is about artifacts *full of invented figures*. Until this
 package the raw markup was ugly enough that nobody would mistake one for a real
 report. It no longer is. See "Blocked on someone else".
 
-### Phase 5 — not started
+### Phase 5 — complete
 
-Tests, device validation, security review, handover. No build work; it is the
-evidence pass over what Phases 0–4 produced.
+Tests, device validation, security review, handover. No build work; it was the
+evidence pass over what Phases 0–4 produced, and it is done — see "Phase 5 — the
+handover pass" above for the results.
 
 ---
 
@@ -457,6 +461,86 @@ account rather than a personal one, but it should be rotated.
 
 ---
 
+## Phase 5 — the handover pass
+
+No build work. Everything below was run **against
+`https://faborch-demo.fly.dev`**, not a laptop — a distinction this project
+learned the hard way, because the sign-in defect found earlier the same day
+existed only where hydration is slow enough to race, and a locally-run suite
+kept passing while the deployed app could not be signed into at all.
+
+| Suite | Result | Script |
+|---|---|---|
+| Unit and integration | **272 / 272**, no network | `npm test` |
+| Security review | **24 / 24** | `scripts/security-review.mjs` |
+| User journeys, end to end | **13 / 13** across 5 journeys | `scripts/journeys-check.mjs` |
+| Reports, read-only | **9 / 9** | `scripts/reports-live-check.mjs` |
+| Artifacts | **8 / 8** | `scripts/artifact-live-check.mjs` |
+| Progress states | **6 / 6** | `scripts/progress-states-check.mjs` |
+| Mobile audit | **16 / 16**, two viewports | `scripts/mobile-audit.mjs` |
+| Sign-in under slow hydration | pass | `scripts/hydration-typing-check.mjs` |
+
+### The security review, and what it covers
+
+`scripts/security-review.mjs` asks the running deployment what it does rather
+than reading the source, and every check states what a failure would *mean* —
+a red line with no consequence attached does not get acted on.
+
+| Area | Checked |
+|---|---|
+| Transport | https serves the app; plain http 301s to https |
+| Session | the FabOrchestrator token is `HttpOnly`, `Secure`, `SameSite=lax`, and never appears in a response body |
+| Authentication | five guarded routes refuse an anonymous caller; a stolen bearer token without its cookie is refused; a forged unsigned token is refused |
+| Authorisation | `POST`/`DELETE`/`refresh` on reports do not exist — absent, not merely hidden |
+| Secrets | the FO host, the probe password and the signing secret appear nowhere in the served page |
+| Sandbox | neither iframe pairs `allow-scripts` with `allow-same-origin` |
+| Boundary | no model API key on the deployment, no model SDK imported anywhere |
+
+**Both faults it found on its first run were in itself**, which is worth
+recording because it is the failure mode of a checker nobody reads:
+
+- a **false FAIL** on `reports.tsx`, matched inside a comment explaining that
+  FabOrchestrator uses both sandbox flags and that this app deliberately does
+  not. Documenting a hazard was being read as committing it. A checker that
+  cries wolf over its own documentation is worse than none, because the next
+  real finding gets waved through.
+- a **false PASS**, which is worse: the model-SDK grep embedded a path
+  containing a space into a shell string, git failed to parse it, the error was
+  swallowed, and empty output was read as "no matches". It now distinguishes
+  *found nothing* from *did not run*.
+
+### The journeys
+
+Five paths a person actually takes, walked in one session on a 390×844 touch
+viewport. A set of green mechanisms can still add up to an app nobody can use.
+
+| Journey | Proved |
+|---|---|
+| Sign in | reaches the cockpit, four agents listed |
+| Ask a plant question from the front door | *"How many lots are currently in WIP?"* → **237 lots**, real figures |
+| Ask a follow-up | both turns held in one thread |
+| Read a pinned dashboard | 11 listed, opens `sandbox="allow-scripts"`, **no pin/unpin/refresh control offered** |
+| Sign out | returns to sign-in, and the kept token then authenticates nothing (401) |
+
+Journey 3 failed twice before I looked properly, and the fault was the walk:
+the composer is deliberately disabled while a turn is in flight, and the check
+was typing the follow-up as soon as the first tokens appeared. It now waits for
+the turn to settle, which is what a person does.
+
+### Handover documentation
+
+- **`docs/HANDOVER.md`** — what the app is and is not, how to run and deploy it,
+  every failure message and what to do about it, the four load-bearing decisions
+  that look odd out of context, and who owns what.
+- **`docs/OPEN_ISSUES.md`** — five open items, all external, each with an owner
+  and a severity.
+
+`playwright` also became a devDependency: the check scripts were committed but
+imported a package the repo did not have, so they could not run from a clean
+checkout. A committed script that cannot run is a handover trap.
+
+---
+
 ## The live deployment
 
 **`https://faborch-demo.fly.dev`** — commit `67043fd`, deployed 3 September,
@@ -491,6 +575,9 @@ node scripts/reports-live-check.mjs        # point APP at the deployed URL
 ---
 
 ## Blocked on someone else
+
+**The maintained list is `docs/OPEN_ISSUES.md`**, which carries an owner and a
+severity for each. The table below is the history of how they moved.
 
 | # | Blocker | Blocks | Who clears it |
 |---|---|---|---|
@@ -677,6 +764,17 @@ npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 ---
 
 ## Where things live
+
+| Document | What it is for |
+|---|---|
+| `docs/HANDOVER.md` | **Start here to operate it.** Running, deploying, every failure message, the decisions that look odd |
+| `docs/OPEN_ISSUES.md` | Everything still open, all external, with owners |
+| `docs/STATUS.md` | This file. What was built and how it was proved |
+| `docs/PRD.html` | The requirements, as a published page |
+| `docs/FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md` | The write-up to send to the FabOrchestrator team |
+| `docs/probes/` | Dated evidence from individual investigations |
+| `docs/planning/` | The original plans. **Superseded in places** — see `OPEN_ISSUES.md` §4 |
+
 
 | Path | What |
 |---|---|

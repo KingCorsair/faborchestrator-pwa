@@ -11,10 +11,9 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-# --ignore-scripts because `postinstall` runs scripts/copy-zxing-wasm.mjs,
-# which does not exist yet at this layer — only the manifests are copied, so
-# that the dependency layer caches independently of source changes. The copy
-# happens explicitly in the builder below.
+# --ignore-scripts on principle: nothing in this tree needs a lifecycle hook to
+# build, and a dependency that wants to run one at install time should have to
+# say so out loud rather than get it by default.
 RUN npm ci --ignore-scripts
 
 FROM node:22-alpine AS builder
@@ -22,13 +21,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# The scanner's wasm. CLAUDE.md flags this as a live deployment risk: the file
-# is gitignored and written by a lifecycle script, so a host that skips scripts
-# ships an app whose scanner silently falls back to manual entry. `test -f`
-# turns that silent degradation into a failed build, which is the only place
-# it is cheap to notice.
-RUN node scripts/copy-zxing-wasm.mjs \
- && test -f public/zxing/zxing_reader.wasm
+# The barcode scanner's wasm was copied and verified here. Both the scanner and
+# the production-order workflow it belonged to were removed on 1 September, and
+# `scripts/copy-zxing-wasm.mjs` went with them — so this step referenced a file
+# that no longer exists and would have failed the first deploy after that
+# change. Removed rather than guarded: there is no scanner left to degrade.
 
 RUN npm run build
 

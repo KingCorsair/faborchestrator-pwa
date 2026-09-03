@@ -212,6 +212,94 @@ export async function foConnectedMcpIds(token: string): Promise<string[]> {
   }
 }
 
+/* ── Pinned reports ───────────────────────────────────────────────────────
+ *
+ * FabOrchestrator's rule, read from `lib/fabinsight/access.ts` and the two
+ * routes below: **an administrator creates and pins a dashboard; every
+ * authenticated role may read one.** `GET /api/fabinsight/pinned` and
+ * `GET /api/fabinsight/pinned/[id]` are behind `requireAuth` and nothing else.
+ *
+ * Only those two are wrapped here, deliberately. Three neighbouring routes are
+ * left alone:
+ *
+ *  - `POST /pinned` and `DELETE /pinned/[id]` are `isDashboardAdmin`-gated.
+ *    This app has no reason to call them.
+ *  - `POST /pinned/[id]/refresh` is **not** gated, and that is exactly why it
+ *    is not wrapped: it re-queries the MES and OVERWRITES the shared snapshot
+ *    every reader sees. A read-only screen must not carry a control that
+ *    rewrites what everyone else is looking at.
+ */
+
+/** One pinned report, as the list endpoint describes it. */
+export interface FoPinnedSummary {
+  id: string;
+  title: string;
+  dashboardId: string;
+  kind: string;
+  createdAt: string;
+  /** When the shared snapshot was last taken. Null means never. */
+  refreshedAt: string | null;
+  hasCache: boolean;
+  createdBy: string;
+}
+
+/** The stored snapshot for one report. */
+export interface FoPinnedReport {
+  id: string;
+  title: string;
+  dashboardId: string;
+  /** The rendered dashboard. Null when no snapshot has been taken yet. */
+  html: string | null;
+  summary: string | null;
+  refreshedAt: string | null;
+  status: string | null;
+}
+
+/**
+ * Every pinned report this operator may read.
+ *
+ * `canManage` comes back too — FO computes it from the caller's own role. It is
+ * returned rather than dropped so the screen can say *why* it offers no
+ * controls, instead of silently looking like a broken version of FO's page.
+ */
+export async function foPinnedReports(
+  token: string,
+): Promise<{ dashboards: FoPinnedSummary[]; canManage: boolean }> {
+  const res = await fetchFo("/api/fabinsight/pinned", { headers: authHeader(token) });
+  if (!res.ok) {
+    throw new FabOrchRequestError(
+      await foErrorTextOf(res, "Could not load reports from FabOrchestrator."),
+      res.status,
+    );
+  }
+  const body = (await res.json()) as {
+    dashboards?: FoPinnedSummary[];
+    canManage?: boolean;
+  };
+  return {
+    dashboards: Array.isArray(body.dashboards) ? body.dashboards : [],
+    canManage: body.canManage === true,
+  };
+}
+
+/** One report's stored snapshot, or null if FO does not have it. */
+export async function foPinnedReport(
+  token: string,
+  id: string,
+): Promise<FoPinnedReport | null> {
+  const res = await fetchFo(`/api/fabinsight/pinned/${encodeURIComponent(id)}`, {
+    headers: authHeader(token),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new FabOrchRequestError(
+      await foErrorTextOf(res, "Could not load that report from FabOrchestrator."),
+      res.status,
+    );
+  }
+  return (await res.json()) as FoPinnedReport;
+}
+
 /**
  * End the FabOrchestrator session behind this token.
  *

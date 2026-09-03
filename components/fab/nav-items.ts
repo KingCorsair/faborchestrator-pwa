@@ -25,13 +25,19 @@ import type { LucideIcon } from "lucide-react";
  * FabOrchestrator. They went with the workflow: a front door to a platform
  * should not advertise rooms the platform does not have.
  *
- * ── Why three entries are shown but disabled ────────────────────────────────
- * Leaving Workflows, Sites and Reports out would misrepresent the product just
- * as surely as inventing screens did. This app cannot open them — and two of
- * them do not open in the product either: every cockpit nav item except Reports
- * navigates to `/home` there, so they are placeholders on both sides. Greyed
- * states both facts at once: this is what the platform has, and this is how
- * much of it this app reaches.
+ * ── Reports opens, as of 2026-09-03 ────────────────────────────────────────
+ * It was greyed on the belief that dashboards were admin-only. Source says
+ * otherwise: `isDashboardAdmin` gates creating, pinning and deleting, while
+ * reading a pinned dashboard is behind `requireAuth` alone. A supervisor may
+ * read what an administrator published, so the entry is a real link and
+ * `/reports` shows those dashboards read-only.
+ *
+ * ── Why two entries are shown but disabled ─────────────────────────────────
+ * Leaving Workflows and Sites out would misrepresent the product just as surely
+ * as inventing screens did. This app cannot open them — and neither does the
+ * product: every cockpit nav item except Reports navigates to `/home` there, so
+ * they are placeholders on both sides. Greyed states both facts at once: this
+ * is what the platform has, and this is how much of it this app reaches.
  */
 export interface NavItem {
   href: string;
@@ -49,10 +55,5 @@ export const NAV: NavItem[] = [
   { href: "/fabinsight", label: "Agents", icon: Sparkles },
   { href: "/workflows", label: "Workflows", icon: Workflow, unavailable: PLACEHOLDER_ON_BOTH_SIDES },
   { href: "/sites", label: "Sites", icon: Building2, unavailable: PLACEHOLDER_ON_BOTH_SIDES },
-  {
-    href: "/reports",
-    label: "Reports",
-    icon: BarChart3,
-    unavailable: "FabOrchestrator has this screen; this app does not open it yet.",
-  },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
 ];

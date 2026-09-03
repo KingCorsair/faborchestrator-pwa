@@ -2385,13 +2385,23 @@ last week alone), so the deployment&rsquo;s behaviour can still drift mid-projec
     </tbody>
   </table></div>
   <div class="grid3" style="margin-top:22px">
-    <div class="kpi"><div class="k">Core implementation</div><div class="v">22.0 d</div><div class="s">&asymp; 5 weeks, one engineer</div></div>
-    <div class="kpi"><div class="k">Integration contingency</div><div class="v">9.0 d</div><div class="s">Driven by proxies, MES and devices &mdash; not by code volume</div></div>
-    <div class="kpi"><div class="k">Total, one engineer</div><div class="v">27.0 d</div><div class="s">&asymp; 7 working weeks. Two engineers: about 4 weeks.</div></div>
+    <div class="kpi"><div class="k">Core implementation</div><div class="v">22.0 d</div><div class="s">&asymp; 5 weeks, one engineer. Was 24.5 &mdash; see &sect;00a.</div></div>
+    <div class="kpi"><div class="k">Integration contingency</div><div class="v">5.0 d</div><div class="s">Was 9.0. Three drivers released by the 1 September probes; the modeling half of a fourth is moot.</div></div>
+    <div class="kpi"><div class="k">Total, one engineer</div><div class="v">27.0 d</div><div class="s">&asymp; 6 working weeks. Two engineers: about 4 weeks.</div></div>
   </div>
   <p style="margin-top:18px">Running probes P1&ndash;P5 in the first two days is the single cheapest way
   to shrink this number: four of the six drivers become known facts rather than reserves, and roughly
   <b>4 days</b> of the contingency can be released or reallocated at the M0 gate.</p>
+  <div class="callout">
+    <h4>What the probes actually returned, 1 September 2026</h4>
+    <p>Three of the four came back clean and <b>4.0 days were released</b>: SSE streams progressively
+    through both proxies (13 arrivals over 2.6 s), the deployment is current, and the demonstration
+    account exists and can sign in. <b>The fourth did not:</b> that account has <em>zero</em> connected
+    MCP servers, so its 2.0 days stay held &mdash; and it is the one thing blocking a data answer.</p>
+    <p>The permission driver also halved: the Master Data Load Agent left this app on 2 September
+    (&sect;00a), so only the data-connection half of it remains. Contingency is therefore
+    <b>5.0 days</b>, not 9.0.</p>
+  </div>
 </section>
 
 <section id="s20">
@@ -2404,7 +2414,7 @@ last week alone), so the deployment&rsquo;s behaviour can still drift mid-projec
       <tr><td>All integration work is untracked in one working tree</td><td><span class="chip c-risk">High</span></td><td><code>git status</code> shows <code>??</code> for <span class="fp">lib/faborch/</span>, <span class="fp">app/api/faborch/</span>, <span class="fp">app/fabinsight/</span>, <span class="fp">__tests__/faborch/</span></td><td>WP0, first thing</td></tr>
       <tr><td>SSE buffered by CloudFront or Fly</td><td><span class="chip c-risk">High</span></td><td>Not knowable from source; App Runner already broke it once</td><td>Probe P3 before M1</td></tr>
       <tr><td>Demo account has no connected MCPs</td><td><span class="chip c-risk">High</span></td><td><code>/api/chat</code> loads tools from <code>activeMcpIds</code> and nothing else</td><td>Probe P4; WP8 guard</td></tr>
-      <tr><td>Automatic routing sends a request to the wrong agent</td><td><span class="chip c-mod">Medium</span></td><td>No router exists in FO to inherit accuracy from; some requests genuinely sit between two agents</td><td>Default to the agent that answers the widest range; show the route with a one-tap override; keep manual selection; score a fixture set of ~20 real questions (WP13)</td></tr>
+      <tr><td><s>Automatic routing sends a request to the wrong agent</s></td><td><span class="chip c-have">Resolved</span></td><td>Cannot occur after 2 September: every agent this app exposes is one service, so there is no wrong agent to route to &mdash; and the routing code that would have carried the risk was never written (&sect;00a)</td><td>Returns intact, with the mitigations planned for it, the day a second service is exposed</td></tr>
       <tr><td>Parser breaks on an FO SDK upgrade</td><td><span class="chip c-mod">Medium</span></td><td>Hand-written parser pinned to <code>ai@6.0.97</code> frame names</td><td>Pinned tests are the alarm; add a version note in the file header</td></tr>
       <tr><td>Nested error envelope reaches React</td><td><span class="chip c-mod">Medium</span></td><td>Confirmed defect, &sect;01</td><td>WP3/WP4, with a property test</td></tr>
       <tr><td>30-minute idle eviction interrupts a demo</td><td><span class="chip c-mod">Medium</span></td><td><code>IDLE_TIMEOUT_MS</code>, <span class="fp">lib/session-audit.ts:23</span></td><td>Clean re-auth with the destination preserved; brief the demo operator</td></tr>

@@ -81,6 +81,9 @@ import {
   splitErrorId,
   type PwaErrorCode,
 } from "@/lib/faborch/errors";
+import { ArtifactSheet } from "@/components/fab/artifact-sheet";
+import { ArtifactTile } from "@/components/fab/artifact-tile";
+import { segmentMessageText, type FoArtifact } from "@/lib/faborch/artifacts";
 import { readFoStream } from "@/lib/faborch/stream";
 
 export function AgentChat({
@@ -118,6 +121,9 @@ export function AgentChat({
    * operator wanted answered.
    */
   const [lastPrompt, setLastPrompt] = React.useState<string | null>(null);
+
+  /** The artifact being read full-screen, if any. */
+  const [openArtifact, setOpenArtifact] = React.useState<FoArtifact | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -281,7 +287,12 @@ export function AgentChat({
             turn.role === "user" ? (
               <UserTurn key={turn.id} text={turn.text} />
             ) : (
-              <AssistantTurn key={turn.id} text={turn.text} incomplete={turn.incomplete} />
+              <AssistantTurn
+                key={turn.id}
+                text={turn.text}
+                incomplete={turn.incomplete}
+                onOpenArtifact={setOpenArtifact}
+              />
             ),
           )}
 
@@ -299,6 +310,11 @@ export function AgentChat({
           ) : null}
         </div>
       </div>
+
+      {/* Full screen, above everything, so a dashboard gets the whole phone. */}
+      {openArtifact ? (
+        <ArtifactSheet artifact={openArtifact} onClose={() => setOpenArtifact(null)} />
+      ) : null}
 
       <Composer
         agent={agent}
@@ -346,7 +362,28 @@ function UserTurn({ text }: { text: string }) {
  * Styling is `.fab-md` in `app/globals.css`, so the answer is set in the
  * product's own type scale rather than in browser defaults.
  */
-function AssistantTurn({ text, incomplete }: { text: string; incomplete?: boolean }) {
+function AssistantTurn({
+  text,
+  incomplete,
+  onOpenArtifact,
+}: {
+  text: string;
+  incomplete?: boolean;
+  onOpenArtifact: (artifact: FoArtifact) => void;
+}) {
+  /*
+    An answer is not always one block of prose.
+
+    When the operator asks for something visual, FabOrchestrator writes a whole
+    document into the middle of the text stream inside an <antArtifact> tag.
+    Rendered as markdown that is a wall of raw HTML, which is what this screen
+    used to show. Split into segments, the prose stays prose and the document
+    becomes a tile.
+
+    Recomputed on every token, which is why the parser has a fast path for text
+    with no tag in it — the overwhelming majority of turns.
+  */
+  const { segments } = React.useMemo(() => segmentMessageText(text), [text]);
   return (
     <div className="flex gap-3">
       <span
@@ -359,10 +396,21 @@ function AssistantTurn({ text, incomplete }: { text: string; incomplete?: boolea
       >
         <Sparkles size={15} strokeWidth={2} />
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="fab-md">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
-        </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-[10px]">
+        {segments.map((segment, i) =>
+          segment.type === "text" ? (
+            <div className="fab-md" key={`t${i}`}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{segment.content}</ReactMarkdown>
+            </div>
+          ) : (
+            <ArtifactTile
+              key={segment.artifact.identifier || `a${i}`}
+              artifact={segment.artifact}
+              isStreaming={segment.isStreaming}
+              onOpen={() => onOpenArtifact(segment.artifact)}
+            />
+          ),
+        )}
 
         {/* An answer cut off part-way is true as far as it goes and misleading
             as a whole: a yield table that stopped after four rows looks like a

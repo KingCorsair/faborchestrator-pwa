@@ -115,6 +115,15 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     };
   }, []);
 
+  /**
+   * Has React attached yet?
+   *
+   * An effect cannot run during server rendering or before hydration, so this
+   * flips exactly when the form becomes able to handle its own submission.
+   */
+  const [hydrated, setHydrated] = React.useState(false);
+  React.useEffect(() => setHydrated(true), []);
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -211,6 +220,22 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
       <main className="flex items-center justify-center p-6">
         <form
           onSubmit={onSubmit}
+          /*
+            `method="post"` is a safety net, not a route.
+            
+            The fields carry `name` attributes so the handler can read them with
+            FormData (see `lib/credentials.ts`), and a named field makes the form
+            natively submittable. If a submit ever escapes React — a click landing
+            in the gap before hydration, or a scripting error — the browser
+            performs that submission itself, and a form defaults to GET. That put
+            the **password in the query string**, where it reaches browser
+            history, server logs and referrer headers.
+            
+            POST keeps a stray submission in a body instead. Nothing serves this
+            route, so it fails; it fails without writing the credential anywhere.
+            The real prevention is `hydrated` on the button below.
+          */
+          method="post"
           className="fab-card flex w-full max-w-[440px] flex-col gap-[18px]"
           style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
         >
@@ -360,7 +385,13 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
           <Button
             type="submit"
             variant="primary"
-            disabled={busy}
+            /*
+              Disabled until React has attached. The form is server-rendered, so
+              it paints and becomes clickable before `onSubmit` exists — and a
+              click in that gap is handled by the browser, not by this component.
+              The window is invisible on localhost and real on a phone.
+            */
+            disabled={busy || !hydrated}
             className="mt-1 w-full justify-center py-[15px] text-[16px]"
             style={{ borderRadius: 13 }}
           >

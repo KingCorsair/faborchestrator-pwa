@@ -16,6 +16,8 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+
 import { submittedCredentials } from "../../lib/credentials";
 
 /** A stand-in for `FormData`, which node:test has no DOM to build. */
@@ -86,5 +88,50 @@ describe("sign-in submits what is in the fields", () => {
     // Not this module's job to invent a validation error; the route already
     // says "Email is required" and that is the right message when it is true.
     assert.deepEqual(submittedCredentials(form({}), EMPTY_STATE), { email: "", password: "" });
+  });
+});
+
+/* ── The regression that fixing it introduced ─────────────────────────────── */
+
+describe("a submit that escapes React must not leak the credential", () => {
+  /**
+   * Giving the fields `name` attributes — needed so the handler can read the
+   * DOM — also made the form natively submittable. A click landing before
+   * hydration is handled by the browser, not by React, and a form defaults to
+   * **GET**: the deployed app put `?email=…&password=…` in the address bar,
+   * where it reaches history, logs and referrer headers.
+   *
+   * Two things stop it, and both are asserted against the source because
+   * neither is reachable without a DOM:
+   *
+   *   1. the submit button is disabled until React has attached — prevention
+   *   2. `method="post"` — so a submission that still escapes carries the
+   *      credential in a body that nothing serves, not in a URL
+   */
+  const source = readFileSync(
+    new URL("../../components/login-page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  test("the form is POST, so a stray native submit cannot build a URL", () => {
+    assert.match(
+      source,
+      /<form[\s\S]{0,2000}?method="post"/,
+      'the login form must set method="post"',
+    );
+  });
+
+  test("the submit button waits for hydration", () => {
+    assert.match(
+      source,
+      /disabled=\{busy \|\| !hydrated\}/,
+      "the submit button must be disabled until React has attached",
+    );
+    assert.match(source, /setHydrated\(true\)/, "and something must set that flag");
+  });
+
+  test("the fields are named, or FormData reads nothing", () => {
+    assert.match(source, /name="email"/);
+    assert.match(source, /name="password"/);
   });
 });

@@ -50,6 +50,7 @@ import {
   foConnectedMcpIds,
   foErrorTextOf,
 } from "@/lib/faborch/client";
+import { codeForStatus, splitErrorId, statusForCode, type PwaErrorCode } from "@/lib/faborch/errors";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
 import { FabInsightRequestSchema } from "@/lib/validation";
 
@@ -63,15 +64,15 @@ export const maxDuration = 300;
  * whoever set the demo up. These each have a different next step, and the UI
  * says which — see `components/fab/screens/agent-chat.tsx`.
  */
-export type FabInsightErrorCode =
-  /** `FABORCH_BASE_URL` is unset. A deployment fault, not a user one. */
-  | "not_configured"
-  /** Signed in here, but not to FabOrchestrator. Sign in with FO credentials. */
-  | "no_faborch_session"
-  /** FO rejected the token — expired, or evicted for idle. Sign in again. */
-  | "faborch_session_expired"
-  /** FO is unreachable or answered with an error of its own. */
-  | "faborch_unavailable";
+/**
+ * The codes this route can answer with.
+ *
+ * Defined in `lib/faborch/errors.ts` rather than here, because the screen has to
+ * render every one of them and a union declared in a route handler is not
+ * somewhere a component should be importing from. That module is also where the
+ * next step for each code lives — see its header for why they are separate.
+ */
+export type FabInsightErrorCode = PwaErrorCode;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ agent: string }> }) {
   const agent = foAgent((await params).agent);
@@ -136,15 +137,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
       // act on. Replacing them with a generic failure would throw away the only
       // useful part.
       //
+      // The code is now FO's status mapped through one table rather than
+      // everything collapsing into `faborch_unavailable`. That distinction is
+      // the point of WP10: "wait, the limit resets" and "your role cannot do
+      // this" and "the platform is down" need three different next steps, and a
+      // single code cannot carry three.
+      //
       // No agent this app exposes is permission-gated any more —
       // `modeling_agent` was the only gate and `/api/chat` does not answer 403
-      // itself. The relay stays because it is FO's message that matters, not
-      // this app's inventory of which ones FO currently sends.
-      return fail(
-        "faborch_unavailable",
-        await foErrorTextOf(upstream, `${agent.name} could not answer that.`),
-        upstream.status === 429 ? 429 : 502,
-      );
+      // itself. `agent_forbidden` stays mapped because it is FO's message that
+      // matters, not this app's inventory of which ones FO currently sends.
+      const code = codeForStatus(upstream.status);
+      const raw = await foErrorTextOf(upstream, `${agent.name} could not answer that.`);
+      const { message, errorId } = splitErrorId(raw);
+      return fail(code, message, statusForCode(code), errorId);
     }
 
     const headers: Record<string, string> = {
@@ -189,7 +195,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
   }
 }
 
-function fail(code: FabInsightErrorCode, error: string, status: number): NextResponse {
-  return NextResponse.json({ code, error }, { status });
+/**
+ * The one shape that crosses the boundary: `{ code, error, errorId? }`.
+ *
+ * `error` is always a string. FabOrchestrator has two error envelopes and one
+ * nests an object under `error`; rendering that as a React child produced
+ * `[object Object]` on screen, which is the defect `foErrorMessage` exists to
+ * prevent and the proxy tests assert against.
+ *
+ * `errorId` is separate rather than left inside the sentence, because it is the
+ * only handle support has into `error_audit_logs` and a supervisor will not
+ * transcribe a UUID out of prose correctly.
+ */
+function fail(
+  code: FabInsightErrorCode,
+  error: string,
+  status: number,
+  errorId?: string,
+): NextResponse {
+  return NextResponse.json(errorId ? { code, error, errorId } : { code, error }, { status });
 }
 

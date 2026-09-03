@@ -52,11 +52,20 @@
 import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Database, RotateCcw, Sparkles, Square } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowUp,
+  Check,
+  Copy,
+  Database,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  Square,
+} from "lucide-react";
 import Link from "next/link";
-import { ErrorState } from "@/components/fab/primitives";
 import type { FoAgent } from "@/lib/faborch/agents";
-import type { Failure } from "@/lib/faborch/conversation";
+import type { ConversationPhase, Failure } from "@/lib/faborch/conversation";
 import {
   EMPTY_CONVERSATION,
   capacityFailure,
@@ -65,6 +74,13 @@ import {
   historyFor,
   toFoMessages,
 } from "@/lib/faborch/conversation";
+import {
+  NEEDS_SIGN_IN,
+  NEXT_STEP,
+  RETRYABLE,
+  splitErrorId,
+  type PwaErrorCode,
+} from "@/lib/faborch/errors";
 import { readFoStream } from "@/lib/faborch/stream";
 
 export function AgentChat({
@@ -92,6 +108,16 @@ export function AgentChat({
    * missing rather than to block the half that works.
    */
   const [dataConnections, setDataConnections] = React.useState<number | null>(null);
+
+  /**
+   * The last question asked, so a failure can offer to ask it again.
+   *
+   * Kept here rather than read back off the turns: a failure before the answer
+   * began drops the placeholder assistant turn, and after a `reset` there are
+   * no turns at all — but in both cases the question is still the thing the
+   * operator wanted answered.
+   */
+  const [lastPrompt, setLastPrompt] = React.useState<string | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -139,6 +165,7 @@ export function AgentChat({
       const history = historyFor(live.current.turns, prompt, userId);
 
       setInput("");
+      setLastPrompt(prompt);
       inFlight.current = true;
       dispatch({ type: "ask", prompt, userId, assistantId });
 
@@ -185,12 +212,18 @@ export function AgentChat({
               dispatch({ type: "delta", delta: event.delta });
             } else if (event.type === "tool") {
               dispatch({ type: "activity", name: event.name });
+            } else if (event.type === "stalled") {
+              // Not a failure. The stream is still open and FO may still be
+              // working — this only stops the screen claiming progress it has
+              // no evidence for.
+              dispatch({ type: "stalled" });
             } else {
-              // Mid-stream failure. Whatever already arrived is kept — the
-              // reducer decides that, not this callback.
+              // Mid-stream failure. Whatever already arrived is kept and marked
+              // incomplete — the reducer decides that, not this callback.
+              const { message, errorId } = splitErrorId(event.message);
               dispatch({
                 type: "failed",
-                failure: { code: "faborch_unavailable", message: event.message },
+                failure: { code: "faborch_unavailable", message, errorId },
               });
             }
           });
@@ -201,10 +234,13 @@ export function AgentChat({
             dispatch({ type: "stopped" });
             return;
           }
+          // The reader threw: the connection went away part-way through. Its own
+          // code, because "retry" is the right offer here and is not the right
+          // offer for a quota or a permission.
           dispatch({
             type: "failed",
             failure: {
-              code: "faborch_unavailable",
+              code: "connection_lost",
               message: "The connection to FabOrchestrator dropped part-way through the answer.",
             },
           });
@@ -245,11 +281,11 @@ export function AgentChat({
             turn.role === "user" ? (
               <UserTurn key={turn.id} text={turn.text} />
             ) : (
-              <AssistantTurn key={turn.id} text={turn.text} />
+              <AssistantTurn key={turn.id} text={turn.text} incomplete={turn.incomplete} />
             ),
           )}
 
-          {state.busy ? <Working activity={state.activity} /> : null}
+          {state.busy ? <Working phase={state.phase} activity={state.activity} /> : null}
 
           {dataConnections === 0 ? <NoDataConnections /> : null}
 
@@ -258,6 +294,7 @@ export function AgentChat({
               agent={agent}
               failure={state.failure}
               onReset={() => dispatch({ type: "reset" })}
+              onRetry={lastPrompt ? () => send(lastPrompt) : undefined}
             />
           ) : null}
         </div>
@@ -309,7 +346,7 @@ function UserTurn({ text }: { text: string }) {
  * Styling is `.fab-md` in `app/globals.css`, so the answer is set in the
  * product's own type scale rather than in browser defaults.
  */
-function AssistantTurn({ text }: { text: string }) {
+function AssistantTurn({ text, incomplete }: { text: string; incomplete?: boolean }) {
   return (
     <div className="flex gap-3">
       <span
@@ -322,8 +359,24 @@ function AssistantTurn({ text }: { text: string }) {
       >
         <Sparkles size={15} strokeWidth={2} />
       </span>
-      <div className="fab-md min-w-0 flex-1">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <div className="min-w-0 flex-1">
+        <div className="fab-md">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+        </div>
+
+        {/* An answer cut off part-way is true as far as it goes and misleading
+            as a whole: a yield table that stopped after four rows looks like a
+            complete four-row table, and nothing in the text says otherwise.
+            This is the only thing that does. */}
+        {incomplete ? (
+          <p
+            className="m-0 mt-[8px] flex items-center gap-[6px] text-[12px] font-bold"
+            style={{ color: "var(--status-amber-ink)" }}
+          >
+            <AlertTriangle size={13} strokeWidth={2.4} aria-hidden="true" />
+            This answer stopped part-way and is incomplete.
+          </p>
+        ) : null}
       </div>
     </div>
   );
@@ -339,7 +392,70 @@ function AssistantTurn({ text }: { text: string }) {
  * prettified, because a name this app invented for somebody else's tool would
  * be a name nobody could search for.
  */
-function Working({ activity }: { activity: string | null }) {
+/**
+ * What is happening, as three distinct things.
+ *
+ * Dots alone say the same at second 2 and second 90, which is how a working
+ * fifteen-second tool call comes to look like a hang. Each state here answers a
+ * different question the operator is actually asking:
+ *
+ *  - **waiting**   — did it hear me?
+ *  - **working**   — is it doing something? (and what: FO's own tool name)
+ *  - **answering** — is it nearly there?
+ *  - **stalled**   — should I still be waiting?
+ *
+ * The tool name is FO's, shown unprettified. A name this app invented for
+ * somebody else's tool would be a name nobody could search for.
+ */
+function Working({ phase, activity }: { phase: ConversationPhase; activity: string | null }) {
+  if (phase === "stalled") {
+    return (
+      <div
+        className="flex items-start gap-[10px] px-[14px] py-[10px] text-[12px] font-normal"
+        style={{
+          borderRadius: "var(--r-panel)",
+          background: "var(--status-amber-bg, var(--cockpit-surface))",
+          color: "var(--text-muted-cool)",
+        }}
+        role="status"
+      >
+        <AlertTriangle
+          size={14}
+          strokeWidth={2.2}
+          aria-hidden="true"
+          className="mt-[2px] flex-none"
+          style={{ color: "var(--status-amber-ink)" }}
+        />
+        <span className="leading-[1.6]">
+          <span className="font-bold" style={{ color: "var(--text-ink)" }}>
+            Nothing has arrived for 45 seconds.
+          </span>{" "}
+          A long lookup can take minutes, so this may still be working — or you can
+          stop and ask again.
+        </span>
+      </div>
+    );
+  }
+
+  // Answering: text is already on screen and moving. Dots beside it would
+  // compete with the thing they are meant to be reassuring you about.
+  if (phase === "answering") {
+    return (
+      <div
+        className="flex items-center gap-[8px] text-[12px] font-normal"
+        style={{ color: "var(--text-subtle)" }}
+        role="status"
+      >
+        <span
+          className="fab-pulse block h-[11px] w-[2px]"
+          style={{ background: "var(--brand-indigo)" }}
+          aria-hidden="true"
+        />
+        Answering…
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex items-center gap-[10px] text-[12px] font-normal"
@@ -355,7 +471,9 @@ function Working({ activity }: { activity: string | null }) {
           />
         ))}
       </span>
-      {activity ? `FabOrchestrator is running ${activity}…` : "FabOrchestrator is working…"}
+      {phase === "working" && activity
+        ? `FabOrchestrator is running ${activity}…`
+        : "Sent to FabOrchestrator…"}
     </div>
   );
 }
@@ -506,20 +624,41 @@ function SignInCard({
  * restriction and a daily token quota both arrive here, and both tell the
  * operator something they can act on that no wording of ours could.
  */
+/** Titles per code. The message beneath is FO's own words where it has any. */
+const FAILURE_TITLE: Record<string, string> = {
+  not_configured: "Not connected to a FabOrchestrator",
+  faborch_rejected: "FabOrchestrator would not accept that request",
+  agent_forbidden: "Your role does not have that permission",
+  quota_exceeded: "Daily limit reached",
+  faborch_unavailable: "FabOrchestrator could not answer",
+  connection_lost: "The connection dropped part-way",
+  stream_stalled: "No response from FabOrchestrator",
+  bad_request: "That request could not be sent",
+  question_too_long: "That question is too long",
+};
+
 function FailureNotice({
   agent,
   failure,
   onReset,
+  onRetry,
 }: {
   agent: FoAgent;
   failure: Failure;
   onReset: () => void;
+  onRetry?: () => void;
 }) {
-  if (failure.code === "faborch_session_expired") {
+  const code = failure.code as PwaErrorCode;
+
+  if (NEEDS_SIGN_IN.has(code)) {
     return (
       <SignInCard
         next={`/${agent.slug}`}
-        title="Your FabOrchestrator session expired"
+        title={
+          code === "faborch_session_expired"
+            ? "Your FabOrchestrator session expired"
+            : "Sign in with your FabOrchestrator account"
+        }
         body={failure.message}
         label="Sign in again"
       />
@@ -560,18 +699,133 @@ function FailureNotice({
     );
   }
 
+  const title =
+    FAILURE_TITLE[failure.code] ??
+    (failure.code === "not_configured"
+      ? `${agent.name} is not connected to a FabOrchestrator`
+      : "FabOrchestrator could not answer");
+
+  // Only where retrying can actually work. A quota does not move because you
+  // pressed a button, and a permission refusal asks the same question of the
+  // same role — offering the control there invites somebody to keep pressing it
+  // instead of telling an administrator.
+  const canRetry = !!onRetry && RETRYABLE.has(code);
+
   return (
-    <ErrorState
-      title={
-        failure.code === "not_configured"
-          ? `${agent.name} is not connected to a FabOrchestrator`
-          : failure.code === "question_too_long"
-            ? "That question is too long"
-            : "FabOrchestrator could not answer"
-      }
-      detail={failure.code}
-      explanation={failure.message}
-    />
+    <div className="fab-card flex flex-col gap-[10px] px-[20px] py-[18px]">
+      <h2 className="flex items-center gap-[8px] text-[16px]" style={{ color: "var(--text-ink)" }}>
+        <AlertTriangle
+          size={16}
+          strokeWidth={2.4}
+          aria-hidden="true"
+          style={{ color: "var(--status-amber-ink)" }}
+        />
+        {title}
+      </h2>
+
+      {/* FabOrchestrator's own words where it sent any. A role restriction and a
+          quota both arrive here and both name something the operator can act
+          on, which no wording of ours could improve. */}
+      <p
+        className="m-0 max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
+        style={{ color: "var(--text-muted-cool)" }}
+      >
+        {failure.message}
+      </p>
+
+      {/* And ours: what to do about it. A failure with no next step is what
+          sends an operator to find whoever set the demo up. */}
+      {NEXT_STEP[code] ? (
+        <p
+          className="m-0 max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
+          style={{ color: "var(--text-subtle)" }}
+        >
+          {NEXT_STEP[code]}
+        </p>
+      ) : null}
+
+      {failure.errorId ? <ErrorIdChip errorId={failure.errorId} /> : null}
+
+      {canRetry ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-[2px] flex w-fit cursor-pointer items-center gap-[8px] border-0 px-[18px] py-[10px] text-[12px] font-bold text-white"
+          style={{
+            borderRadius: "var(--r-control)",
+            background: "linear-gradient(135deg,var(--brand-indigo),var(--cockpit-indigo))",
+            boxShadow: "var(--shadow-brand)",
+          }}
+        >
+          <RefreshCw size={14} strokeWidth={2.4} aria-hidden="true" />
+          Ask again
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * FabOrchestrator's error id, as something to copy.
+ *
+ * It is the only handle support has into `error_audit_logs`, and a supervisor
+ * on a fab floor is not going to transcribe a UUID off a phone screen
+ * correctly. One tap puts it on the clipboard.
+ *
+ * The clipboard API needs a secure context, which the deployed app has and a
+ * plain-http LAN test does not — so the failure path leaves the id selectable
+ * rather than pretending the copy worked.
+ */
+function ErrorIdChip({ errorId }: { errorId: string }) {
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <div className="flex flex-wrap items-center gap-[8px]">
+      <code
+        className="select-all px-[8px] py-[4px] text-[11px]"
+        style={{
+          borderRadius: "var(--r-chip)",
+          background: "var(--cockpit-surface)",
+          color: "var(--text-muted-cool)",
+        }}
+      >
+        {errorId}
+      </code>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard
+            ?.writeText(errorId)
+            .then(() => setCopied(true))
+            .catch(() => {
+              /* Not a secure context. The code above is `select-all`. */
+            });
+        }}
+        className="flex cursor-pointer items-center gap-[5px] border-0 bg-transparent px-0 text-[11px] font-bold"
+        style={{ color: "var(--brand-indigo)" }}
+      >
+        {copied ? (
+          <>
+            <Check size={12} strokeWidth={2.6} aria-hidden="true" />
+            Copied
+          </>
+        ) : (
+          <>
+            <Copy size={12} strokeWidth={2.4} aria-hidden="true" />
+            Copy reference
+          </>
+        )}
+      </button>
+      <span className="text-[11px] font-normal" style={{ color: "var(--text-subtle)" }}>
+        Support can trace this.
+      </span>
+    </div>
   );
 }
 

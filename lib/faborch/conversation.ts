@@ -25,17 +25,50 @@ export interface Turn {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /**
+   * The answer stopped before it finished, and not because the user said so.
+   *
+   * A dropped connection leaves text that is true as far as it goes and
+   * misleading as a whole — a yield table cut off after four rows looks like a
+   * complete four-row table. Marking it is what stops a partial answer being
+   * read as a total.
+   */
+  incomplete?: boolean;
 }
 
 export interface Failure {
   code: string;
   message: string;
+  /**
+   * FabOrchestrator's own error id, split out of the message it arrived in.
+   *
+   * The only handle support has into `error_audit_logs`, so it survives to the
+   * screen as its own field rather than buried in a sentence — see
+   * `splitErrorId` in `lib/faborch/errors.ts`.
+   */
+  errorId?: string;
 }
+
+/**
+ * What is happening right now, as three distinct things rather than one spinner.
+ *
+ * The plan's line is that a long tool call must not look like a hang. Dots
+ * alone cannot carry that: they say the same thing at second 2 and second 90.
+ *
+ *  - `waiting`   the request is sent and nothing has come back yet
+ *  - `working`   FO is running a tool, and says which one
+ *  - `answering` text is arriving
+ *  - `stalled`   45 seconds of complete silence — a warning, not a verdict
+ *  - `idle`      no turn in flight
+ */
+export type ConversationPhase = "idle" | "waiting" | "working" | "answering" | "stalled";
 
 export interface ConversationState {
   turns: Turn[];
   /** A turn is in flight: the composer shows Stop, the send button is inert. */
   busy: boolean;
+  /** Which of the three progress states to show. */
+  phase: ConversationPhase;
   /** The FO tool currently running, named as FO names it. */
   activity: string | null;
   failure: Failure | null;
@@ -46,6 +79,7 @@ export interface ConversationState {
 export const EMPTY_CONVERSATION: ConversationState = {
   turns: [],
   busy: false,
+  phase: "idle",
   activity: null,
   failure: null,
   streamingId: null,
@@ -64,6 +98,8 @@ export type ConversationAction =
   | { type: "settled" }
   /** The user pressed Stop. */
   | { type: "stopped" }
+  /** 45 seconds of silence. The turn is still open — this is a warning. */
+  | { type: "stalled" }
   /** Start again with an empty thread. */
   | { type: "reset" }
   /** Dismiss a failure notice without touching the thread. */
@@ -84,16 +120,37 @@ export type ConversationAction =
  *  - **A failure part-way through.** The error notice explains itself; the text
  *    that did arrive is still the platform's answer and is still true.
  */
-function settle(state: ConversationState): ConversationState {
+function settle(
+  state: ConversationState,
+  { markIncomplete = false }: { markIncomplete?: boolean } = {},
+): ConversationState {
+  const kept = state.turns.filter(
+    (turn) => turn.id !== state.streamingId || turn.text.trim().length > 0,
+  );
+
   return {
     ...state,
-    turns: state.turns.filter(
-      (turn) => turn.id !== state.streamingId || turn.text.trim().length > 0,
-    ),
+    // `markIncomplete` separates an ending the user chose from one that
+    // happened to them. Stop needs no badge — they pressed it and know what
+    // they have. A dropped connection does, because half a table looks exactly
+    // like a whole one.
+    turns: markIncomplete
+      ? kept.map((turn) =>
+          turn.id === state.streamingId ? { ...turn, incomplete: true } : turn,
+        )
+      : kept,
     busy: false,
+    phase: "idle",
     activity: null,
     streamingId: null,
   };
+}
+
+/** Did the turn in flight already have text in it? */
+function hasPartialAnswer(state: ConversationState): boolean {
+  if (!state.streamingId) return false;
+  const streaming = state.turns.find((turn) => turn.id === state.streamingId);
+  return !!streaming && streaming.text.trim().length > 0;
 }
 
 export function conversationReducer(
@@ -109,6 +166,7 @@ export function conversationReducer(
           { id: action.assistantId, role: "assistant", text: "" },
         ],
         busy: true,
+        phase: "waiting",
         activity: null,
         failure: null,
         streamingId: action.assistantId,
@@ -123,15 +181,28 @@ export function conversationReducer(
         turns: state.turns.map((turn) =>
           turn.id === state.streamingId ? { ...turn, text: turn.text + action.delta } : turn,
         ),
-        // The answer has started, so whatever tool produced it is done.
+        // The answer has started, so whatever tool produced it is done — and a
+        // stall warning is answered by the arrival of text, not dismissed.
+        phase: "answering",
         activity: null,
       };
 
     case "activity":
-      return { ...state, activity: action.name };
+      return { ...state, phase: "working", activity: action.name };
+
+    // A warning, not an ending. The turn stays open, the composer still shows
+    // Stop, and a delta arriving later moves it straight back to `answering`.
+    case "stalled":
+      return state.busy ? { ...state, phase: "stalled" } : state;
 
     case "failed":
-      return { ...settle(state), failure: action.failure };
+      // Text already on screen plus a failure means the answer was cut off
+      // part-way. Anything else failed before it began, so there is nothing to
+      // mark.
+      return {
+        ...settle(state, { markIncomplete: hasPartialAnswer(state) }),
+        failure: action.failure,
+      };
 
     case "settled":
     case "stopped":

@@ -223,11 +223,21 @@ describe("FabOrchestrator's failures arrive as something a person can act on", (
           ),
     );
     const res = await call(request());
-    const body = (await res.json()) as { error: string };
+    const body = (await res.json()) as { error: string; errorId?: string };
     assert.equal(typeof body.error, "string");
     assert.ok(!body.error.includes("[object Object]"), body.error);
     assert.match(body.error, /did not respond/);
-    assert.match(body.error, /e-9/, "the errorId is support's only handle; keep it");
+
+    // The id moved out of the sentence and into its own field (WP10). It is
+    // still support's only handle into `error_audit_logs`, so losing it is
+    // still the failure this assertion guards — but the screen can now show it
+    // as something to copy rather than buried in prose a supervisor would have
+    // to transcribe by eye.
+    assert.equal(body.errorId, "e-9", "the errorId is support's only handle; keep it");
+    assert.ok(
+      !body.error.includes("errorId="),
+      "and it should not also be left inside the message",
+    );
   });
 
   test("a 403 relays FabOrchestrator’s own permission wording", async () => {

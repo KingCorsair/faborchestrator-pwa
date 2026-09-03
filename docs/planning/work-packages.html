@@ -75,6 +75,8 @@ td:nth-child(4),td:nth-child(5){color:var(--ink-2)}
   margin-top:5px;line-height:1.5;max-width:120ch;font-weight:400}
 .phcap b{color:var(--ink);font-weight:600}
 .num{text-align:right;white-space:nowrap;font-weight:600;color:var(--ink)}
+.was{display:block;font-family:Archivo,sans-serif;font-size:10.5px;font-weight:600;
+  color:var(--ink-3);text-decoration:line-through;margin-top:2px;white-space:nowrap}
 tfoot td{background:var(--panel-2);font-family:Archivo,sans-serif;font-size:12.5px;
   color:var(--ink-2);padding:8px 13px;border-bottom:0;border-top:1px solid var(--rule)}
 tfoot b{color:var(--ink)}
@@ -178,7 +180,7 @@ tfoot b{color:var(--ink)}
         <td><span class="bp">P1</span><span class="bm">B1 &check;</span><span class="bmn">unlocks secure access</span></td>
         <td class="num">1.0</td>
       </tr>
-      <tr class="phase"><td colspan="8"><span class="ph">PHASE 2</span><span class="phn">Usable and agentic conversations</span><span class="phw">done in week 3 &middot; closes M2 &amp; B2</span><span class="phcap"><b>A user can ask from the landing page without choosing anything and the system routes the request to the right agent</b>, follow-up questions work, and every agent is still directly reachable by name for anyone who prefers to choose.</span></td></tr>
+      <tr class="phase"><td colspan="8"><span class="ph">PHASE 2</span><span class="phn">Usable and agentic conversations</span><span class="phw">done in week 2 &middot; closes M2 &amp; B2</span><span class="phcap"><b>A user can ask from the landing page without choosing anything and the system routes the request to the right agent</b>, follow-up questions work, and every agent is still directly reachable by name for anyone who prefers to choose.</span></td></tr>
       <tr>
         <td class="step">6</td>
         <td><span class="wp">WP5</span><span class="name">Conversation handling</span></td>
@@ -196,33 +198,39 @@ tfoot b{color:var(--ink)}
       <tr>
         <td class="step">7</td>
         <td><span class="wp">WP7</span><span class="name">Agent selection &amp; access control</span></td>
-        <td><span class="tt">Agent registry, endpoint routing, platform availability query</span>
-        <span class="gloss">A fixed list mapping each agent to its own platform service, plus asking the
-        platform up front whether the one permission-gated agent is enabled for this user.</span></td>
-        <td>Verified in source: only the Master Data Load Agent is permission-gated, and the platform enforces
-        that itself by refusing the request. Asking its own availability check first turns that refusal
-        into a labelled card instead of a dead conversation.</td>
-        <td>An agent menu where every entry either opens a working conversation or explains, on the card,
-        why it cannot.</td>
-        <td><span class="ms">M2</span><span class="msnote">contributes &mdash; agent menu</span></td>
+        <td><span class="tt">Agent registry, endpoint routing</span>
+        <span class="gloss">A fixed list mapping each agent to its own platform service. The
+        availability query it also carried is gone &mdash; see right.</span></td>
+        <td><b>Reduced by a product decision, 2 September.</b> The availability query existed for one
+        agent: the Master Data Load Agent was the only permission-gated one. Jothi confirmed it is not
+        part of this app, and the platform&rsquo;s remaining chat endpoint does not refuse on permissions
+        at all &mdash; so there is nothing left to ask about. The registry and endpoint routing were
+        already built under WP3 and WP4.</td>
+        <td>An agent menu where every entry either opens a working conversation or says on the card that
+        this app does not open it. <b>Delivered 2 September</b>, verified in a browser: the Master Data
+        Load Agent card is shown, greyed and not openable, and its route is gone.</td>
+        <td><span class="ms done">M2 &check;</span><span class="msnote">contributes &mdash; agent menu</span></td>
         <td><span class="bp">P2</span><span class="bmn">contributes to B2</span></td>
-        <td class="num">1.0</td>
+        <td class="num">0.5<span class="was">was 1.0</span></td>
       </tr>
       <tr>
         <td class="step">8</td>
         <td><span class="wp">WP13</span><span class="name">Agentic entry point &mdash; ask first</span></td>
-        <td><span class="tt">Server-side request routing, classification on the platform</span>
-        <span class="gloss">One ask box on the landing screen. The user types what they want and the
-        system works out which agent and which data should answer it, then sends it there.</span></td>
-        <td>People on a fab floor should not have to know the product&rsquo;s internal structure to ask a
-        question. Verified in source: the platform already chooses its own tools and queries inside an
-        agent, so only the choice <em>between</em> agents is new work &mdash; and that judgement is asked
-        of the platform, not made in the app.</td>
-        <td>A landing question answered without an agent being chosen, labelled with the agent that
-        served it and correctable in one tap, with manual selection still available.</td>
+        <td><span class="tt">One ask box on the landing screen</span>
+        <span class="gloss">The user types what they want and the system works out which tools and which
+        data should answer it, then returns the answer. <b>No classification layer was needed.</b></span></td>
+        <td><b>Met without building anything, 2 September.</b> Two things were being called routing. The
+        platform&rsquo;s own chat endpoint already picks the caller&rsquo;s authorised tools and data per
+        question, over up to twenty steps &mdash; that half was never this project&rsquo;s work. The other
+        half, choosing <em>between</em> agents, disappeared when the Master Data Load Agent left: every
+        remaining agent is the same service, so there is nothing to choose between.</td>
+        <td>A landing question answered without an agent being chosen, with manual selection still
+        available. <b>Verified in a browser against the live platform</b>, 2 September. The
+        &ldquo;labelled with the agent that served it&rdquo; clause is moot with one destination and
+        returns if a second is ever exposed.</td>
         <td><span class="ms done">M2 &check;</span><span class="msnote">completes M2</span></td>
         <td><span class="bp">P2</span><span class="bm">B2 &check;</span><span class="bmn">unlocks ask-first working</span></td>
-        <td class="num">2.0</td>
+        <td class="num">0<span class="was">was 2.0</span></td>
       </tr>
       <tr class="phase"><td colspan="8"><span class="ph">PHASE 3</span><span class="phn">Real plant value on mobile</span><span class="phw">done in week 3 &middot; closes M3 &amp; B3</span><span class="phcap"><b>A supervisor installs the app from a QR code and asks real MES and quality questions from the floor</b> &mdash; yield, downtime, scrap &mdash; and reads the answer as a table on their phone. This is the phase the business case rests on.</span></td></tr>
       <tr>
@@ -313,10 +321,10 @@ tfoot b{color:var(--ink)}
       </tr>
     </tbody>
     <tfoot>
-      <tr><td colspan="7"><b>Core implementation</b></td><td class="num">23 engineer-days</td></tr>
-      <tr><td colspan="7">Planned engineering schedule including probes/demonstrations</td><td class="num">24.5 engineer-days &asymp; 5 weeks</td></tr>
-      <tr><td colspan="7">Integration contingency</td><td class="num">up to 9 engineer-days</td></tr>
-      <tr><td colspan="7"><b>Upper planning envelope</b></td><td class="num">33.5 engineer-days &asymp; 7 weeks</td></tr>
+      <tr><td colspan="7"><b>Core implementation</b></td><td class="num">20.5 engineer-days</td></tr>
+      <tr><td colspan="7">Planned engineering schedule including probes/demonstrations</td><td class="num">22.0 engineer-days &asymp; 5 weeks</td></tr>
+      <tr><td colspan="7">Integration contingency</td><td class="num">up to 5 engineer-days</td></tr>
+      <tr><td colspan="7"><b>Upper planning envelope</b></td><td class="num">27.0 engineer-days &asymp; 6 weeks</td></tr>
     </tfoot>
   </table></div>
 
@@ -324,9 +332,15 @@ tfoot b{color:var(--ink)}
   FabOrchestrator before sign-in works, and plant data cannot be proven before the connection is. WP
   numbers are stable identifiers from the engineering plan, so they do not run in sequence here. A
   milestone marked <b>&check;</b> is completed by that package, and each phase ends on the package that
-  completes its milestone. WP13 is the newest package: the confirmed requirement that a user can ask
-  from the landing page without picking an agent first. Each phase is dated by the one week in which it is finished, on the 24.5-day schedule (which carries
-  1.5 days of probe and demonstration work on top of the 23.0-day package estimates); phases 2 and 3
-  both finish in week 3 because phase 3 is small. Sequence shown is for one engineer; with two, steps 2, 9, 11 and 13 can start
+  completes its milestone. WP13 was the newest package: the confirmed requirement that a user can ask
+        from the landing page without picking an agent first. <b>It closed on 2 September without a
+        line of routing code</b>, when Jothi confirmed the Master Data Load Agent is not part of this
+        app and every remaining agent turned out to be the same platform service. WP7 shrank for the
+        same reason. <b>2.5 days came out of the core estimate</b>, and 4.0 of the 9.0 contingency days
+        were released by the 1 September environment checks &mdash; but the finish still lands in
+        week 5, because 22.0 days is 4.4 weeks. What the saving bought is margin before that date,
+        not an earlier one. Each phase is dated by the one week in which it is finished, on the 22.0-day schedule (which carries
+  1.5 days of probe and demonstration work on top of the 20.5-day package estimates); phase 2 now finishes in week 2, and
+        phase 3 in week 3. Sequence shown is for one engineer; with two, steps 2, 9, 11 and 13 can start
   earlier.</p>
 </div>

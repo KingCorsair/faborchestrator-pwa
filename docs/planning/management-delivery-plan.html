@@ -106,6 +106,7 @@ tbody tr:last-child td{border-bottom:0}
 .card h3{margin-top:0}
 .foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--rule);
   font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-3)}
+.note-in{display:block;font-size:12px;color:var(--ink-3);margin-top:3px}
 </style>
 
 <header class="mast">
@@ -115,9 +116,9 @@ tbody tr:last-child td{border-bottom:0}
     <p class="dek">Giving operations staff access to FabOrchestrator from their phones, as an
     installable app, without building a second version of the product.</p>
     <div class="meta">
-      <div><b>Prepared</b> 30 August 2026 &middot; revised 1 September 2026 (agentic entry point added)</div>
-      <div><b>Effort</b> 24.5 engineer-days core &middot; 9 days contingency</div>
-      <div><b>Duration</b> 7 weeks with one engineer &middot; about 4 with two</div>
+      <div><b>Prepared</b> 30 August 2026 &middot; revised 2 September 2026 (Master Data Load Agent removed from scope; routing package closed)</div>
+      <div><b>Effort</b> 20.5 engineer-days core &middot; 5 days contingency</div>
+      <div><b>Duration</b> 5 weeks with one engineer &middot; about 3 with two</div>
       <div><b>Structure</b> Six business phases &middot; business milestones B1&ndash;B5 &middot; technical milestones M0&ndash;M5</div>
       <div><b>Backup</b> Detailed engineering plan, held separately</div>
     </div>
@@ -329,16 +330,16 @@ tbody tr:last-child td{border-bottom:0}
         <td>Week 5<span class="wkd">5.5 days of work</span><span class="msd">M5 &check;</span><span class="msd">B5 &check;</span></td>
       </tr>
       <tr class="total"><td colspan="4">Core implementation, as scheduled</td>
-        <td>24.5 days<span class="wkd">&asymp; 5 weeks</span></td></tr>
+        <td>22.0 days<span class="wkd">&asymp; 5 weeks</span></td></tr>
     </tbody>
   </table></div>
 
   <p>Phase order is set by genuine dependencies, not preference: nothing can reach FabOrchestrator
   before sign-in works, and plant data cannot be proven before the connection is proven. Each phase is
   dated by <strong>the one week in which it is finished</strong>, with one engineer at five days a
-  week; Phases 2 and 3 both finish in week 3 because Phase 3 is small. The days shown are the
-  scheduled figures, which include 1.5 days of environment probing and milestone demonstrations on top
-  of the 23.0 days of build effort in &sect;04. With two engineers the phases overlap and delivery
+  week; Phases 1 and 2 both finish in week 2, because Phase 2 was reduced to a single day on
+  2 September. The days shown are the scheduled figures, which include 1.5 days of environment probing
+  and milestone demonstrations on top of the 20.5 days of build effort in &sect;04. With two engineers the phases overlap and delivery
   compresses to about 4 weeks. Phase 0 is the only phase that unlocks no business
   capability; it is kept separate rather than folded into Phase 1 because pretending it delivers value
   would misrepresent what the first week produces.</p>
@@ -428,11 +429,13 @@ tbody tr:last-child td{border-bottom:0}
       <tr>
         <td><span class="comp">C6 &nbsp;Agent selection &amp; access control</span><span class="tag">WP7</span></td>
         <td>The landing screen presenting FabOrchestrator&rsquo;s agents, each routed to the right
-        service, with the one permission-gated agent shown as unavailable when the platform&rsquo;s own
-        permission check says so.</td>
-        <td>Only one agent &mdash; the Modeling Agent &mdash; requires a role permission, and
-        FabOrchestrator itself enforces it by refusing the request. The app adds presentation, not
-        authorisation: asking the platform up front turns a mid-conversation refusal into a labelled
+        service, with any agent this app does not open shown as unavailable and saying why.</td>
+        <td><b>Reduced 2 September.</b> The permission check this component existed for covered one
+        agent &mdash; the Master Data Load Agent &mdash; which is no longer part of this app. No
+        remaining agent is permission-gated. What is left is presentation: an agent the app does not
+        open says so on its card. Previously: only one agent required a role permission, and
+        FabOrchestrator itself enforced it by refusing the request; asking the platform up front turned
+        a mid-conversation refusal into a labelled
         card, which is the difference between a closed door and a broken one.</td>
         <td>An agent menu where every entry either opens a working conversation or explains why it
         cannot.</td>
@@ -510,12 +513,15 @@ tbody tr:last-child td{border-bottom:0}
         against the platform&rsquo;s code first: choosing the tools and the data for a question is already
         the platform&rsquo;s own work, so the only genuinely new decision is which agent &mdash; and even
         that judgement is asked of the platform rather than made in the app.</td>
-        <td>A landing question answered without an agent being chosen, labelled with the agent that
-        served it and correctable in one tap, with agent-by-name selection still working.</td>
-        <td class="num">2.0</td>
+        <td>A landing question answered without an agent being chosen, with agent-by-name selection
+        still working. <b>Met 2 September with no routing code</b>: after the Master Data Load Agent
+        left, every remaining agent is one platform service, and that service already chooses its own
+        tools and data per question. The &ldquo;labelled with the agent that served it&rdquo; clause is
+        moot with a single destination.</td>
+        <td class="num">0<span style="display:block;font-size:11px;color:var(--ink-3);text-decoration:line-through">was 2.0</span></td>
       </tr>
       <tr class="total">
-        <td colspan="4">Core implementation</td><td class="num">23.0</td>
+        <td colspan="4">Core implementation</td><td class="num">20.5</td>
       </tr>
     </tbody>
   </table></div>
@@ -621,14 +627,16 @@ tbody tr:last-child td{border-bottom:0}
         <td>Device validation, security review, documentation, demo runbook</td>
         <td class="num">2.5</td>
         <td>A colleague reproduces the demo from documentation alone</td></tr>
-      <tr class="total"><td colspan="3">Core implementation</td><td class="num">24.5</td>
+      <tr class="total"><td colspan="3">Core implementation</td><td class="num">22.0</td>
         <td colspan="2">&asymp; 5 working weeks</td></tr>
     </tbody>
   </table></div>
 
-  <p style="font-size:15px;color:var(--ink-3)">The 24.5 days here exceeds the 23.0 in &sect;04 by
+  <p style="font-size:15px;color:var(--ink-3)">The 22.0 days here exceeds the 20.5 in &sect;04 by
   1.5 days of environment probing and milestone demonstrations scheduled into week 1. The
-  component estimates cover build effort only; this table covers the calendar.</p>
+  component estimates cover build effort only; this table covers the calendar.
+  <b>The finish stays in week 5</b> despite 2.5 days leaving the estimate on 2 September: 22.0 days is
+  4.4 weeks, so the saving shows up as margin before that date rather than an earlier one.</p>
 
   <h3>With a second engineer</h3>
   <p>Four components &mdash; mobile foundation, answer streaming, the dashboard display work and the
@@ -642,13 +650,13 @@ tbody tr:last-child td{border-bottom:0}
   <div class="sechead"><div class="secno">07</div><h2>Effort summary</h2></div>
 
   <div class="grid3">
-    <div class="kpi"><div class="k">Core implementation</div><div class="v">24.5 d</div>
+    <div class="kpi"><div class="k">Core implementation</div><div class="v">22.0 d</div>
       <div class="s">Build, test and hand over the twelve components. Derived from the work, not fitted
       to a target date.</div></div>
-    <div class="kpi"><div class="k">Integration contingency</div><div class="v">9.0 d</div>
+    <div class="kpi"><div class="k">Integration contingency</div><div class="v">5.0 d</div>
       <div class="s">Reserve for things outside this team&rsquo;s control. Held separately and released
       as each is resolved.</div></div>
-    <div class="kpi"><div class="k">Total</div><div class="v">33.5 d</div>
+    <div class="kpi"><div class="k">Total</div><div class="v">27.0 d</div>
       <div class="s">&asymp; 7 working weeks with one engineer; about 4 weeks with two.</div></div>
   </div>
 
@@ -683,9 +691,10 @@ tbody tr:last-child td{border-bottom:0}
         except on a physical device. This app has already had one defect that appeared only on a
         cold launch of the installed copy.</td><td class="num">1.5</td></tr>
       <tr><td><b>Account and permission provisioning</b></td>
-        <td>The demonstration account needs a role with live data connections enabled, and the
-        Modeling Agent permission. Both are granted by an administrator, not by us.</td>
-        <td class="num">1.0</td></tr>
+        <td>The demonstration account needs a role with live data connections enabled. The Modeling
+        Agent permission is no longer needed &mdash; that agent left this app on 2 September &mdash; so
+        this driver is now the data-connection half alone, and that half is still outstanding.</td>
+        <td class="num">0.5</td></tr>
       <tr><td><b>Dashboard fit on a phone</b></td>
         <td>Dashboards are generated for a desktop-sized screen. Some will simply be wide. Changing that
         means changing how the platform generates them, which is outside this project&rsquo;s scope.</td>
@@ -707,20 +716,22 @@ tbody tr:last-child td{border-bottom:0}
   <div class="sechead"><div class="secno">08</div><h2>Dependencies and risks</h2></div>
 
   <h3>External dependencies</h3>
-  <p>Four things this project needs from outside the engineering team. All four are small asks, and all
-  four are on the critical path if they arrive late.</p>
+  <p>Four things this project needed from outside the engineering team. <b>Two are settled and one turned out not to be needed.</b> The one that remains &mdash; live data connections on the demonstration account &mdash; is the only thing standing between this and the business demonstration, and no amount of engineering can work around it.</p>
   <div class="tw"><table>
     <thead><tr><th style="width:32%">We need</th><th>From</th><th>Needed by</th></tr></thead>
     <tbody>
       <tr><td>A demonstration FabOrchestrator account with a role that has live data connections
-        enabled, and the Modeling Agent permission</td><td>Platform administrator</td>
-        <td><b>Week 1</b> &mdash; the environment checks depend on it</td></tr>
+        enabled <span class="note-in">(the Modeling Agent permission is no longer needed)</span></td>
+        <td>Platform administrator</td>
+        <td><b>Outstanding.</b> Checked 1 September: zero connections on the account. This is the one
+        dependency still blocking the business demonstration</td></tr>
       <tr><td>Confirmation of which FabOrchestrator instance the demo runs against, and that it is
         current</td><td>Platform owners</td><td><b>Week 1</b></td></tr>
       <tr><td>One iPhone and one Android handset available for testing</td><td>Internal</td>
         <td><b>Week 3</b> and <b>Week 5</b></td></tr>
-      <tr><td>A small database for storing user sessions</td><td>Infrastructure</td>
-        <td><b>Week 2</b> &mdash; without it, every deployment signs everyone out</td></tr>
+      <tr><td><s>A small database for storing user sessions</s></td><td>Infrastructure</td>
+        <td><b>No longer needed.</b> Resolved 1 September without one: the session carries a
+        fingerprint of the platform token it was minted beside, so signing out invalidates it</td></tr>
     </tbody>
   </table></div>
 

@@ -97,7 +97,7 @@ tfoot b{color:var(--ink)}
   <div class="strip">
     <div class="pz found"><span class="n">PHASE 0</span><span class="t">Foundation and proven link</span><span class="w">done in week 1 &middot; M0</span></div>
     <div class="pz"><span class="n">PHASE 1</span><span class="t">Secure access to FabOrchestrator</span><span class="w">done in week 2 &middot; M1 &middot; B1</span></div>
-    <div class="pz"><span class="n">PHASE 2</span><span class="t">Usable and agentic conversations</span><span class="w">done in week 3 &middot; M2 &middot; B2</span></div>
+    <div class="pz"><span class="n">PHASE 2</span><span class="t">Usable and agentic conversations</span><span class="w">done in week 2 &middot; M2 &middot; B2</span></div>
     <div class="pz"><span class="n">PHASE 3</span><span class="t">Real plant value on mobile</span><span class="w">done in week 3 &middot; M3 &middot; B3</span></div>
     <div class="pz"><span class="n">PHASE 4</span><span class="t">Rich operational output</span><span class="w">done in week 4 &middot; M4 &middot; B4</span></div>
     <div class="pz"><span class="n">PHASE 5</span><span class="t">Ready for reliable use</span><span class="w">done in week 5 &middot; M5 &middot; B5</span></div>
@@ -147,19 +147,19 @@ tfoot b{color:var(--ink)}
       <tr>
         <td><span class="pn">PHASE 2</span><span class="name">Usable and agentic conversations</span></td>
         <td class="cap"><b>A user asks for what they want from the landing page and the system works out
-        where the request belongs</b> &mdash; which agent, which tools, which data &mdash; then does the
-        work and returns the answer. Follow-up questions stay in the same thread. Choosing an agent by
-        name remains available as a direct path for anyone who prefers it.
+        where the request belongs</b> &mdash; which tools, which data &mdash; then does the work and
+        returns the answer. Follow-up questions stay in the same thread, and an answer can be stopped
+        part-way without losing what arrived. Choosing an agent by name remains available as a direct
+        path for anyone who prefers it.
         <span class="can">User can do: type a question without knowing the product&rsquo;s internal
         structure, and get it answered by the right part of the platform.</span></td>
         <td class="wps"><span class="wpn">WP5</span><span class="wpn">WP7</span><span class="wpn nw">WP13</span>
-        <span class="wpsub">Conversation handling, agent selection &amp; access control, and the new
-        agentic entry point.</span></td>
-        <td class="cap">A plant question typed on the landing screen with nothing selected, answered by
-        the right agent and labelled with which one served it; the route changed in one tap; a
-        multi-question conversation held; every agent still directly reachable, and the
-        permission-restricted one still explaining itself on its card.</td>
-        <td class="tm"><span class="wk">Week 3</span><span class="dy">3.5 days of work</span>
+        <span class="wpsub">Conversation handling, agent selection, and the agentic entry point &mdash;
+        the last of which needed no code. See the note below.</span></td>
+        <td class="cap">A plant question typed on the landing screen with nothing selected and answered;
+        a multi-question conversation held, interrupted and resumed; every agent this app opens directly
+        reachable, and the one it does not open saying so on its card.</td>
+        <td class="tm"><span class="wk">Week 2</span><span class="dy">1.0 day of work</span>
         <span class="ms tech">M2 &check;</span><span class="ms">B2 &check;</span></td>
       </tr>
       <tr>
@@ -212,9 +212,9 @@ tfoot b{color:var(--ink)}
     </tbody>
     <tfoot>
       <tr><td colspan="4"><b>Core implementation</b></td><td class="num">23 engineer-days</td></tr>
-      <tr><td colspan="4">Planned engineering schedule including probes/demonstrations</td><td class="num">24.5 engineer-days &asymp; 5 weeks</td></tr>
+      <tr><td colspan="4">Planned engineering schedule including probes/demonstrations</td><td class="num">22.0 engineer-days &asymp; 5 weeks</td></tr>
       <tr><td colspan="4">Integration contingency</td><td class="num">up to 9 engineer-days</td></tr>
-      <tr><td colspan="4"><b>Upper planning envelope</b></td><td class="num">33.5 engineer-days &asymp; 7 weeks</td></tr>
+      <tr><td colspan="4"><b>Upper planning envelope</b></td><td class="num">27.0 engineer-days &asymp; 7 weeks</td></tr>
     </tfoot>
   </table></div>
 
@@ -224,10 +224,16 @@ tfoot b{color:var(--ink)}
   <b>B1&ndash;B5 are business milestones</b>, each closing a phase; they sit alongside the technical
   milestones <b>M0&ndash;M5</b> in the engineering plan rather than replacing them. Phase 0 has no
   business milestone because it delivers certainty, not capability. Each phase is dated by <b>the one week in which it is finished</b>, assuming one engineer at five
-  days a week: the running total of work reaches 4.0 days inside week 1, 7.5 by week 2, 11.0 and then
-  14.0 during week 3, 19.0 in week 4, and 24.5 in week 5. Phases 2 and 3 both finish in week 3
-  because Phase 3 is small. The days shown are the scheduled figures including probe and
-  demonstration time, which is why they total 24.5 rather than the 23.0 of build effort alone; with
-  two engineers the phases overlap and delivery compresses to about 4 weeks. <b>Phase 1 is the decision point</b> &mdash; the whole
+  days a week: the running total of work reaches 4.0 days inside week 1, 7.5 and then 8.5 by week 2,
+  11.5 during week 3, 16.5 in week 4, and 22.0 in week 5. Phases 1 and 2 both finish in week 2,
+  because Phase 2 turned out to cost a single day. The days shown are the scheduled figures including
+  probe and demonstration time, which is why they total 22.0 rather than the 20.5 of build effort
+  alone; with two engineers the phases overlap and delivery compresses to about 4 weeks.
+  <b>Revised 2 September</b>: Phase 2 was estimated at 3.5 days and cost 1.0. Jothi confirmed the
+  Master Data Load Agent is not part of this app, and with it went the only agent worth routing to and
+  the only one whose permissions needed checking &mdash; so the ask-first entry point was satisfied by
+  the platform&rsquo;s own agent with no routing code written. <b>The finish stays in week 5</b>: 22.0
+  days is 4.4 weeks, so what the 2.5 days bought is margin before that date rather than an earlier
+  one. <b>Phase 1 is the decision point</b> &mdash; the whole
   architecture is proven there, about a fifth of the way into the budget, not at the end.</p>
 </div>

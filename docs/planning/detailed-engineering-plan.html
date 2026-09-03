@@ -148,7 +148,8 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
       <div><b>Upstream</b> <span class="fp">LLM-AT-SCALE/FabOrchestrator_product_code</span></div>
       <div><b>Client repo</b> <span class="fp">progressive_web_app_demo/</span></div>
       <div><b>Inspected</b> 2026-08-29</div>
-      <div><b>Status</b> Draft for technical review</div>
+      <div><b>Amended</b> 2026-09-02 &mdash; see &sect;00a</div>
+      <div><b>Status</b> Amended; §05–§07 superseded in part</div>
     </div>
   </div>
 </header>
@@ -158,6 +159,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
 <section id="toc">
   <div class="sechead"><div class="secno">&sect;00</div><h2>Contents</h2></div>
   <nav class="toc">
+    <a href="#amend"><span>00a</span>Amendment &mdash; 2 September 2026</a>
     <a href="#s1"><span>01</span>Executive technical summary</a>
     <a href="#s2"><span>02</span>Current system findings</a>
     <a href="#s3"><span>03</span>Architecture confirmed from code</a>
@@ -181,6 +183,88 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
     <a href="#s21"><span>21</span>Definition of done</a>
   </nav>
 </section>
+
+<section id="amend">
+  <div class="sechead"><div class="secno">&sect;00a</div><h2>Amendment &mdash; 2 September 2026</h2></div>
+
+  <div class="callout warn">
+    <h3>What this amendment supersedes</h3>
+    <p><b>Jothi confirmed on 2 September that the Master Data Load Agent is not part of the PWA.</b>
+    Loading MES master data is not what a supervisor does one-handed on a fab floor; that agent&rsquo;s
+    real workflow is file upload, staged review and a load step, none of which this client carries.</p>
+    <p>Every passage below that assumes three exposed agents, a permission-gated agent, or a routing
+    package is <b>superseded by this section</b>. The passages are left in place rather than rewritten:
+    they carry the file-level citations the rest of the plan is built on, and the reasoning that led to
+    the decision is worth more intact than tidied away.</p>
+  </div>
+
+  <h3>The three assumptions that changed</h3>
+  <div class="tw"><table>
+    <thead><tr><th style="width:24%">Where</th><th style="width:36%">What it says</th><th>What is true from 2 September</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Agent registry</b><span class="fp">lib/faborch/agents.ts</span></td>
+        <td>Three agents: FabInsight, the Master Data Load Agent, the Back-end Agent &mdash; two
+        endpoints between them.</td>
+        <td><b>Two agents, one endpoint.</b> FabInsight and the Back-end Agent, both on
+        <span class="fp">/api/chat</span>. The modeling entry and the
+        <span class="fp">/modeling-agent</span> screen are deleted; the proxy answers 404 for that
+        agent before any request reaches FabOrchestrator.</td>
+      </tr>
+      <tr>
+        <td><b>WP7</b> Agent selection &amp; access control</td>
+        <td>Agent registry, endpoint routing, and a platform availability query for the one
+        permission-gated agent.</td>
+        <td><b>The availability query has nothing to check.</b> <span class="fp">modeling_agent</span>
+        was the only gate, and <span class="fp">/api/chat</span> does not answer 403 itself. The
+        registry and routing were already built under WP3/WP4. <b>1.0 d &rarr; 0.5 d</b>, delivered:
+        the card is shown greyed with the reason on it. The proxy still relays a 403 verbatim if
+        FabOrchestrator ever starts sending one.</td>
+      </tr>
+      <tr>
+        <td><b>WP13</b> Agentic entry point</td>
+        <td>Server-side request routing and classification, choosing between agents. 2.0 days.</td>
+        <td><b>Met with no routing code. 2.0 d &rarr; 0.</b> Two things were being called routing.
+        FabOrchestrator&rsquo;s own <span class="fp">/api/chat</span> already loads the caller&rsquo;s
+        authorised MCP tools and lets the model choose among them over up to twenty steps
+        (<span class="fp">stopWhen: stepCountIs(20)</span>, upstream <span class="fp">e5a5abd</span>)
+        &mdash; that half was never this project&rsquo;s work. The other half, choosing
+        <em>between</em> agents, disappeared with the fourth agent.</td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <h3>What was actually built for it</h3>
+  <ul>
+    <li>The <span class="fp">modeling</span> entry removed from <span class="fp">FO_AGENTS</span>, and
+      <span class="fp">FoAgentId</span> narrowed to <span class="fp">"insight" | "backend"</span>.</li>
+    <li><span class="fp">app/modeling-agent/</span> deleted. <span class="fp">foAgent()</span> returns
+      <span class="fp">null</span> for it, so the proxy 404s before touching the platform.</li>
+    <li>The cockpit card kept and greyed, <span class="fp">aria-disabled</span>, reading
+      &ldquo;In FabOrchestrator. Not part of this app.&rdquo; &mdash; the same treatment
+      <span class="fp">nav-items.ts</span> gives Workflows, Sites and Reports. Deleting the card would
+      misrepresent the product as surely as inventing one would.</li>
+    <li>The 403-relay test rewritten: it still asserts the platform&rsquo;s wording is relayed
+      verbatim, but no longer claims the modeling gate as its source.</li>
+  </ul>
+
+  <h3>Effect on the estimate</h3>
+  <p><b>Core build 23.0 &rarr; 20.5 engineer-days</b>; scheduled 24.5 &rarr; 22.0 including probes and
+  demonstrations. Contingency falls 9.0 &rarr; 5.0: the streaming, deployment-currency and
+  account-provisioning drivers were released by the 1 September environment checks, and the modeling
+  half of the permission driver is moot. <b>The finish stays in week 5</b> &mdash; 22.0 days is 4.4
+  weeks &mdash; so the saving is margin before that date, not an earlier one. Phase 2 moves from
+  week 3 to week 2.</p>
+
+  <div class="callout">
+    <h3>Still outstanding, and not an engineering problem</h3>
+    <p>The demonstration account has <b>zero data connections</b> (probe P4, 1 September: 0 connected
+    of 0 visible). Plant questions are answered from general knowledge, which reads as a wrong answer
+    rather than a missing permission. Only a FabOrchestrator administrator can clear it, and it blocks
+    the whole of Phase 3 &mdash; the phase the business case rests on.</p>
+  </div>
+</section>
+
 <section id="s1">
   <div class="sechead"><div class="secno">&sect;01</div><h2>Executive technical summary</h2></div>
 
@@ -2262,10 +2346,10 @@ curl -N -X POST "$FO/api/chat" \
       <tr><td><b>4</b></td><td>WP10 progress &amp; errors</td><td class="num">2.0</td><td>Every error row reachable and distinct</td></tr>
       <tr><td><b>4&ndash;5</b></td><td rowspan="2">Phase 5</td><td>WP11 testing (runs alongside, banked here)</td><td class="num">3.0</td><td rowspan="2">M5</td><td>Green suite from a clean clone, no network</td></tr>
       <tr><td><b>5</b></td><td>WP12 integration, security review, docs, demo</td><td class="num">2.5</td><td>Device validation; README reproduction by a fresh reader</td></tr>
-      <tr style="font-weight:700"><td></td><td></td><td>Core implementation</td><td class="num">24.5</td><td></td><td>&asymp; 5 working weeks</td></tr>
+      <tr style="font-weight:700"><td></td><td></td><td>Core implementation</td><td class="num">22.0</td><td></td><td>&asymp; 5 working weeks</td></tr>
     </tbody>
   </table></div>
-  <p><small>The 24.5 total exceeds the 23.0 in &sect;06 by the 1.5 days of probe and demonstration work
+  <p><small>The 22.0 total exceeds the 20.5 in &sect;06 by the 1.5 days of probe and demonstration work
   folded into week 1; the package estimates cover implementation only.</small></p>
 
   <h3>With two engineers</h3>
@@ -2301,9 +2385,9 @@ last week alone), so the deployment&rsquo;s behaviour can still drift mid-projec
     </tbody>
   </table></div>
   <div class="grid3" style="margin-top:22px">
-    <div class="kpi"><div class="k">Core implementation</div><div class="v">24.5 d</div><div class="s">&asymp; 5 weeks, one engineer</div></div>
+    <div class="kpi"><div class="k">Core implementation</div><div class="v">22.0 d</div><div class="s">&asymp; 5 weeks, one engineer</div></div>
     <div class="kpi"><div class="k">Integration contingency</div><div class="v">9.0 d</div><div class="s">Driven by proxies, MES and devices &mdash; not by code volume</div></div>
-    <div class="kpi"><div class="k">Total, one engineer</div><div class="v">33.5 d</div><div class="s">&asymp; 7 working weeks. Two engineers: about 4 weeks.</div></div>
+    <div class="kpi"><div class="k">Total, one engineer</div><div class="v">27.0 d</div><div class="s">&asymp; 7 working weeks. Two engineers: about 4 weeks.</div></div>
   </div>
   <p style="margin-top:18px">Running probes P1&ndash;P5 in the first two days is the single cheapest way
   to shrink this number: four of the six drivers become known facts rather than reserves, and roughly

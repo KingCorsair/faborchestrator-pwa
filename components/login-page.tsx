@@ -18,6 +18,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
 import { Button, Label } from "@/components/fab/primitives";
+import { submittedCredentials } from "@/lib/credentials";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 
 const AUTH_TOKEN_KEY = "llmatscale_auth_token";
@@ -114,16 +115,38 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     };
   }, []);
 
-  async function onSubmit(event: React.FormEvent) {
+  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    /**
+     * Read what is actually in the fields, not what React thinks is.
+     *
+     * Typing that lands before React hydrates never reaches state, so the form
+     * used to submit an empty email while the field visibly held one. See
+     * `lib/credentials.ts` for the full account — found on the Fly deployment,
+     * invisible on localhost.
+     */
+    // `currentTarget` is captured before any `await`: React clears it once the
+    // handler yields. The rule itself lives in `lib/credentials.ts`, where it
+    // can be tested without rendering React.
+    const { email: submittedEmail, password: submittedPassword } = submittedCredentials(
+      new FormData(event.currentTarget),
+      { email, password },
+    );
+
     setBusy(true);
     setError(null);
+
+    // Keep the state in step, so the fields still show what was sent if the
+    // attempt fails and hydration has since caught up.
+    setEmail(submittedEmail);
+    setPassword(submittedPassword);
 
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: submittedEmail, password: submittedPassword }),
       });
       const data = await res.json().catch(() => ({}));
 
@@ -278,6 +301,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
               style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
             >
               <input
+                name="email"
                 type="email"
                 autoComplete="username"
                 required
@@ -296,6 +320,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
               style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
             >
               <input
+                name="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 required

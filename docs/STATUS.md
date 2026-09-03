@@ -301,7 +301,8 @@ validation, security review, handover) follow.
 | # | Blocker | Blocks | Who clears it |
 |---|---|---|---|
 | 1 | **The probe account has zero MCP data connections.** Probe P4: `0 connected of 0 visible`. **Narrower than we reported** — see below: metric questions already answer from real plant data without them | The MCP tool path only. Not the metric path | A FabOrchestrator administrator, assigning MCP connections to that account's role |
-| 2 | The Fly deployment is stale — it carries none of this work | Anything demonstrated from a URL rather than localhost | Us, on your word |
+| 2 | ~~The Fly deployment is stale~~ **Cleared 3 September.** Live at `https://faborch-demo.fly.dev`, TLS 1.3, carrying everything through WP1 | — | Done |
+| 3 | **The FabOrchestrator fixes are not deployed.** Written and tested on an unpushed branch in another team's repository | A demonstration can still produce an invented dashboard | Whoever owns FabOrchestrator, on your word |
 
 Blocker 1 is still worth chasing, but it blocks less than this file claimed
 until 3 September. **Correction:** we had been reporting that plant questions
@@ -311,8 +312,10 @@ connections, and it does so on this account today. What the missing connections
 block is every *other* plant question — WIP, lots on hold, equipment status,
 throughput, downtime — which do go through the MCP tool path.
 
-A third blocker now exists and is ours: the platform fixes below are written and
-tested but **not deployed**.
+Blocker 2 is cleared: the app is deployed, over HTTPS, and a real sign-in works
+from it. Blocker 3 is the one that matters for a customer demonstration — until
+the platform carries the grounding fixes, asking it for a dashboard without the
+dashboard permission still produces one filled with invented figures.
 
 ---
 

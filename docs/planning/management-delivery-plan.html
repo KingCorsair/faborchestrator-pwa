@@ -228,14 +228,16 @@ tbody tr:last-child td{border-bottom:0}
     <li><strong>The platform already offers a single ask box of exactly this kind on its own home
     screen.</strong> The interaction is the product&rsquo;s, not an invention of this project. It is
     currently wired without data connections, which the app corrects on its own path.</li>
-    <li><strong>What is genuinely missing is the choice between the platform&rsquo;s several agents.</strong>
-    Nothing in the platform decides that today; each agent is reached only from its own screen. That one
-    decision is the new work &mdash; and even then the app asks FabOrchestrator to make the judgement
-    rather than making it itself, so the intelligence stays in one place.</li>
+    <li><strong>The one thing that was missing &mdash; choosing between agents &mdash; stopped
+    existing on 2 September.</strong> It was only ever a choice between two services, and Jothi confirmed
+    that the second of them, the Master Data Load Agent, does not belong in a phone app. Every agent the
+    app now opens is the same platform service, so there is nothing to choose between: the question goes
+    straight there and the platform does the rest.</li>
   </ul>
-  <p>Anything unclear, unanswerable or not permitted falls back to the general-purpose agent, which
-  answers rather than failing. The chosen route is shown on the answer and can be changed in one tap, and
-  picking an agent by name stays available throughout.</p>
+  <p><strong>The confirmed requirement is therefore met, and no routing layer was built.</strong> Picking
+  an agent by name stays available throughout, for anyone who prefers a direct path. If a second service
+  is ever exposed to this app, the choice returns and so does the work &mdash; the estimate for it is
+  recorded in &sect;04 rather than deleted.</p>
 
   <p>Everything else in the diagram already exists and is unchanged by this project.
   <strong>No changes to FabOrchestrator are required</strong> &mdash; every service the app needs is
@@ -282,17 +284,16 @@ tbody tr:last-child td{border-bottom:0}
       </tr>
       <tr>
         <td><span class="phc">PHASE 2</span><span class="comp">Usable and agentic conversations</span></td>
-        <td><strong>A user asks for what they want from the landing page and the system works out where
-        the request belongs</strong> &mdash; which agent, which tools, which data &mdash; then does the
-        work and returns the answer. Follow-up questions stay in the same thread. Choosing an agent by
-        name stays available as a direct path for anyone who prefers it.</td>
+        <td><strong>A user asks for what they want from the landing page and the platform works out
+        where the request belongs</strong> &mdash; which tools, which data &mdash; then does the work and
+        returns the answer. Follow-up questions stay in the same thread and can be interrupted without
+        losing what arrived. Choosing an agent by name stays available as a direct path for anyone who
+        prefers it.</td>
         <td><span class="wpc">WP5</span><span class="wpc">WP7</span><span class="wpc">WP13</span></td>
-        <td>A plant question typed on the landing screen with nothing selected, answered by the right
-        agent and labelled with which one served it, and the route changed in one tap; a multi-question
-        conversation held and interrupted safely; every agent still directly reachable, and the one
-        permission-restricted agent still shown as unavailable on the menu rather than failing inside a
-        conversation.</td>
-        <td>Week 3<span class="wkd">3.5 days of work</span><span class="msd">M2 &check;</span>
+        <td>A plant question typed on the landing screen with nothing selected and answered; a
+        multi-question conversation held, interrupted and resumed; every agent this app opens directly
+        reachable, and the one it does not open saying so on its card.</td>
+        <td>Week 2<span class="wkd">1.0 day of work</span><span class="msd">M2 &check;</span>
         <span class="msd">B2 &check;</span></td>
       </tr>
       <tr>
@@ -505,14 +506,13 @@ tbody tr:last-child td{border-bottom:0}
       </tr>
       <tr>
         <td><span class="comp">C12 &nbsp;Agentic entry point</span><span class="tag">WP13</span></td>
-        <td>An ask box on the landing screen that takes a plain request, works out which part of
-        FabOrchestrator should serve it, sends it there, and shows which one answered &mdash; with one tap
-        to send it somewhere else instead.</td>
+        <td>An ask box on the landing screen that takes a plain request and returns the answer.
+        <b>No routing layer was built.</b></td>
         <td>Confirmed requirement: people should not have to know the product&rsquo;s internal structure
-        to ask a question, and on a phone the choice costs a screen before anything is typed. Checked
-        against the platform&rsquo;s code first: choosing the tools and the data for a question is already
-        the platform&rsquo;s own work, so the only genuinely new decision is which agent &mdash; and even
-        that judgement is asked of the platform rather than made in the app.</td>
+        to ask a question. Checked against the platform&rsquo;s code first, and that check is why this
+        costs nothing. Choosing the tools and data for a question is already the platform&rsquo;s own
+        work, over up to twenty steps. The only new decision was <em>which agent</em> &mdash; and on
+        2 September that decision stopped existing, because the app now exposes one service.</td>
         <td>A landing question answered without an agent being chosen, with agent-by-name selection
         still working. <b>Met 2 September with no routing code</b>: after the Master Data Load Agent
         left, every remaining agent is one platform service, and that service already chooses its own
@@ -551,11 +551,11 @@ tbody tr:last-child td{border-bottom:0}
         <td>A live conversation, demonstrated; the FabOrchestrator credential shown to be absent from
         the phone; answers arriving progressively rather than all at once.</td></tr>
       <tr><td><b>M2</b></td><td>All agents reachable, and reachable without choosing one</td><td>Phase 2</td>
-        <td>A question asked from the landing page is routed to the right agent automatically, and every
-        agent on the landing screen either works or explains why it is unavailable.</td>
-        <td>A plant question answered with nothing selected, labelled with the agent that served it and
-        re-routable in one tap; each agent also opened in turn; a permission-restricted agent shown as
-        unavailable on the menu rather than failing inside a conversation.</td></tr>
+        <td>A question asked from the landing page is answered without an agent being chosen, and every
+        agent on the landing screen either works or explains why the app does not open it.</td>
+        <td>A question answered with nothing selected; each agent also opened in turn; the Master Data
+        Load Agent shown greyed with its reason rather than failing inside a conversation. <b>Closed
+        2 September</b>, 10/10 in a browser against the live platform.</td></tr>
       <tr><td><b>M3</b></td><td>Real plant data on a phone</td><td>Phase 3</td>
         <td>The core business demonstration works: a metric question answered from live MES data on an
         installed app.</td>
@@ -602,11 +602,11 @@ tbody tr:last-child td{border-bottom:0}
         <td>Sign-in and session security; the connector completed</td>
         <td class="num">3.5</td><td>M1</td>
         <td>A live conversation with FabOrchestrator through the app, credential held server-side</td></tr>
-      <tr><td><b>Weeks 2&ndash;3</b></td><td>2</td>
-        <td>Conversation handling; agent menu and access control; the agentic entry point</td>
-        <td class="num">3.5</td><td>M2</td>
-        <td>A landing question routed and answered with no agent chosen; all agents also reachable by
-        name, each either opening or explaining itself on its card</td></tr>
+      <tr><td><b>Week 2</b></td><td>2</td>
+        <td>Conversation handling; agent menu; the agentic entry point (no routing layer needed)</td>
+        <td class="num">1.0</td><td>M2</td>
+        <td>A landing question answered with no agent chosen; all agents this app opens also reachable by
+        name, and the one it does not open explaining itself on its card</td></tr>
       <tr><td><b>Week 3</b></td><td>3</td>
         <td>Mobile foundation and installability; live plant data answers</td>
         <td class="num">3.0</td><td>M3</td>
@@ -704,12 +704,16 @@ tbody tr:last-child td{border-bottom:0}
   </table></div>
 
   <div class="callout">
-    <h3>Roughly 4 of the 9 contingency days can be released in week one</h3>
-    <p>Four of the six drivers above are answered by the environment checks in component C1 &mdash; half
-    a day of work, run in the first two days. If streaming behaves, the data connections are live, the
-    platform deployment is current and the demo account is provisioned, that reserve is freed at the M0
-    gate and the total falls to about <strong>29.5 days</strong>. If any of them fails, we know at the
-    beginning rather than in week four, and we can decide what to do about it while there is still time.</p>
+    <h3>4 of the 9 contingency days were released, and the fifth is the one still open</h3>
+    <p>Four of the six drivers were answerable by the environment checks in component C1, run on
+    1 September. <strong>Three came back clean</strong> &mdash; streaming behaves (13 arrivals over
+    2.6 seconds, not one block), the platform deployment is current, and the demonstration account is
+    provisioned. <strong>One did not:</strong> that account has <em>zero</em> data connections, so plant
+    questions are answered from general knowledge. Its 2.0 days stay held, and it is the single thing
+    blocking the business demonstration.</p>
+    <p>Contingency is therefore <strong>5.0 days</strong>, not 9.0, and the total planning envelope is
+    <strong>27.0 days</strong>. This is what running the checks in week one was for: the reserve moved on
+    evidence rather than on optimism.</p>
   </div>
 </section>
 <section id="risks">
@@ -737,14 +741,14 @@ tbody tr:last-child td{border-bottom:0}
 
   <h3>Principal risks</h3>
   <div class="callout">
-    <h3>Automatic routing can send a request to the wrong agent</h3>
-    <p>Some requests genuinely sit between two agents, and the platform has no router of its own whose
-    accuracy we could inherit. Four things keep this from being a delivery risk: the default is the agent
-    that can answer the widest range of questions, so an unclear request still gets answered; the agent
-    that served the answer is shown, and can be changed in one tap; picking an agent by name remains a
-    first-class path; and a fixed set of about twenty real questions is scored, so accuracy is a number we
-    can watch rather than an anecdote. No contingency is held against it &mdash; it is our own code, not
-    an external dependency.</p>
+    <h3>Automatic routing can send a request to the wrong agent &mdash; retired 2 September</h3>
+    <p>This was the plan&rsquo;s one self-inflicted risk: requests that sit between two agents, with no
+    platform router whose accuracy we could inherit. <strong>It cannot occur.</strong> The app exposes one
+    conversation service, so there is no wrong agent to send a request to, and the routing code that would
+    have carried the risk was never written.</p>
+    <p>Recorded rather than deleted, because it returns intact the day a second service is exposed &mdash;
+    along with the mitigations that were planned for it: a general-purpose default, the serving agent
+    shown and changeable in one tap, and a scored set of real questions.</p>
   </div>
   <div class="tw"><table>
     <thead><tr><th style="width:26%">Risk</th><th style="width:9%"></th><th style="width:34%">Impact if it occurs</th><th>How we handle it</th></tr></thead>
@@ -779,16 +783,17 @@ tbody tr:last-child td{border-bottom:0}
         <td>Certain questions cannot be answered. Two of ten connectors were failing at the last check.</td>
         <td>Outside this codebase entirely. Mitigated by choosing demo questions that use confirmed-live
         connections, and by clear messaging when one is down.</td></tr>
-      <tr><td>The live platform is behind the current code</td>
-        <td><span class="sev s-md">Medium</span></td>
-        <td>One agent may not be available until the platform is redeployed.</td>
-        <td>That agent ships visibly unavailable rather than broken. Checked in week one so the
-        conversation with the platform team happens early.</td></tr>
+      <tr><td><s>The live platform is behind the current code</s></td>
+        <td><span class="sev s-lo">Closed</span></td>
+        <td>One agent was thought to need a redeployment before it would work.</td>
+        <td><b>Did not occur.</b> Checked against upstream source on 1 September: that agent is not a
+        separate service in any branch, so the platform&rsquo;s refusal was correct behaviour rather than
+        drift. Nothing to redeploy.</td></tr>
     </tbody>
   </table></div>
 
   <div class="callout warnbox">
-    <h3>Two decisions &mdash; both now taken</h3>
+    <h3>Three decisions &mdash; all now taken</h3>
     <p><strong>1. Scope of the app &mdash; decided 1 September 2026.</strong> The codebase also carried
     a separate production-order review workflow that ran on sample data and did not connect to
     FabOrchestrator. It has been <strong>removed</strong>, along with the second sign-in route it needed,
@@ -800,6 +805,13 @@ tbody tr:last-child td{border-bottom:0}
     run against it. The concern that it lagged the current code is largely spent: the one service
     believed to be missing turned out not to exist in the platform at all, so its absence was correct
     behaviour rather than drift.</p>
+    <p><strong>3. Which agents the app exposes &mdash; decided 2 September 2026 by Jothi.</strong> The
+    <strong>Master Data Load Agent is not part of this app</strong>: its real workflow is file upload and
+    staged review, not a question asked one-handed on a fab floor. It stays visible on the landing screen,
+    greyed, because the platform genuinely has it. <strong>This decision removed 2.5 days of estimated
+    work</strong> &mdash; every remaining agent is one service, so the routing package had nothing to
+    choose between and the permission check had nothing to check. The finish does not move: 22.0 days is
+    4.4 weeks, so the saving is margin before week 5 rather than an earlier date.</p>
   </div>
 
   <p style="font-size:15px;color:var(--ink-3)">Two optional half-day improvements to FabOrchestrator
@@ -820,11 +832,10 @@ tbody tr:last-child td{border-bottom:0}
         <li>Scanning a QR code opens the app; it installs to the home screen on iPhone and Android and
         opens in its own window.</li>
         <li>A user signs in with their own FabOrchestrator account and reaches the landing screen.</li>
-        <li>A question asked from the landing screen, with nothing selected, is routed to the right part
-        of FabOrchestrator, answered, and labelled with which one answered it &mdash; and the route can be
-        changed in one tap.</li>
-        <li>Every agent is also reachable by name, and either opens a working conversation or states why
-        it is unavailable.</li>
+        <li>A question asked from the landing screen, with nothing selected, is answered by
+        FabOrchestrator. <b>Met 2 September.</b></li>
+        <li>Every agent the app opens is also reachable by name and opens a working conversation; an agent
+        the app does not open states so on its card. <b>Met 2 September.</b></li>
         <li>Answers appear progressively &mdash; text, tables and dashboards &mdash; and follow-up
         questions keep their context.</li>
         <li>A metric question returns figures drawn from live plant data.</li>

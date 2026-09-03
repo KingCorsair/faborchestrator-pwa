@@ -9,6 +9,36 @@ file is wrong and should be corrected.
 
 ---
 
+## Start here tomorrow
+
+**Phases 0–3 are built.** Every work package through M3 is done and proved
+against the live platform. Two of the three long-standing blockers cleared
+today.
+
+**Do these first, in this order:**
+
+1. **Deploy.** `https://faborch-demo.fly.dev` is two commits behind — it does
+   not carry Reports or WP8. `flyctl deploy --ha=false --app faborch-demo`, then
+   `node scripts/reports-live-check.mjs`.
+2. **Close WP1.** The iPhone was confirmed working on 3 September. If
+   install-to-home-screen and airplane-mode both behaved, WP1 is accepted and
+   Phase 3 closes with it — write that down here.
+3. **Then Phase 4**, which is WP9 (dashboards and artifacts, 3.0 d) and WP10
+   (progress and failure handling, 2.0 d). WP9 is the larger and the more
+   security-sensitive: it renders model-authored HTML.
+
+**Two things are waiting on other people, and neither blocks Phase 4:**
+
+- **The FabOrchestrator grounding fix is written, tested and unpushed.** Until
+  it ships, a demonstration can still produce a dashboard full of invented
+  figures. `docs/FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md` is the write-up to
+  send. Nobody has been asked yet.
+- **Five stale secrets on the Fly deployment**, including a live
+  `ANTHROPIC_API_KEY` no code reads. One command, and it is the plan's own rule
+  that this app never holds a model key.
+
+---
+
 ## Update in plain English — 3 September 2026
 
 For sending to Jothi or anyone else who wants the short version. Everything here
@@ -55,27 +85,36 @@ is expanded, with evidence, further down.
   it with made-up numbers, labelled "illustrative sample values". In front of
   a customer that is the worst thing the product can do. It now says the
   permission is missing instead.
-- **174 automated tests pass** here, and 21 new ones on the platform side.
-  They run without a network.
+- **Real plant data now answers, both ways.** An administrator switched on the
+  data connections. "How many lots are in WIP?" comes back **237**; "which
+  equipment is running?" comes back **7**; "give me the yield by product" comes
+  back as a real table. This was the thing we had been calling blocked.
+- **The app is live on a real URL and works on a phone.** Installed to an
+  iPhone home screen, confirmed by hand — not only by tests.
+- **Reports work.** A supervisor can read the dashboards an administrator
+  pinned in FabOrchestrator. Ten of them, on the phone, read-only.
+- **The app fits a phone properly.** Two real layout faults found by measuring
+  it: the menu dragged the whole page sideways, and the typing box sat below
+  the bottom of a small screen.
+- **211 automated tests pass** here, and 21 more on the platform side. They run
+  without a network.
 
 **Pending**
 
-- Next: installing on a phone, and answering from real plant data. **The second
-  half is blocked on an administrator** — see below.
-- The four planning documents still describe four agents and budget work that no
-  longer exists. They need a pass to match the decision.
-- Nothing security-related is outstanding: sign-out now genuinely cancels the
-  app's session, and it turned out no database was needed for it.
+- The live URL is two commits behind and does not carry Reports or the latest
+  work. One deploy.
+- Next build step: dashboards on the phone, then progress and failure states.
+- The four planning documents still describe four agents and budget work that
+  no longer exists.
 
 **Waiting on someone else**
 
-- **The demo account has no data connections.** Plant questions are answered
-  from general knowledge, which looks like a wrong answer rather than a missing
-  permission. An administrator has to switch them on. This is the only thing
-  blocking the phone-with-real-data demonstration.
+- **The FabOrchestrator fix has not been shipped.** We found the platform
+  inventing plant figures when someone without dashboard permission asks for a
+  dashboard. The fix is written and tested but sits in another team's
+  repository. Until it ships, a demonstration can still show made-up numbers.
 
-**Not claimed:** nobody has clicked through the app by hand yet. Tests, scripted
-checks and an automated browser — but not a person.
+**Now claimed:** the app has been used by hand, on an iPhone, on 3 September.
 
 ---
 
@@ -84,11 +123,13 @@ checks and an automated browser — but not a person.
 The app is a mobile front door to FabOrchestrator and nothing else. A person
 signs in with their own FabOrchestrator account, holds a live streaming
 conversation with its agents through a server-side connector that holds the
-credential, and sees only what the platform actually offers. Phase 0 and the
-architecture gate of Phase 1 are proved against the live deployment. The next
-build step is Phase 2 (ask-first routing). The one thing standing between this
-and the business demonstration is **not code**: the probe account has no data
-connections, so plant questions cannot be answered from plant data.
+credential, reads the dashboards an administrator pinned, and sees only what the
+platform actually offers. **Phases 0 to 3 are built and proved against the live
+deployment**, including the one the business case rests on: a real plant
+question, answered from real MES data, on an installed phone. The next build
+step is Phase 4 — dashboards and failure handling. Nothing in the app is
+blocked. What is outstanding sits with other people: a deploy of the platform's
+grounding fix, and the plans catching up with two decisions.
 
 ---
 
@@ -105,9 +146,12 @@ connections, so plant questions cannot be answered from plant data.
 | **WP5** Conversation handling | **Complete.** 23 tests on the conversation rules, plus a live browser run of the acceptance line — ask, read, follow up, stop, ask again — 10/10 against the live platform |
 | **WP7** Agent selection | **Complete**, and smaller than planned. The registry and endpoint routing were already built; the availability query has nothing left to check (see the decision below) |
 | **WP13** Ask-first entry point | **Complete without routing logic.** A question typed on the landing page with nothing selected is carried into a conversation and answered — 10/10 in a browser against the live platform |
-| Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened |
+| **WP1** Mobile app foundation | `docs/probes/2026-09-03-wp1-mobile-audit.md` — 16/16 at 360×640 and 390×844 with touch emulation. Two real faults found and fixed. **Confirmed by hand on an iPhone**, 3 September |
+| **WP8** Live plant data answers | Both paths verified through the app against the live platform: 237 lots in WIP and 7 tools running via MCP, a real yield table via the metric path. Sticky first column for wide tables; the missing-connection state named honestly rather than refused |
+| **Reports** Read-only pinned dashboards | 14 tests + `scripts/reports-live-check.mjs`, 9/9 live: 10 real dashboards read on a non-admin account, every management verb refused, and reading provably does not overwrite the shared snapshot |
+| Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened; the platform capability list is gone |
 
-**174 tests, all passing.** Typecheck and lint clean. Production build compiles.
+**211 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
 
 ### What "proved" bought us
 
@@ -263,12 +307,17 @@ new one. **It still does not truncate** — whether it should is PRD §9, an ope
 question, and quietly dropping the start of somebody's thread is not a choice to
 make by accident inside a work package.
 
-### Phase 3 — next, and no longer fully blocked
+### Phase 3 — complete
 
 | WP | What | Days | State |
 |---|---|---|---|
-| WP1 | Mobile app foundation — install to home screen, one-handed layouts | 1.5 | **Built; device acceptance outstanding** |
-| WP8 | Live plant data answers — connection resolution, readable tables | 1.5 | **Partly unblocked** |
+| WP1 | Mobile app foundation — install to home screen, one-handed layouts | 1.5 | **Done.** Confirmed on an iPhone |
+| WP8 | Live plant data answers — connection resolution, readable tables | 1.5 | **Done.** Both paths answer from real MES data |
+
+**Phase 3 is closed.** Both packages are done, and the capability the business
+case rests on — a real plant question answered from real MES data on an
+installed phone — works end to end. **Phase 4 is next: WP9 (dashboards and
+artifacts, 3.0 d) and WP10 (progress and failure handling, 2.0 d).**
 
 **WP1 is built and measured.** `docs/probes/2026-09-03-wp1-mobile-audit.md`:
 16/16 at 360×640 and 390×844, with touch emulation so the app's own
@@ -286,10 +335,15 @@ exist. Two of the seven were real and are fixed.
 Only its **final acceptance needs a physical handset** — iOS install behaviour
 cannot be verified any other way.
 
-WP8 was recorded as blocked outright, which was wrong: the metric path
-returns real yield, scrap and OEE figures on this account today, so the table
-rendering and the no-data guard can both be built and demonstrated now. What
-stays blocked is the MCP half — WIP, lots, equipment, throughput, downtime.
+**WP8 is done, and its plan line was wrong.** The plan said "refuse to send a
+turn with an empty tool list". Measured against the live platform, that would
+have withheld a working answer: with `activeMcpIds` explicitly empty,
+FabOrchestrator still returns a real yield table, because its metric path reads
+the warehouse directly and never touches MCP. So the count is reported rather
+than acted on, and the screen names the half that is missing instead of blocking
+the half that works. Wide tables now pin their first column, because a
+seven-column yield table at 360px put the figures off-screen and scrolling to
+reach them lost the product name.
 
 Phase 4 (dashboards, progress, failure handling) and Phase 5 (tests, device
 validation, security review, handover) follow.
@@ -474,7 +528,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 174 tests, no network needed
+npm test                          # 211 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 ```

@@ -300,17 +300,26 @@ validation, security review, handover) follow.
 
 | # | Blocker | Blocks | Who clears it |
 |---|---|---|---|
-| 1 | **The probe account has zero MCP data connections.** Probe P4: `0 connected of 0 visible`. **Narrower than we reported** — see below: metric questions already answer from real plant data without them | The MCP tool path only. Not the metric path | A FabOrchestrator administrator, assigning MCP connections to that account's role |
+| 1 | ~~The probe account has zero MCP data connections~~ **Cleared, found 3 September.** The account now carries 2 connected: `CMF_Assembly_DB_Test3` and `CM MES - Assembly (Use Cases)` | — | An administrator did it |
 | 2 | ~~The Fly deployment is stale~~ **Cleared 3 September.** Live at `https://faborch-demo.fly.dev`, TLS 1.3, carrying everything through WP1 | — | Done |
 | 3 | **The FabOrchestrator fixes are not deployed.** Written and tested on an unpushed branch in another team's repository | A demonstration can still produce an invented dashboard | Whoever owns FabOrchestrator, on your word |
 
-Blocker 1 is still worth chasing, but it blocks less than this file claimed
-until 3 September. **Correction:** we had been reporting that plant questions
-cannot be answered at all. They can. FabOrchestrator answers yield, scrap and
-OEE questions from a direct database connection that has nothing to do with MCP
-connections, and it does so on this account today. What the missing connections
-block is every *other* plant question — WIP, lots on hold, equipment status,
-throughput, downtime — which do go through the MCP tool path.
+**Blocker 1 is cleared.** An administrator assigned connections at some point
+between 1 and 3 September. Verified through the PWA, against the live platform:
+
+| Asked | Tools used | Answer |
+|---|---|---|
+| "How many lots are currently in WIP?" | 6 MCP calls | **237 lots currently in WIP** |
+| "Which equipment is running right now?" | 8 MCP calls | **7 pieces of equipment running** |
+| "Give me the yield by product." | none — metric path | A real table of real products |
+
+Both halves of plant data now answer. That is **M3's core capability working end
+to end**: a real question, real MES data, through this app.
+
+The earlier correction still stands and is worth keeping: those two paths are
+different. Yield, scrap and OEE go through FabOrchestrator's own metric path,
+which reads the warehouse directly and never consults MCP — which is why they
+answered even when the connection count was zero.
 
 Blocker 2 is cleared: the app is deployed, over HTTPS, and a real sign-in works
 from it. Blocker 3 is the one that matters for a customer demonstration — until

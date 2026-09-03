@@ -11,21 +11,26 @@ file is wrong and should be corrected.
 
 ## Start here tomorrow
 
-**Phases 0–3 are complete and WP10 is done.** Every work package through M3 is
-accepted, including WP1's physical-device acceptance, and Phase 4 is half
-built. All three long-standing blockers are cleared.
+**Every build package in the plan is done.** Phases 0 to 4 are complete and
+proved against the live deployment. What remains is Phase 5, which builds
+nothing: tests, device validation, security review, handover.
 
-**Next: WP9 — dashboards and artifacts (3.0 d).** The last package in Phase 4,
-and the largest and most security-sensitive in the plan: it renders
-**model-authored HTML**. Today an artifact answer shows its raw
-`<antArtifact>` markup as text, which reads as a broken product rather than a
-missing feature.
+**Next: Phase 5.** No build work. The pass that turns what exists into
+something handed over:
 
-The sandbox decision it needs is already made and shipped. `/reports` renders
-FabOrchestrator's pinned dashboards with `sandbox="allow-scripts"` and
-deliberately **without** `allow-same-origin` — the two together cancel the
-sandbox, which is what FO's own page does and what this app must not. WP9
-reuses that rather than reopening it.
+1. **A full regression run against the deployment**, not localhost — today
+   proved why that distinction matters (see the sign-in defect below).
+2. **Security review.** The app now renders model-authored HTML in a frame and
+   holds an httpOnly FabOrchestrator token. The sandbox rule is asserted in two
+   test files; a review should cover the whole surface rather than that one
+   rule.
+3. **Handover.** `docs/` already carries the PRD, the plans and this file. What
+   is missing is the operating note: what to do when FabOrchestrator is down,
+   how to rotate the demo credential, who owns the Fly app.
+
+**And one credential job:** the probe account's password reached the Fly
+request logs during today's checks — see the sign-in section below. It is a
+shared demo account rather than a personal one, but it should be rotated.
 
 **The deployment is current**, and deploying found a defect that every local
 check had missed — see "Sign-in could silently do nothing" below. WP10 is live
@@ -102,17 +107,21 @@ is expanded, with evidence, further down.
 - **The app fits a phone properly.** Two real layout faults found by measuring
   it: the menu dragged the whole page sideways, and the typing box sat below
   the bottom of a small screen.
+- **Dashboards work.** Asking for a chart used to fill the answer with raw
+  HTML. It now arrives as a tile you tap to open full screen, in a frame that
+  cannot reach anything else in the app.
 - **The app says what it is doing, and what to do when it cannot.** It now
   distinguishes "sent", "looking something up — and here is what", and
   "answering", instead of one spinner that means all three. Every failure says
   what to do next, and offers to try again only where trying again can work.
   If nothing arrives for 45 seconds it says so rather than spinning silently.
-- **249 automated tests pass** here, and 21 more on the platform side. They run
+- **272 automated tests pass** here, and 21 more on the platform side. They run
   without a network.
 
 **Pending**
 
-- Next build step: showing dashboards and charts on the phone.
+- No build work remains. Next is the handover pass: a regression run against
+  the deployed URL, a security review, and an operating note.
 - The four planning documents still describe four agents and budget work that
   no longer exists.
 
@@ -133,10 +142,10 @@ The app is a mobile front door to FabOrchestrator and nothing else. A person
 signs in with their own FabOrchestrator account, holds a live streaming
 conversation with its agents through a server-side connector that holds the
 credential, reads the dashboards an administrator pinned, and sees only what the
-platform actually offers. **Phases 0 to 3 are complete and proved against the
-live deployment**, including the one the business case rests on: a real plant
-question, answered from real MES data, on an installed phone. Phase 4 is half
-built — WP10 done, WP9 next. Nothing in the app is blocked. What is outstanding
+platform actually offers. **Every build package is complete and proved against
+the live deployment**, including the one the business case rests on: a real
+plant question, answered from real MES data, on an installed phone. What remains
+is Phase 5, which builds nothing. Nothing in the app is blocked. What is outstanding
 sits with other people: a deploy of the platform's grounding fix, and the plans
 catching up with two decisions.
 
@@ -161,7 +170,7 @@ catching up with two decisions.
 | **Reports** Read-only pinned dashboards | 14 tests + `scripts/reports-live-check.mjs`, 9/9 live: 10 real dashboards read on a non-admin account, every management verb refused, and reading provably does not overwrite the shared snapshot |
 | Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened; the platform capability list is gone |
 
-**249 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
+**272 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
 
 ### What "proved" bought us
 
@@ -356,37 +365,47 @@ reach them lost the product name.
 
 ---
 
-### Phase 4 — half built
+### Phase 4 — complete
 
 | WP | What | Days | State |
 |---|---|---|---|
 | WP10 | Progress, loading & error handling | 2.0 | **Done.** 29 tests; three states seen in sequence in a browser |
-| WP9 | Dashboards & artifacts — parse `<antArtifact>`, render sandboxed | 3.0 | **Next** |
+| WP9 | Dashboards & artifacts — parse `<antArtifact>`, render sandboxed | 3.0 | **Done.** 23 tests; 8/8 live on the deployment |
 
 **WP10 is done.** Three progress states, one error table with a next step per
 code, `errorId` copyable, and a 45-second stall watchdog that warns without
 ending the turn. Evidence is in the table above and in
 `scripts/progress-states-check.mjs`.
 
-**WP9 is what remains, and it is the last build package in the plan.** Today an
-artifact answer shows its raw `<antArtifact>` markup as text on the screen,
-which reads as a broken product rather than a missing feature — it is the most
-visible remaining gap, and the only one a viewer would notice unprompted.
+**WP9 is done, and it was the last build package in the plan.** An artifact
+answer used to render its raw `<antArtifact>` markup as markdown — a wall of
+HTML mid-sentence. It now arrives as a tile in the answer and opens full screen.
 
-Two things about it are already settled rather than open:
+The parser is a **port, not an import**: FO's `lib/artifact-parser.ts` at
+upstream `e5a5abd`, with both tag regexes and the attribute regex verified
+byte-identical against the real file, and a test that fails if they drift. The
+two apps are separate deployments with no shared package, so a copy was the only
+option; making it a *diffable* copy was the choice.
 
-- **The sandbox.** `/reports` renders FabOrchestrator's pinned dashboards with
-  `sandbox="allow-scripts"` and deliberately **without** `allow-same-origin`,
-  because the two together cancel the sandbox. FO's own page uses both; this app
-  must not, since it holds an httpOnly FO token. WP9 inherits that.
-- **The fallback.** The plan's own rule: an artifact that will not parse shows a
-  placeholder and its source, never a blank rectangle.
+**The sandbox** is `allow-scripts` with no `allow-same-origin`. Together they
+cancel the sandbox — the frame takes the embedder's origin and can reach its
+cookies, storage and DOM. FO's own pages use both, survivable there because
+frame and page share an origin anyway; not here, where this app holds an
+httpOnly FO token and the document was written by a model. Asserted in two test
+files.
 
-**It also has a dependency nobody owns yet.** WP9 renders artifacts; the
-unshipped FabOrchestrator fix is about artifacts *full of invented figures*. The
-better WP9 gets, the more convincing a fabricated dashboard becomes — so the
-grounding fix wants shipping alongside it, not after it. See "Blocked on someone
-else".
+**Accepted and stated rather than silent:** artifacts pull Tailwind and Google
+Fonts from CDNs, so the frame needs the network. Blocking it would leave the
+dashboard unstyled, which is worse. It sends no referrer.
+
+**Verified live**, on the deployment: a real *Yield by Product Dashboard*
+arrives as a tile, opens in an `allow-scripts` frame at 390×779, offers its
+source, and the page overflow stays 0. `scripts/artifact-live-check.mjs`.
+
+**It sharpens a dependency nobody owns.** WP9 renders artifacts; the unshipped
+FabOrchestrator fix is about artifacts *full of invented figures*. Until this
+package the raw markup was ugly enough that nobody would mistake one for a real
+report. It no longer is. See "Blocked on someone else".
 
 ### Phase 5 — not started
 
@@ -457,6 +476,7 @@ Verified against the deployed URL after shipping, not against a local server:
 | Plant data, metric path | *"Give me the yield by product."* → a real product table, no tools |
 | **WP10 progress states** | 6/6. Observed in order on the deployed URL: *Sent to FabOrchestrator…* → four *is running `mcp_…`* lines → *Answering…* |
 | **Sign-in under a slow hydration** | Typing on `domcontentloaded` survives; sign-in completes |
+| **WP9 artifacts** | 8/8. A real *Yield by Product Dashboard* arrives as a tile, opens `sandbox="allow-scripts"` at 390×779, source offered, page overflow 0 |
 
 The two figures moved between the localhost run an hour earlier (237 lots, 7
 tools) and this one (238, 5). That is not a discrepancy — it is what live plant
@@ -649,7 +669,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 249 tests, no network needed
+npm test                          # 272 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 ```

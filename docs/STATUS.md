@@ -263,11 +263,21 @@ new one. **It still does not truncate** — whether it should is PRD §9, an ope
 question, and quietly dropping the start of somebody's thread is not a choice to
 make by accident inside a work package.
 
-### Phases 3–5 — unchanged
+### Phase 3 — next, and no longer fully blocked
 
-Phase 3 (install + live plant data, M3/B3) is **blocked** — see below. Phase 4
-(dashboards, progress, failure handling) and Phase 5 (tests, device validation,
-security review, handover) follow.
+| WP | What | Days | State |
+|---|---|---|---|
+| WP1 | Mobile app foundation — install to home screen, one-handed layouts | 1.5 | **Unblocked** |
+| WP8 | Live plant data answers — connection resolution, readable tables | 1.5 | **Partly unblocked** |
+
+WP1 has no outstanding dependency; only its final acceptance needs a physical
+handset. WP8 was recorded as blocked outright, which was wrong: the metric path
+returns real yield, scrap and OEE figures on this account today, so the table
+rendering and the no-data guard can both be built and demonstrated now. What
+stays blocked is the MCP half — WIP, lots, equipment, throughput, downtime.
+
+Phase 4 (dashboards, progress, failure handling) and Phase 5 (tests, device
+validation, security review, handover) follow.
 
 ---
 

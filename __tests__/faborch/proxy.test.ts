@@ -60,7 +60,7 @@ function stubFo(handler: (url: string, init: RequestInit) => Response) {
   }) as typeof fetch;
 }
 
-const sse = (frames: string[]) =>
+const sse = (frames: string[], extraHeaders: Record<string, string> = {}) =>
   new Response(
     new ReadableStream<Uint8Array>({
       start(c) {
@@ -69,7 +69,10 @@ const sse = (frames: string[]) =>
         c.close();
       },
     }),
-    { status: 200, headers: { "Content-Type": "text/event-stream" } },
+    {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream", ...extraHeaders },
+    },
   );
 
 const request = (opts: { auth?: boolean; foCookie?: boolean; body?: unknown } = {}) => {
@@ -281,6 +284,34 @@ describe("a good answer streams through", () => {
     assert.equal(res.headers.get("X-Accel-Buffering"), "no");
     assert.match(res.headers.get("Cache-Control") ?? "", /no-cache/);
     assert.equal(await res.text(), frames.join(""));
+  });
+
+  test("FabOrchestrator's route header is forwarded, so a turn can be told apart", async () => {
+    // The platform decides, before it calls the model, whether a turn is served
+    // by a deterministic metric brief, a curated dashboard, or the ordinary
+    // tool-using path. The answer's prose never says which. This header does,
+    // and it is the only way to tell afterwards whether an answer was grounded.
+    const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "94.2%" })}
+
+`];
+    stubFo((url) =>
+      url.includes("/api/mcp/connections")
+        ? Response.json([{ id: "m1", status: "connected" }])
+        : sse(frames, { "X-FabOrch-Route": "metric" }),
+    );
+    const res = await call(request());
+    assert.equal(res.headers.get("X-FabOrch-Route"), "metric");
+  });
+
+  test("its absence is not invented — an older platform simply omits it", async () => {
+    const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "hello" })}
+
+`];
+    stubFo((url) =>
+      url.includes("/api/mcp/connections") ? Response.json([]) : sse(frames),
+    );
+    const res = await call(request());
+    assert.equal(res.headers.get("X-FabOrch-Route"), null);
   });
 
   test("only connected data connections are forwarded", async () => {

@@ -147,17 +147,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
       );
     }
 
-    return new Response(upstream.body, {
-      status: 200,
-      headers: {
-        "Content-Type": upstream.headers.get("Content-Type") ?? "text/event-stream",
-        // Both copied from FO's own response headers. Without them a proxy in
-        // front of this app buffers the stream and the answer arrives at once
-        // at the end, which is the failure `X-Accel-Buffering` exists for.
-        "X-Accel-Buffering": "no",
-        "Cache-Control": "no-cache, no-transform",
-      },
-    });
+    const headers: Record<string, string> = {
+      "Content-Type": upstream.headers.get("Content-Type") ?? "text/event-stream",
+      // Both copied from FO's own response headers. Without them a proxy in
+      // front of this app buffers the stream and the answer arrives at once
+      // at the end, which is the failure `X-Accel-Buffering` exists for.
+      "X-Accel-Buffering": "no",
+      "Cache-Control": "no-cache, no-transform",
+    };
+
+    // Which of FabOrchestrator's three paths served the turn — a deterministic
+    // metric brief, a curated dashboard, or the ordinary tool-using chat. The
+    // answer's prose does not say whether it was grounded in real data; this
+    // does, and it is the only way to tell after the fact. Forwarded rather
+    // than interpreted: the platform owns the meaning of the value.
+    const foRoute = upstream.headers.get("X-FabOrch-Route");
+    if (foRoute) headers["X-FabOrch-Route"] = foRoute;
+
+    return new Response(upstream.body, { status: 200, headers });
   } catch (error) {
     if (error instanceof FabOrchNotConfiguredError) {
       return fail("not_configured", error.message, 503);

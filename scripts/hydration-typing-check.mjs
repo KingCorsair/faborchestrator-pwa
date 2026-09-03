@@ -4,11 +4,15 @@ import fs from "node:fs";
 const ROOT = "C:/Users/ATUL ANAND/OneDrive/Documentos/Desktop/AthenaTech/faborchestrator-pwa";
 const env = Object.fromEntries(fs.readFileSync(`${ROOT}/.env`,"utf8").split(/\r?\n/)
   .filter(l=>l&&!l.startsWith("#")&&l.includes("=")).map(l=>{const i=l.indexOf("=");return [l.slice(0,i),l.slice(i+1)];}));
+// The deployment by default: this bug is invisible on localhost, where
+// hydration is too fast to race. Running it locally proves nothing.
+const APP = process.env.APP_URL ?? "https://faborch-demo.fly.dev";
+
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport:{width:390,height:844}, hasTouch:true, isMobile:true });
 const p = await ctx.newPage();
 // Fill IMMEDIATELY on domcontentloaded — before hydration. That is the hazard.
-await p.goto("https://faborch-demo.fly.dev/login", { waitUntil: "domcontentloaded" });
+await p.goto(`${APP}/login`, { waitUntil: "domcontentloaded" });
 await p.fill('input[type="email"]', env.FABORCH_PROBE_EMAIL);
 await p.fill('input[type="password"]', env.FABORCH_PROBE_PASSWORD);
 await p.waitForFunction(() => { const b=document.querySelector('button[type="submit"]'); return !!b && !b.disabled; }, null, { timeout: 40000 });

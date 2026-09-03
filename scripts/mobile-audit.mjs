@@ -39,7 +39,9 @@ const env = Object.fromEntries(
     .filter((l) => l && !l.startsWith("#") && l.includes("="))
     .map((l) => { const i = l.indexOf("="); return [l.slice(0, i), l.slice(i + 1)]; }),
 );
-const APP = "http://localhost:3002";
+// `APP_URL` so Phase 5 can run this against the deployed app rather than a
+// laptop. The default stays localhost, because that is what a developer wants.
+const APP = process.env.APP_URL ?? "http://localhost:3002";
 const MIN_TAP = 44;
 
 const results = [];

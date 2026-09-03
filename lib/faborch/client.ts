@@ -216,8 +216,9 @@ export async function foChat(options: {
   /** `null` for the agents that build their own tools server-side. */
   activeMcpIds: string[] | null;
   /**
-   * The agent's endpoint — `/api/chat`, `/api/modeling-agent/chat` or
-   * `/api/modeling-agent/chat`. Comes from `FO_AGENTS`, never from a request.
+   * The agent's endpoint. Every agent this app exposes is on `/api/chat`;
+   * the field exists because FO has others. Comes from `FO_AGENTS`, never from
+   * a request.
    */
   path?: string;
   signal?: AbortSignal;

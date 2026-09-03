@@ -3,9 +3,8 @@
  * agents.**
  *
  * ```
- * agent screen → this route → FabOrchestrator /api/{chat,modeling-agent/chat,
- *              ←            ←   modeling-agent/chat} → FO's agent
- *                                    (streamed back, untouched)
+ * agent screen → this route → FabOrchestrator /api/chat → FO's agent
+ *              ←            ←     (streamed back, untouched)
  * ```
  *
  * It does four things and nothing else: check this app's session, read the FO
@@ -14,12 +13,13 @@
  * logic.** The answer is FabOrchestrator's, computed by FabOrchestrator,
  * streamed through.
  *
- * ── One route for three agents ──────────────────────────────────────────────
- * All three FO endpoints take `{ messages }` and answer with
+ * ── One route for every agent ───────────────────────────────────────────────
+ * Every FO chat endpoint takes `{ messages }` and answers with
  * `createUIMessageStreamResponse`, so the only thing that varies is the path
  * and whether `activeMcpIds` is read — both of which come from `FO_AGENTS`.
- * See `lib/faborch/agents.ts` for why this is a registry rather than three
- * copies of the token, expiry and no-buffering handling.
+ * See `lib/faborch/agents.ts` for why this is a registry rather than a copy of
+ * the token, expiry and no-buffering handling per agent, and for why the
+ * Master Data Load Agent is not among them.
  *
  * The `[agent]` segment **selects** from that registry and never becomes a URL:
  * an unknown value is a 404 here, before any request is made to FO. Same rule
@@ -131,11 +131,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     }
 
     if (!upstream.ok || !upstream.body) {
-      // FO's own message, verbatim where there is one: a role model restriction,
-      // a daily quota, and the Master Data Load Agent's `modeling_agent` permission gate
-      // (403, "The Modeling Agent is not enabled for your role.") all arrive
-      // here, and all are things the operator can act on. Replacing them with a
-      // generic failure would throw away the only useful part.
+      // FO's own message, verbatim where there is one: a role model restriction
+      // and a daily quota both arrive here, and both are things the operator can
+      // act on. Replacing them with a generic failure would throw away the only
+      // useful part.
+      //
+      // No agent this app exposes is permission-gated any more —
+      // `modeling_agent` was the only gate and `/api/chat` does not answer 403
+      // itself. The relay stays because it is FO's message that matters, not
+      // this app's inventory of which ones FO currently sends.
       return fail(
         "faborch_unavailable",
         await foErrorTextOf(upstream, `${agent.name} could not answer that.`),

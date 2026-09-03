@@ -1,6 +1,6 @@
 # FabOrchestrator PWA — Product Requirements
 
-**Version 1.1 · 2 September 2026**
+**Version 1.2 · 2 September 2026**
 
 This document says **what the product is and how it should behave**. It does not
 say how to build it — that is the engineering plan in `docs/planning/`, and
@@ -149,12 +149,31 @@ see is a route they cannot correct.
 **PROPOSED — Routing never blocks a normal answer.** Any decision step is capped
 in time; if it is slow or fails, the question proceeds to the default agent.
 
-**OPEN QUESTION — What should the user see while routing happens?** Nothing, a
-generic "working", or the choice as it is made? This is the first impression of
-the product's intelligence and has not been decided.
+**CLOSED — What should the user see while routing happens?** Nothing, because
+there is no routing step: the question goes straight to the one service. What a
+person sees while the *platform* works — a tool being named as it runs — is
+§12, and is built. This reopens if a second agent is ever exposed.
 
-> ⚠ **Conflict — see §18.1.** The ask box exists today but always sends to
-> FabInsight. The routing behaviour is confirmed but not built.
+**CONFIRMED — the requirement is met, and needed no routing logic.** Jothi's
+decision of 2 September (§7) removed the only agent that was a separate
+service. Every agent this app exposes is now FabOrchestrator's `/api/chat`, so
+there is nothing to choose between: the ask box carries the question into a
+conversation and the platform's own agent decides which tools and which data
+answer it, over up to twenty steps.
+
+*Verified in a browser against the live platform, 2 September: a question typed
+on the landing page with nothing selected is carried into the thread and
+answered.*
+
+**CONFIRMED — the tool and data half was always the platform's.** FO's
+`/api/chat` loads the caller's authorised MCP tools and lets the model choose
+among them (`stopWhen: stepCountIs(20)`, verified against upstream `e5a5abd`).
+The app has never needed to reproduce that, and must not.
+
+*The three PROPOSED items above — a visible and reversible route, an
+unclear request falling back to the general-purpose agent, and routing never
+blocking an answer — are moot with a single destination. They are kept
+because they become live again the moment a second service is exposed.*
 
 ---
 
@@ -179,18 +198,23 @@ authoritative and its message is shown as sent.
 
 ## 7. Which FabOrchestrator agents are exposed
 
-**OPEN QUESTION — Which FO agents should the PWA actually expose, and therefore
-which agents may the landing-page router choose from?**
+**CONFIRMED — The Master Data Load Agent is not part of the PWA.**
 
-*Raised by Yogita.* Not every FabOrchestrator agent necessarily belongs in a
-mobile app — in particular the **Master Data Load Agent**, depending on the
-intended user and data workflow. A supervisor on a fab floor is not obviously the
-person who loads MES master data, and that agent's real workflow involves file
-upload and staged review.
+*Raised by Yogita; decided by Jothi, 2 September 2026.* Loading MES master data
+is not what a supervisor does one-handed on a fab floor. That agent's real
+workflow is file upload, staged review and a load step, none of which this app
+carries.
 
-**This is the most consequential open question in this document.** It decides
-what the landing page shows, what manual selection offers, and — because of the
-conflict in §18.2 — whether routing has anything to choose between at all.
+**CONFIRMED — It is shown, greyed, not deleted.** FabOrchestrator has the
+agent, so the cockpit still lists it, marked as something this app does not
+open — the same treatment Workflows, Sites and Reports get. Removing the card
+would misrepresent the product as surely as inventing one would.
+
+**This was the most consequential question in this document, and answering it
+resolved three of the five recorded conflicts.** With it gone, every exposed
+agent shares one service: there is nothing to route between (§5), no
+permission-gated agent to check availability for, and no second endpoint for a
+classifier to choose.
 
 What is known today, verified against the platform's source (upstream
 `e5a5abd`):
@@ -199,17 +223,21 @@ What is known today, verified against the platform's source (upstream
 |---|---|---|---|
 | AGENT · 01 FabInsight™ | `/chat` | Shared | Exposed |
 | AGENT · 02 AI Support Engineer | `/chat` | Shared | Card points at FabInsight's screen |
-| AGENT · 03 Master Data Load Agent | `/modeling-agent` | **Yes — its own service and its own permission** | Exposed |
+| AGENT · 03 Master Data Load Agent | `/modeling-agent` | **Yes — its own service and its own permission** | **Shown, greyed, not opened** |
 | AGENT · 04 Back-end Agent | `/chat` | Shared | Exposed, own screen and prompts |
 
-**CONFIRMED — Three of the four cards are framings of one conversation
-service.** Only the Master Data Load Agent is a separate service with its own
-permission gate, which FabOrchestrator enforces itself.
+**CONFIRMED — Every agent the PWA now opens is one conversation service.**
+The Master Data Load Agent was the only separate service, and the only one with a
+permission gate. **No agent this app exposes is permission-gated any more**, and
+`/api/chat` does not answer 403 itself — so the availability check the plan
+budgeted for has nothing left to check. The proxy still relays a 403 verbatim if
+FabOrchestrator ever starts sending one.
 
-**OPEN QUESTION — Should the app present four cards when three are the same
-service?** It is faithful to how the product presents itself, and honest about
-nothing else. If a customer asks "what is the difference between these three?",
-today's answer is "the suggested prompts and the label."
+**OPEN QUESTION — Should the app present three openable cards when all three
+are the same service?** It is faithful to how the product presents itself, and
+honest about nothing else. If a customer asks "what is the difference between
+these three?", today's answer is "the suggested prompts and the label."
+Unchanged by Jothi's decision, which was about the fourth card.
 
 **OUT OF SCOPE — Agents that do not exist in FabOrchestrator.** The app never
 invents one.
@@ -415,11 +443,12 @@ The product is right when all of these are true and demonstrable.
 4. The platform credential is provably absent from the phone.
 5. Signing out ends the session on the platform as well as locally.
 6. The app contains no plant logic, data queries or AI reasoning of its own.
-
-**CONFIRMED — not yet met**
-
-7. A question asked from the landing page **with nothing selected** is routed to
-   the right agent and answered, labelled with which agent served it.
+7. A question asked from the landing page **with nothing selected** is answered.
+   *Met 2 September, and without routing logic: after §7 there is a single
+   destination. The "labelled with which agent served it" clause is moot while
+   that remains true, and returns with a second agent.*
+8. Every agent the app opens is reachable by name and opens a conversation; an
+   agent the app does not open says so on its card.
 
 **PROPOSED — not yet met**
 
@@ -469,6 +498,7 @@ Recorded so they are not silently reopened.
 | 6 | Sign-out ends the platform session, not just the local one | 1 Sep 2026 |
 | 7 | The demonstration runs against the live deployment | 1 Sep 2026 |
 | 8 | The app makes no changes to FabOrchestrator | Throughout |
+| 9 | **The Master Data Load Agent is not part of the PWA**; its card is shown greyed | 2 Sep 2026, Jothi |
 
 ---
 
@@ -476,45 +506,69 @@ Recorded so they are not silently reopened.
 
 Recorded rather than resolved. **Each needs a product decision.**
 
-### 18.1 The ask box implies routing that does not exist
+**Three of the five closed on 2 September**, when Jothi answered the agent
+question in §7. They are kept, struck through in effect, because the reasoning
+that closed them is the reasoning anyone reopening the question will need.
 
-The landing page already carries an ask box reading *"Ask anything, or describe
-a task to orchestrate…"*, but it sends every question to FabInsight regardless of
-content. Confirmed decision 1 is therefore **stated in the interface and not yet
-true**. Anyone demonstrating the app today would be showing behaviour the product
-does not have. Either the routing is built, or the box should not promise it.
+### 18.1 The ask box implies routing that does not exist — RESOLVED
 
-### 18.2 The open agent question may remove the need for routing entirely
+*Stood 1 September; resolved 2 September.*
 
-**This is the important one.** Three of the four cockpit cards are the same
-conversation service; only the Master Data Load Agent is separate. So the
-routing decision confirmed in §5 is, in practice, *"is this a master-data request
-or not?"*
+The landing page carries an ask box reading *"Ask anything, or describe a task to
+orchestrate…"*, and it sends every question to FabInsight. That was recorded as
+a promise the interface made and the product did not keep.
 
-If Yogita's question (§7) resolves to **excluding** the Master Data Load Agent
-from the PWA, then every exposed agent shares one service and **there is nothing
-left to route between**. The confirmed requirement would be satisfied by sending
-every question to the one service — no routing logic at all.
+**It was too strong.** Two things called "routing" were being conflated. FO's
+own `/api/chat` is a tool-using agent that decides, per question, which of the
+caller's authorised MCP tools and data sources to call, over up to twenty steps.
+The box always delivered *that* — which is most of what confirmed decision 1
+asks for. What it could not do was reach a *different agent*.
 
-The engineering plan currently budgets 2 days for a routing package. **That
-estimate depends entirely on an unanswered product question.** It should not be
-scheduled until §7 is answered.
+After §7 there is no different agent. The box does everything the requirement
+states, with no routing logic, and §5 records it as met.
 
-### 18.3 The plans still assume four agents
+### 18.2 The open agent question may remove the need for routing entirely — RESOLVED
 
-The engineering plans describe exposing FabInsight, the Master Data Load Agent
-and the Back-end Agent, with an open item about the AI Support Engineer card.
-They were written before Yogita's question and do not treat agent exposure as
-undecided. They need updating once §7 is answered — not before.
+*Stood 1 September; resolved 2 September, exactly as this entry predicted.*
 
-### 18.4 Placeholder metrics presented as real
+The reasoning was: three of the four cockpit cards are the same conversation
+service, so the routing decision is in practice *"is this a master-data request
+or not?"*, and excluding the Master Data Load Agent would leave nothing to route
+between.
+
+**Jothi excluded it.** Every exposed agent now shares one service. The
+engineering plan's 2 days for a routing package buys nothing and should not be
+scheduled. This entry is the reason that estimate was held rather than spent.
+
+### 18.3 The plans still assume four agents — OPEN, AND NOW ACTIONABLE
+
+*Stood 1 September; became actionable 2 September.*
+
+The four planning documents in `docs/planning/` describe exposing FabInsight, the
+Master Data Load Agent and the Back-end Agent, and budget WP7's availability
+check and WP13's routing package. All three assumptions are now wrong:
+
+- the Master Data Load Agent is not exposed;
+- **no exposed agent is permission-gated**, so WP7's availability query has
+  nothing to check;
+- WP13's routing has nothing to choose between.
+
+They said they needed updating once §7 was answered, and not before. It is
+answered. **This is the one conflict here that is a live piece of work**, and it
+is documentation, not code.
+
+### 18.4 Placeholder metrics presented as real — OPEN
 
 The landing page shows counters from the product's own cockpit as though they
 were live figures. This is a factual claim the app cannot support. It conflicts
-with the honesty principle applied elsewhere — greyed navigation, explicit
-unavailability. See the open question in §4.
+with the honesty principle applied elsewhere — greyed navigation, and now a
+greyed agent card. See the open question in §4.
 
-### 18.5 An installed-app identifier points at a removed screen
+Note that the greyed Master Data Load Agent card still carries its placeholder
+metric ("Sites 12"), which is the product's own number for an agent this app does
+not open. That is the same question, in its sharpest form.
+
+### 18.5 An installed-app identifier points at a removed screen — OPEN, DELIBERATE
 
 The app's install identifier still refers to the removed order workflow. It is
 invisible to users and changing it would orphan every installed copy, so it was
@@ -524,31 +578,36 @@ deliberately left. Recorded so it is not mistaken for an oversight.
 
 ## 19. Open product questions
 
-**For Yogita**
+**Answered**
 
-1. **Which FabOrchestrator agents should the PWA expose** — and therefore which
-   agents may the landing-page router choose from? In particular, does the
-   **Master Data Load Agent** belong in a mobile app, given the intended user and
-   data workflow? *(§7 — and note §18.2: the answer may remove the need for
-   routing entirely.)*
+- ~~Which FabOrchestrator agents should the PWA expose?~~ **Answered by Jothi,
+  2 September: not the Master Data Load Agent.** See §7 and decision 9.
+- ~~What should the user see while a question is being routed?~~ **Closed:**
+  there is no routing step. See §5.
 
 **For Jothi**
 
-2. Should the app present **four agent cards when three are the same service**?
-   *(§7)*
-3. Should the landing page's **activity counters** be made live, labelled as
-   illustrative, or removed? *(§4, §18.4)*
-4. Should **conversations persist** between visits? *(§9)*
-5. What should happen to a **very long conversation** — silent truncation, a
-   warning, or a fresh thread? *(§9)*
-6. What should the user **see while a question is being routed**? *(§5)*
-7. Should the app **stay signed in between launches**, and for how long? *(§8)*
-8. What should happen when a **data connection is down** — name it and continue,
+1. Should the app present **three openable agent cards when all three are the
+   same service**? *(§7)*
+2. Should the landing page's **activity counters** be made live, labelled as
+   illustrative, or removed — including the metric on the greyed Master Data
+   Load Agent card? *(§4, §18.4)*
+3. Should **conversations persist** between visits? *(§9)*
+4. What should happen to a **very long conversation** — drop the oldest turns,
+   warn before the limit, or continue to require a fresh thread? *(§9)*
+5. Should the app **stay signed in between launches**, and for how long? *(§8)*
+6. What should happen when a **data connection is down** — name it and continue,
    or refuse? *(§10)*
-9. Should transient failures **retry automatically**? *(§12)*
-10. Is the **first audience a supervisor or a demonstration**? Several choices
-    above depend on it. *(§2)*
-11. Which **devices** must be supported? *(§11)*
+7. Should transient failures **retry automatically**? *(§12)*
+8. Is the **first audience a supervisor or a demonstration**? Several choices
+   above depend on it. *(§2)*
+9. Which **devices** must be supported? *(§11)*
+
+**For an administrator, not a product question**
+
+- The demonstration account has **no data connections**, so plant questions are
+  answered from general knowledge. This blocks acceptance criteria 10 and 13 and
+  the whole of the business demonstration. *(§16)*
 
 ---
 

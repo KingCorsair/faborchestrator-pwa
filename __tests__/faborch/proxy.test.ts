@@ -227,11 +227,19 @@ describe("FabOrchestrator's failures arrive as something a person can act on", (
     assert.match(body.error, /e-9/, "the errorId is support's only handle; keep it");
   });
 
-  test("a 403 relays FabOrchestrator's own permission wording", async () => {
-    const message = "The Modeling Agent is not enabled for your role.";
-    stubFo(() => Response.json({ error: message }, { status: 403 }));
-    const res = await call(request(), "modeling");
-    const body = (await res.json()) as { error: string };
+  test("a 403 relays FabOrchestrator’s own permission wording", async () => {
+    // No agent this app exposes is permission-gated any more — the Master Data
+    // Load Agent was the only one and left on 2 September. The relay is still
+    // the behaviour under test: what FO refuses with is FO’s to word, and a
+    // message naming the permission an administrator must grant is the only
+    // useful thing in the response.
+    const message = "This model is not enabled for your role.";
+    stubFo((url) =>
+      url.includes("/api/mcp/connections")
+        ? Response.json([])
+        : Response.json({ error: message }, { status: 403 }),
+    );
+    const body = (await (await call(request())).json()) as { error: string };
     assert.equal(body.error, message);
   });
 

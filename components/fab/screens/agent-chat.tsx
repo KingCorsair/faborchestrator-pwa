@@ -11,13 +11,13 @@
  * it. Ask it for the yield and the yield is FO's answer, from FO's tools,
  * against FO's data.
  *
- * ── One screen, three agents ────────────────────────────────────────────────
- * FabInsight, the Master Data Load Agent and the Back-end Agent are the same screen
- * with a different `agent` prop, because all three FO endpoints take
- * `{ messages }` and answer with the same stream. What differs is the name, the
- * chips and the endpoint — `lib/faborch/agents.ts`. Three copies of a
- * conversation with its own abort handling, seeding effect and five states
- * would be three places for those to drift.
+ * ── One screen, every agent ─────────────────────────────────────────────────
+ * FabInsight and the Back-end Agent are the same screen with a different
+ * `agent` prop, because every FO chat endpoint takes `{ messages }` and answers
+ * with the same stream. What differs is the name, the chips and the endpoint —
+ * `lib/faborch/agents.ts`. A copy of this conversation per agent would be one
+ * more place for the abort handling, the seeding effect and the states to
+ * drift.
  *
  * That is also why it looks like a chat while CLAUDE.md says "no generic
  * chatbot". The prohibition is against *this app* growing an AI feature of its

@@ -38,15 +38,21 @@ is expanded, with evidence, further down.
 - **A long conversation no longer breaks in a way nobody could read.** It used
   to fail with a programmer's error message and stay broken. It now says it is
   full and offers a fresh one.
+- **The Master Data Load Agent is out, on Jothi's decision.** It is still shown
+  on the front page, greyed, because FabOrchestrator really does have it — the
+  app just does not open it.
+- **Asking from the front page now works.** Type a question with nothing
+  selected and it is answered. This was the behaviour Jothi asked for, and it
+  needed no new code: once the master-data agent was out, every remaining agent
+  was the same service, so there was nothing left to choose between.
 - **174 automated tests pass.** They run without a network.
 
 **Pending**
 
-- Next: asking from the front page, with the system picking the right agent —
-  the behaviour Jothi confirmed he wanted. **Waiting on a decision first**: if
-  the Master Data Load Agent does not belong in the phone app, every remaining
-  agent is the same service and there is nothing to route between.
-- After that: installing on a phone, and answering from real plant data.
+- Next: installing on a phone, and answering from real plant data. **The second
+  half is blocked on an administrator** — see below.
+- The four planning documents still describe four agents and budget work that no
+  longer exists. They need a pass to match the decision.
 - Nothing security-related is outstanding: sign-out now genuinely cancels the
   app's session, and it turned out no database was needed for it.
 
@@ -86,7 +92,9 @@ connections, so plant questions cannot be answered from plant data.
 | **WP4** Secure connector | 15 tests against a stubbed FabOrchestrator, so the suite runs with no network |
 | **M1 / B1** Architecture proven end to end | `docs/probes/2026-09-01-e1-report.md` — 5/5 against the live CloudFront deployment: sign-in, token httpOnly and absent from the body, a real answer through the proxy, **13 network arrivals over 2.6 s** (progressive, not buffered), sign-out dropping the cookie |
 | **WP5** Conversation handling | **Complete.** 23 tests on the conversation rules, plus a live browser run of the acceptance line — ask, read, follow up, stop, ask again — 10/10 against the live platform |
-| Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit |
+| **WP7** Agent selection | **Complete**, and smaller than planned. The registry and endpoint routing were already built; the availability query has nothing left to check (see the decision below) |
+| **WP13** Ask-first entry point | **Complete without routing logic.** A question typed on the landing page with nothing selected is carried into a conversation and answered — 10/10 in a browser against the live platform |
+| Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened |
 
 **174 tests, all passing.** Typecheck and lint clean. Production build compiles.
 
@@ -149,24 +157,56 @@ a token FO validates on every call — so an admin action lands on the next
 request as a 401, which the proxy already handles by clearing the cookie and
 asking for a fresh sign-in.
 
-### Phase 2 — WP5 done; the other two wait on a product answer
+### Phase 2 — complete
 
 | WP | What | Days | State |
 |---|---|---|---|
 | WP5 | Conversation handling — follow-ups in one thread, stop mid-answer | 0.5 | **Done** |
-| WP7 | Agent menu with the Master Data Load Agent's availability check | 1.0 | Gated |
-| WP13 | **Ask-first routing** — type on the landing page, the system picks the agent | 2.0 | Gated |
+| WP7 | Agent menu with the Master Data Load Agent's availability check | 1.0 | **Done**, reduced |
+| WP13 | **Ask-first routing** — type on the landing page, the system picks the agent | 2.0 | **Done**, no logic needed |
 
-Closes **M2 / B2** when all three land. WP7 is smaller than planned now that no
-non-agent screens remain.
+**M2 / B2 are closed.** The last two packages were budgeted at 3.0 days and cost
+close to none of it, because a product decision removed the work rather than
+engineering completing it.
 
-**Both remaining packages are gated on Yogita's answer**, not on engineering.
-PRD §18.2: three of the four cockpit cards are the same service, so routing is
-in practice *"is this a master-data request or not?"* If the Master Data Load
-Agent is excluded from the PWA, every exposed agent shares one service and there
-is nothing left to route between — WP13's 2 days would buy nothing, and WP7's
-availability check would have no gated agent to check. Building either before
-the answer risks building the wrong thing.
+#### The decision that closed them
+
+**Jothi confirmed on 2 September that the Master Data Load Agent is not part of
+the PWA.** Loading MES master data is not what a supervisor does one-handed on a
+fab floor; that agent's real workflow is file upload, staged review and a load
+step, none of which this app carries.
+
+PRD §18.2 had predicted exactly what this would do, which is why the 2 days were
+held rather than spent:
+
+- **Nothing left to route between.** Three of the four cockpit cards were already
+  the same service (`/api/chat`). With the fourth gone, every exposed agent is
+  that one service, so ask-first needs no classifier — the question goes
+  straight there. **WP13's 2 days buy nothing.**
+- **Nothing left to check availability for.** `modeling_agent` was the only
+  permission gate, and `/api/chat` does not answer 403 itself. **WP7 reduces to
+  the registry and routing that already existed.**
+
+What was actually built for this: the agent removed from the registry, its screen
+deleted, its card greyed on the landing page with the reason on it, and the proxy
+now 404s that agent before touching FabOrchestrator.
+
+#### And half the requirement was already the platform's
+
+Worth recording, because it was nearly built twice. FO's own `/api/chat` is a
+tool-using agent: it loads the caller's authorised MCP tools and lets the model
+choose among them over up to twenty steps (`stopWhen: stepCountIs(20)`, upstream
+`e5a5abd`). *"The system determines the appropriate tool and data path and
+performs the routing automatically"* was therefore already true, in the platform,
+before this app did anything. Only agent-level selection was ever missing — and
+that is now moot.
+
+**Verified in a browser against the live platform**, 10/10: all four cockpit
+agents still shown, the Master Data Load Agent shown but not openable and marked
+`aria-disabled`, no link anywhere to the removed screen, `/modeling-agent` 404,
+the proxy refusing that agent before calling FO, and a question typed on the
+landing page carried into a thread and answered without anything being
+selected.
 
 ### WP5, as built
 
@@ -234,11 +274,15 @@ it; nothing in Phase 3 does.
 
 ## Known debt
 
-**The planning documents are current as of 1 September 2026.** Both decisions
-they asked the review for are now recorded as taken — the production-order
-workflow is removed, and the demo runs against the live deployment — along with
-the manifest-`id` call. **No estimate changed**: the plan always assumed the
-workflow went, so the 3 days quoted were the cost of keeping it.
+**The planning documents are stale as of 2 September 2026, and this is the one
+piece of documentation work outstanding.** They describe exposing the Master Data
+Load Agent, budget WP7's availability check, and budget 2 days for WP13's
+routing. All three are now wrong — PRD §18.3. They said they needed updating
+once the agent question was answered, and not before; it is answered.
+
+Earlier decisions they asked for *are* recorded as taken — the production-order
+workflow removed, the demo running against the live deployment, the manifest-`id`
+call.
 
 One earlier entry here was wrong and is corrected: WP8 and component C7 were
 never stale. They describe FabOrchestrator's own MES data reached over MCP, not

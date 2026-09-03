@@ -135,6 +135,14 @@ td b{color:var(--ink);font-weight:600}
 .conflict p{margin:0 0 7px;font-size:15px;color:var(--ink-2);max-width:66ch}
 .conflict p:last-child{margin-bottom:0}
 .conflict b{color:var(--ink);font-weight:600}
+.conflict ul{margin:0 0 7px}
+.conflict.resolved{border-left-color:var(--ok);background:var(--panel)}
+.conflict.resolved h3 .n{color:var(--ok)}
+.tag{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:9.5px;
+  font-weight:600;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
+  border-radius:4px;padding:2.5px 7px;color:var(--off);background:var(--off-wash)}
+.tag.done{color:var(--ok);background:var(--ok-wash)}
+.tag.live{color:var(--warn);background:var(--warn-wash)}
 
 /* ── questions ──────────────────────────────────────────────────────────── */
 .who{font-family:Archivo,sans-serif;font-size:11px;font-weight:600;
@@ -146,8 +154,14 @@ td b{color:var(--ink);font-weight:600}
   color:var(--warn);flex:none;padding-top:2px}
 .q p{margin:0;font-size:15px;color:var(--ink-2)}
 .q b{color:var(--ink);font-weight:600}
-.q.first{border-color:var(--warn);background:var(--warn-wash)}
-.q.first p{color:var(--ink)}
+.who.answered{color:var(--ok)}
+.who.blocker{color:var(--warn)}
+.q.done{border-color:var(--rule);background:var(--panel)}
+.q.done .qn{color:var(--ok)}
+.q.done p{color:var(--ink-3)}
+.q.done b{color:var(--ink-2)}
+.q.blocked{border-color:var(--warn);background:var(--warn-wash)}
+.q.blocked p{color:var(--ink)}
 
 footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--rule);
   font-family:Archivo,sans-serif;font-size:12.5px;color:var(--ink-3);max-width:74ch}
@@ -161,7 +175,7 @@ footer b{color:var(--ink-2)}
 
 <header class="mast">
   <div class="in">
-    <div class="eyebrow">Product requirements · version 1.1</div>
+    <div class="eyebrow">Product requirements · version 1.2</div>
     <h1>FabOrchestrator PWA Requirements</h1>
     <div class="stamp">2 September 2026 · what the product is, not how it is built</div>
     <div class="legend">
@@ -335,15 +349,33 @@ footer b{color:var(--ink-2)}
       <p><b>Routing never blocks a normal answer.</b> Any decision step is capped in time;
       if it is slow or fails, the question proceeds to the default agent.</p>
     </div>
-    <div class="stmt open"><span class="lab">Open question</span>
-      <p><b>What should the user see while routing happens?</b> Nothing, a generic
-      "working", or the choice as it is made? This is the first impression of the product's
-      intelligence and has not been decided.</p>
+    <div class="stmt out"><span class="lab">Closed</span>
+      <p><b>What should the user see while routing happens?</b> Nothing, because there is
+      no routing step: the question goes straight to the one service. What a person sees
+      while the <em>platform</em> works — a tool being named as it runs — is
+      <a class="xref" href="#s12">§12</a>, and is built. This reopens if a second agent is
+      ever exposed.</p>
     </div>
-    <div class="conflict">
-      <h3><span class="n">Conflict</span>The ask box promises this today, and does not do it</h3>
-      <p>The box exists on the landing page but sends every question to FabInsight.
-      See <a class="xref" href="#c1">§18.1</a>.</p>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The requirement is met, and needed no routing logic.</b> Jothi's decision of
+      2 September (<a class="xref" href="#s7">§7</a>) removed the only agent that was a
+      separate service. Every agent this app exposes is now FabOrchestrator's
+      <code>/api/chat</code>, so there is nothing to choose between: the ask box carries the
+      question into a conversation and the platform's own agent decides which tools and
+      which data answer it, over up to twenty steps.</p>
+      <p class="note"><em>Verified in a browser against the live platform, 2 September: a
+      question typed on the landing page with nothing selected is carried into the thread
+      and answered.</em></p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>The tool and data half was always the platform's.</b> FO's
+      <code>/api/chat</code> loads the caller's authorised MCP tools and lets the model
+      choose among them (<code>stopWhen: stepCountIs(20)</code>, verified against upstream
+      <code>e5a5abd</code>). The app has never needed to reproduce that, and must not.</p>
+      <p class="note"><em>The three proposed items above — a visible and reversible route,
+      an unclear request falling back to the general-purpose agent, and routing never
+      blocking an answer — are moot with a single destination. They are kept because they
+      become live again the moment a second service is exposed.</em></p>
     </div>
   </section>
 
@@ -372,19 +404,24 @@ footer b{color:var(--ink-2)}
   <!-- 7 ─────────────────────────────────────────────────────────────────── -->
   <section id="s7">
     <h2><span class="num">7</span>Which FabOrchestrator agents are exposed</h2>
-    <p class="sechint">The most consequential open question in this document. It decides
-    what the landing page shows, what manual selection offers, and — because of
-    <a class="xref" href="#c2">§18.2</a> — whether routing has anything to choose between
-    at all.</p>
+    <p class="sechint">This was the most consequential open question in this document.
+    Answering it resolved three of the five recorded conflicts.</p>
 
-    <div class="stmt open key"><span class="lab">Open question</span>
-      <p><b>Which FO agents should the PWA actually expose, and therefore which agents may
-      the landing-page router choose from?</b></p>
-      <p><em>Raised by Yogita.</em> Not every FabOrchestrator agent necessarily belongs in a
-      mobile app — in particular the <b>Master Data Load Agent</b>, depending on the intended
-      user and data workflow. A supervisor on a fab floor is not obviously the person who
-      loads MES master data, and that agent's real workflow involves file upload and staged
-      review.</p>
+    <div class="stmt confirmed key"><span class="lab">Confirmed</span>
+      <p><b>The Master Data Load Agent is not part of the PWA.</b></p>
+      <p><em>Raised by Yogita; decided by Jothi, 2 September 2026.</em> Loading MES master
+      data is not what a supervisor does one-handed on a fab floor. That agent's real
+      workflow is file upload, staged review and a load step, none of which this app
+      carries.</p>
+    </div>
+    <div class="stmt confirmed"><span class="lab">Confirmed</span>
+      <p><b>It is shown, greyed, not deleted.</b> FabOrchestrator has the agent, so the
+      cockpit still lists it, marked as something this app does not open — the same
+      treatment Workflows, Sites and Reports get. Removing the card would misrepresent the
+      product as surely as inventing one would.</p>
+      <p>With it gone, every exposed agent shares one service: there is nothing to route
+      between (<a class="xref" href="#s5">§5</a>), no permission-gated agent to check
+      availability for, and no second endpoint for a classifier to choose.</p>
     </div>
 
     <p class="sechint">What is known today, verified against the platform's source
@@ -402,7 +439,7 @@ footer b{color:var(--ink-2)}
               <td class="shared">Shared</td><td>Card points at FabInsight's screen</td></tr>
           <tr><td><b>Agent · 03</b> Master Data Load Agent</td><td class="mono">/modeling-agent</td>
               <td class="yes">Yes — its own service and its own permission</td>
-              <td>Exposed</td></tr>
+              <td><b>Shown, greyed, not opened</b></td></tr>
           <tr><td><b>Agent · 04</b> Back-end Agent</td><td class="mono">/chat</td>
               <td class="shared">Shared</td><td>Exposed, own screen and prompts</td></tr>
         </tbody>
@@ -410,15 +447,19 @@ footer b{color:var(--ink-2)}
     </div>
 
     <div class="stmt confirmed"><span class="lab">Confirmed</span>
-      <p><b>Three of the four cards are framings of one conversation service.</b> Only the
-      Master Data Load Agent is a separate service with its own permission gate, which
-      FabOrchestrator enforces itself.</p>
+      <p><b>Every agent the PWA now opens is one conversation service.</b> The Master Data
+      Load Agent was the only separate service, and the only one with a permission gate.
+      <b>No agent this app exposes is permission-gated any more</b>, and <code>/api/chat</code>
+      does not answer 403 itself — so the availability check the plan budgeted for has
+      nothing left to check. The proxy still relays a 403 verbatim if FabOrchestrator ever
+      starts sending one.</p>
     </div>
     <div class="stmt open"><span class="lab">Open question</span>
-      <p><b>Should the app present four cards when three are the same service?</b> It is
-      faithful to how the product presents itself, and honest about nothing else. If a
-      customer asks "what is the difference between these three?", today's answer is "the
-      suggested prompts and the label."</p>
+      <p><b>Should the app present three openable cards when all three are the same
+      service?</b> It is faithful to how the product presents itself, and honest about
+      nothing else. If a customer asks "what is the difference between these three?",
+      today's answer is "the suggested prompts and the label." Unchanged by Jothi's
+      decision, which was about the fourth card.</p>
     </div>
     <div class="stmt out"><span class="lab">Out of scope</span>
       <p><b>Agents that do not exist in FabOrchestrator.</b> The app never invents one.</p>
@@ -660,12 +701,12 @@ footer b{color:var(--ink-2)}
         <li>The platform credential is provably absent from the phone.</li>
         <li>Signing out ends the session on the platform as well as locally.</li>
         <li>The app contains no plant logic, data queries or AI reasoning of its own.</li>
-      </ul>
-    </div>
-    <div class="stmt confirmed" data-nocount><span class="lab">Confirmed — not yet met</span>
-      <ul>
-        <li>A question asked from the landing page <b>with nothing selected</b> is routed to
-            the right agent and answered, labelled with which agent served it.</li>
+        <li>A question asked from the landing page <b>with nothing selected</b> is answered.
+            <em>Met 2 September, and without routing logic: after §7 there is a single
+            destination. The "labelled with which agent served it" clause is moot while that
+            remains true, and returns with a second agent.</em></li>
+        <li>Every agent the app opens is reachable by name and opens a conversation; an agent
+            the app does not open says so on its card.</li>
       </ul>
     </div>
     <div class="stmt proposed" data-nocount><span class="lab">Proposed — not yet met</span>
@@ -723,95 +764,122 @@ footer b{color:var(--ink-2)}
           <tr><td class="mono">6</td><td>Sign-out ends the platform session, not just the local one</td><td class="mono">1 Sep 2026</td></tr>
           <tr><td class="mono">7</td><td>The demonstration runs against the live deployment</td><td class="mono">1 Sep 2026</td></tr>
           <tr><td class="mono">8</td><td>The app makes no changes to FabOrchestrator</td><td class="mono">Throughout</td></tr>
+          <tr><td class="mono">9</td><td><b>The Master Data Load Agent is not part of the PWA</b>; its card is shown greyed</td><td class="mono">2 Sep 2026, Jothi</td></tr>
         </tbody>
       </table>
     </div>
   </section>
 
-  <!-- 18 ────────────────────────────────────────────────────────────────── -->
+  <!-- 18 -->
   <section id="s18">
     <h2><span class="num">18</span>Conflicts between current plans/code and product decisions</h2>
-    <p class="sechint">Recorded rather than resolved. <b>Each needs a product decision.</b></p>
+    <p class="sechint">Recorded rather than resolved. <b>Three of the five closed on
+    2 September</b>, when Jothi answered the agent question in
+    <a class="xref" href="#s7">§7</a>. They are kept, because the reasoning that closed them
+    is the reasoning anyone reopening the question will need.</p>
 
-    <div class="conflict" id="c1">
-      <h3><span class="n">18.1</span>The ask box implies routing that does not exist</h3>
-      <p>The landing page already carries an ask box reading <em>"Ask anything, or describe a
-      task to orchestrate…"</em>, but it sends every question to FabInsight regardless of
-      content. Confirmed decision 1 is therefore <b>stated in the interface and not yet
-      true</b>. Anyone demonstrating the app today would be showing behaviour the product
-      does not have. Either the routing is built, or the box should not promise it.</p>
+    <div class="conflict resolved" id="c1">
+      <h3><span class="n">18.1</span>The ask box implies routing that does not exist
+        <span class="tag done">Resolved</span></h3>
+      <p>The landing page carries an ask box reading <em>"Ask anything, or describe a task to
+      orchestrate…"</em>, and it sends every question to FabInsight. That was recorded as a
+      promise the interface made and the product did not keep.</p>
+      <p><b>It was too strong.</b> Two things called "routing" were being conflated. FO's own
+      <code>/api/chat</code> is a tool-using agent that decides, per question, which of the
+      caller's authorised MCP tools and data sources to call, over up to twenty steps. The box
+      always delivered <em>that</em> — which is most of what confirmed decision 1 asks for.
+      What it could not do was reach a <em>different agent</em>.</p>
+      <p>After <a class="xref" href="#s7">§7</a> there is no different agent. The box does
+      everything the requirement states, with no routing logic.</p>
     </div>
 
-    <div class="conflict" id="c2">
-      <h3><span class="n">18.2</span>The open agent question may remove the need for routing entirely</h3>
-      <p><b>This is the important one.</b> Three of the four cockpit cards are the same
-      conversation service; only the Master Data Load Agent is separate. So the routing
-      decision confirmed in <a class="xref" href="#s5">§5</a> is, in practice, <em>"is this a
-      master-data request or not?"</em></p>
-      <p>If Yogita's question (<a class="xref" href="#s7">§7</a>) resolves to
-      <b>excluding</b> the Master Data Load Agent from the PWA, then every exposed agent
-      shares one service and <b>there is nothing left to route between</b>. The confirmed
-      requirement would be satisfied by sending every question to the one service — no
-      routing logic at all.</p>
-      <p>The engineering plan currently budgets 2 days for a routing package. <b>That
-      estimate depends entirely on an unanswered product question.</b> It should not be
-      scheduled until <a class="xref" href="#s7">§7</a> is answered.</p>
+    <div class="conflict resolved" id="c2">
+      <h3><span class="n">18.2</span>The open agent question may remove the need for routing entirely
+        <span class="tag done">Resolved, as predicted</span></h3>
+      <p>The reasoning was: three of the four cockpit cards are the same conversation service,
+      so the routing decision is in practice <em>"is this a master-data request or not?"</em>,
+      and excluding the Master Data Load Agent would leave nothing to route between.</p>
+      <p><b>Jothi excluded it.</b> Every exposed agent now shares one service. The engineering
+      plan's 2 days for a routing package buys nothing and should not be scheduled.
+      <b>This entry is the reason that estimate was held rather than spent.</b></p>
     </div>
 
     <div class="conflict" id="c3">
-      <h3><span class="n">18.3</span>The plans still assume four agents</h3>
-      <p>The engineering plans describe exposing FabInsight, the Master Data Load Agent and
-      the Back-end Agent, with an open item about the AI Support Engineer card. They were
-      written before Yogita's question and do not treat agent exposure as undecided. They
-      need updating once <a class="xref" href="#s7">§7</a> is answered — not before.</p>
+      <h3><span class="n">18.3</span>The plans still assume four agents
+        <span class="tag live">Now actionable</span></h3>
+      <p>The four planning documents describe exposing FabInsight, the Master Data Load Agent
+      and the Back-end Agent, and budget WP7's availability check and WP13's routing package.
+      All three assumptions are now wrong:</p>
+      <ul>
+        <li>the Master Data Load Agent is not exposed;</li>
+        <li><b>no exposed agent is permission-gated</b>, so WP7's availability query has
+            nothing to check;</li>
+        <li>WP13's routing has nothing to choose between.</li>
+      </ul>
+      <p>They said they needed updating once §7 was answered, and not before. It is answered.
+      <b>This is the one conflict here that is a live piece of work</b>, and it is
+      documentation, not code.</p>
     </div>
 
     <div class="conflict" id="c4">
       <h3><span class="n">18.4</span>Placeholder metrics presented as real</h3>
       <p>The landing page shows counters from the product's own cockpit as though they were
       live figures. This is a factual claim the app cannot support. It conflicts with the
-      honesty principle applied elsewhere — greyed navigation, explicit unavailability. See
-      the open question in <a class="xref" href="#s4">§4</a>.</p>
+      honesty principle applied elsewhere — greyed navigation, and now a greyed agent card.
+      See the open question in <a class="xref" href="#s4">§4</a>.</p>
+      <p>Note that the greyed Master Data Load Agent card still carries its placeholder metric
+      ("Sites 12"), which is the product's own number for an agent this app does not open.
+      That is the same question, in its sharpest form.</p>
     </div>
 
     <div class="conflict" id="c5">
-      <h3><span class="n">18.5</span>An installed-app identifier points at a removed screen</h3>
+      <h3><span class="n">18.5</span>An installed-app identifier points at a removed screen
+        <span class="tag">Deliberate</span></h3>
       <p>The app's install identifier still refers to the removed order workflow. It is
       invisible to users and changing it would orphan every installed copy, so it was
       deliberately left. Recorded so it is not mistaken for an oversight.</p>
     </div>
   </section>
 
-  <!-- 19 ────────────────────────────────────────────────────────────────── -->
+  <!-- 19 -->
   <section id="s19">
     <h2><span class="num">19</span>Open product questions</h2>
 
-    <div class="who">For Yogita</div>
-    <div class="q first">
-      <span class="qn">01</span>
-      <p><b>Which FabOrchestrator agents should the PWA expose</b> — and therefore which
-      agents may the landing-page router choose from? In particular, does the <b>Master Data
-      Load Agent</b> belong in a mobile app, given the intended user and data workflow?
-      <em>(<a class="xref" href="#s7">§7</a> — and note
-      <a class="xref" href="#c2">§18.2</a>: the answer may remove the need for routing
-      entirely.)</em></p>
+    <div class="who answered">Answered</div>
+    <div class="q done">
+      <span class="qn">✓</span>
+      <p><b>Which FabOrchestrator agents should the PWA expose?</b> Answered by Jothi,
+      2 September: not the Master Data Load Agent.
+      <em>(<a class="xref" href="#s7">§7</a>, decision 9)</em></p>
+    </div>
+    <div class="q done">
+      <span class="qn">✓</span>
+      <p><b>What should the user see while a question is being routed?</b> Closed — there is
+      no routing step. <em>(<a class="xref" href="#s5">§5</a>)</em></p>
     </div>
 
     <div class="who">For Jothi</div>
-    <div class="q"><span class="qn">02</span><p>Should the app present <b>four agent cards when three are the same service</b>? <em>(<a class="xref" href="#s7">§7</a>)</em></p></div>
-    <div class="q"><span class="qn">03</span><p>Should the landing page's <b>activity counters</b> be made live, labelled as illustrative, or removed? <em>(<a class="xref" href="#s4">§4</a>, <a class="xref" href="#c4">§18.4</a>)</em></p></div>
-    <div class="q"><span class="qn">04</span><p>Should <b>conversations persist</b> between visits? <em>(<a class="xref" href="#s9">§9</a>)</em></p></div>
-    <div class="q"><span class="qn">05</span><p>What should happen to a <b>very long conversation</b> — silent truncation, a warning, or a fresh thread? <em>(<a class="xref" href="#s9">§9</a>)</em></p></div>
-    <div class="q"><span class="qn">06</span><p>What should the user <b>see while a question is being routed</b>? <em>(<a class="xref" href="#s5">§5</a>)</em></p></div>
-    <div class="q"><span class="qn">07</span><p>Should the app <b>stay signed in between launches</b>, and for how long? <em>(<a class="xref" href="#s8">§8</a>)</em></p></div>
-    <div class="q"><span class="qn">08</span><p>What should happen when a <b>data connection is down</b> — name it and continue, or refuse? <em>(<a class="xref" href="#s10">§10</a>)</em></p></div>
-    <div class="q"><span class="qn">09</span><p>Should transient failures <b>retry automatically</b>? <em>(<a class="xref" href="#s12">§12</a>)</em></p></div>
-    <div class="q"><span class="qn">10</span><p>Is the <b>first audience a supervisor or a demonstration</b>? Several choices above depend on it. <em>(<a class="xref" href="#s2">§2</a>)</em></p></div>
-    <div class="q"><span class="qn">11</span><p>Which <b>devices</b> must be supported? <em>(<a class="xref" href="#s11">§11</a>)</em></p></div>
+    <div class="q"><span class="qn">01</span><p>Should the app present <b>three openable agent cards when all three are the same service</b>? <em>(<a class="xref" href="#s7">§7</a>)</em></p></div>
+    <div class="q"><span class="qn">02</span><p>Should the landing page's <b>activity counters</b> be made live, labelled as illustrative, or removed — including the metric on the greyed Master Data Load Agent card? <em>(<a class="xref" href="#s4">§4</a>, <a class="xref" href="#c4">§18.4</a>)</em></p></div>
+    <div class="q"><span class="qn">03</span><p>Should <b>conversations persist</b> between visits? <em>(<a class="xref" href="#s9">§9</a>)</em></p></div>
+    <div class="q"><span class="qn">04</span><p>What should happen to a <b>very long conversation</b> — drop the oldest turns, warn before the limit, or continue to require a fresh thread? <em>(<a class="xref" href="#s9">§9</a>)</em></p></div>
+    <div class="q"><span class="qn">05</span><p>Should the app <b>stay signed in between launches</b>, and for how long? <em>(<a class="xref" href="#s8">§8</a>)</em></p></div>
+    <div class="q"><span class="qn">06</span><p>What should happen when a <b>data connection is down</b> — name it and continue, or refuse? <em>(<a class="xref" href="#s10">§10</a>)</em></p></div>
+    <div class="q"><span class="qn">07</span><p>Should transient failures <b>retry automatically</b>? <em>(<a class="xref" href="#s12">§12</a>)</em></p></div>
+    <div class="q"><span class="qn">08</span><p>Is the <b>first audience a supervisor or a demonstration</b>? Several choices above depend on it. <em>(<a class="xref" href="#s2">§2</a>)</em></p></div>
+    <div class="q"><span class="qn">09</span><p>Which <b>devices</b> must be supported? <em>(<a class="xref" href="#s11">§11</a>)</em></p></div>
+
+    <div class="who blocker">For an administrator — not a product question</div>
+    <div class="q blocked">
+      <span class="qn">!</span>
+      <p>The demonstration account has <b>no data connections</b>, so plant questions are
+      answered from general knowledge. This blocks acceptance criteria 10 and 13 and the whole
+      of the business demonstration. <em>(<a class="xref" href="#s16">§16</a>)</em></p>
+    </div>
   </section>
 
   <footer>
-    <b>FabOrchestrator PWA — Product Requirements, version 1.1.</b> This document says what
+    <b>FabOrchestrator PWA — Product Requirements, version 1.2.</b> This document says what
     the product is and how it should behave. It does not say how to build it — that is the
     engineering plan, and progress against it is in <code>docs/STATUS.md</code>. The
     canonical copy is <code>docs/PRD.md</code> in the repository; this page is published from

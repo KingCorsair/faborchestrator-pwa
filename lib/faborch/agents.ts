@@ -31,12 +31,31 @@
  * endpoint as FabInsight. A separate `/api/backend-agent/chat` service exists
  * in NO upstream branch; the earlier local build of one was superseded when
  * the product folded custom dashboards into `/chat` itself (gated by
- * `isDashboardAdmin`, returned as `canCreateDashboards` at login). AGENT · 03
- * is titled "Master Data Load Agent" on the cockpit; its route and its
- * `modeling_agent` role gate are unchanged.
+ * `isDashboardAdmin`, returned as `canCreateDashboards` at login).
+ *
+ * ── The Master Data Load Agent is deliberately absent (2026-09-02) ──────────
+ * AGENT · 03 exists in FabOrchestrator, at `/api/modeling-agent/chat`, with its
+ * own `modeling_agent` role gate. **Jothi confirmed on 2 September that it does
+ * not belong in this app.** Loading MES master data is not a thing a supervisor
+ * does one-handed on a fab floor: the real workflow is file upload, staged
+ * review and a load step, none of which this app carries.
+ *
+ * Two consequences worth stating here, because they are easy to rediscover the
+ * hard way:
+ *
+ *  - **Every agent below now shares `/api/chat`.** There is nothing left to
+ *    route *between*, which is why the landing page's ask box needs no routing
+ *    logic to satisfy the ask-first requirement.
+ *  - **No exposed agent is permission-gated.** `modeling_agent` was the only
+ *    one, and `/api/chat` never answers 403 itself. The proxy still relays a
+ *    403 verbatim if FO ever starts sending one.
+ *
+ * The card stays on the landing page, greyed, saying the platform has it and
+ * this app does not open it — the same treatment Workflows, Sites and Reports
+ * get. Removing it from view would misrepresent the product.
  */
 
-export type FoAgentId = "insight" | "modeling" | "backend";
+export type FoAgentId = "insight" | "backend";
 
 export interface FoAgent {
   id: FoAgentId;
@@ -48,11 +67,13 @@ export interface FoAgent {
   /**
    * Whether to send `activeMcpIds`.
    *
-   * **Only `/api/chat` reads it.** That route loads the caller's tools from the
-   * list and nothing else, so an empty list there means an agent that can look
-   * nothing up. The modeling route builds its own CMF tools server-side from
-   * the authenticated user, so sending the field there would be inert at best
-   * and misleading in this file at worst.
+   * **Only `/api/chat` reads it**, loading the caller's tools from the list and
+   * nothing else, so an empty list there means an agent that can look nothing
+   * up. Every agent in this registry is currently on `/api/chat`, so the field
+   * is `true` throughout — it is kept rather than collapsed because it records
+   * a real distinction in FO's contract: `/api/modeling-agent/chat` builds its
+   * own CMF tools server-side and ignores the field entirely. Anyone adding a
+   * non-`/api/chat` agent needs to know that before they send it.
    */
   sendMcpIds: boolean;
   /** Shown on the empty state. FabInsight's are the cockpit ask bar's own. */
@@ -71,17 +92,6 @@ export const FO_AGENTS: Record<FoAgentId, FoAgent> = {
     blurb:
       "FabInsight runs inside FabOrchestrator and answers with your tools, your role " +
       "and your data.",
-  },
-  modeling: {
-    id: "modeling",
-    slug: "modeling-agent",
-    name: "Master Data Load Agent",
-    foPath: "/api/modeling-agent/chat",
-    sendMcpIds: false,
-    chips: ["Build a blank Reason template", "What object types can I model?"],
-    blurb:
-      "The Master Data Load Agent prepares MES master-data files inside " +
-      "FabOrchestrator. It requires the modeling_agent permission on your role.",
   },
   backend: {
     id: "backend",

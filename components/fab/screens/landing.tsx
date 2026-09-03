@@ -211,19 +211,29 @@ interface Agent {
   metricLabel: string;
   metric: string;
   delta: string;
-  /** All four carry one, and all four stay in this app. */
+  /** Absent means this app does not open it; `unavailable` then says why. */
   href?: string;
+  /** Shown in place of "Open" on a card this app does not open. */
+  unavailable?: string;
 }
 
 /**
  * The four agents, copied from `agent-cards.tsx` — the same numbering, names,
  * categories, one-line descriptions and metrics the product's cockpit ships.
  *
- * **All four open, and all four stay in this app.** The product's routes are
- * `/chat`, `/chat`, `/modeling-agent` and `/chat` (verified against upstream
- * `e5a5abd`, 2026-09-01) — AGENT · 02 and AGENT · 04 both share FabInsight's
- * `/chat` there. Each still gets its own door here, with its own framing and
+ * **Three of the four open here.** The product's routes are `/chat`, `/chat`,
+ * `/modeling-agent` and `/chat` (verified against upstream `e5a5abd`,
+ * 2026-09-01) — AGENT · 02 and AGENT · 04 both share FabInsight's `/chat`
+ * there. Those three get their own door here, with their own framing and
  * suggested prompts, because that is how the cockpit presents them.
+ *
+ * **AGENT · 03 is shown and does not open.** Jothi confirmed on 2 September
+ * that the Master Data Load Agent does not belong in this app — its workflow
+ * is file upload and staged review, not a question asked one-handed on a fab
+ * floor. It stays on the page, greyed, because the platform really does have
+ * it: the same reason Workflows, Sites and Reports are listed and disabled in
+ * `nav-items.ts`. Deleting the card would misrepresent the product as surely
+ * as inventing one would.
  *
  * Every card forwards to FO's own endpoints through the registry, exactly as
  * `/fabinsight` forwards to `/api/chat` — see
@@ -271,7 +281,7 @@ const AGENTS: Agent[] = [
     metricLabel: "Sites",
     metric: "12",
     delta: "+2",
-    href: "/modeling-agent",
+    unavailable: "In FabOrchestrator. Not part of this app.",
   },
   {
     num: "AGENT · 04",
@@ -334,6 +344,7 @@ function AgentCard({
   metric,
   delta,
   href,
+  unavailable,
 }: Agent) {
   const body = (
     <>
@@ -400,6 +411,13 @@ function AgentCard({
           Open
           <ArrowRight size={14} strokeWidth={2.4} aria-hidden="true" />
         </span>
+      ) : unavailable ? (
+        <span
+          className="mt-[14px] text-[12px] font-bold"
+          style={{ color: "var(--text-subtle)" }}
+        >
+          {unavailable}
+        </span>
       ) : null}
     </>
   );
@@ -415,7 +433,13 @@ function AgentCard({
           {body}
         </Link>
       ) : (
-        <div className="fab-card flex w-full flex-col p-[18px]">{body}</div>
+        <div
+          className="fab-card flex w-full flex-col p-[18px]"
+          aria-disabled="true"
+          style={{ opacity: 0.62 }}
+        >
+          {body}
+        </div>
       )}
     </li>
   );

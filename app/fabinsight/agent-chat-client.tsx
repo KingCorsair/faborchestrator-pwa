@@ -9,8 +9,9 @@
  * screen, because a chat's request is the user pressing send rather than the
  * page arriving.
  *
- * One client for all three agents. `/fabinsight`, `/modeling-agent` and
- * `/backend-agent` differ only in which `FoAgent` they pass.
+ * One client for both agents. `/fabinsight` and `/backend-agent` differ only in
+ * which `FoAgent` they pass — and, since 2 September, both reach the same FO
+ * service. See `lib/faborch/agents.ts` for why they are still two doors.
  */
 
 import { AppShell } from "@/components/fab/app-shell";

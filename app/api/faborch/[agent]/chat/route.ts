@@ -164,6 +164,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     const foRoute = upstream.headers.get("X-FabOrch-Route");
     if (foRoute) headers["X-FabOrch-Route"] = foRoute;
 
+    // How many data connections this operator's role actually carries. The
+    // screen uses it to say so when there are none — see the note in
+    // `agent-chat.tsx`. Reported rather than acted on: the plan's line was
+    // "refuse to send a turn with an empty tool list", and that is measurably
+    // wrong. Asked "give me the yield by product" with an empty list,
+    // FabOrchestrator still answers from real plant data, because its metric
+    // path reads the warehouse directly and never touches MCP. Refusing would
+    // have withheld a real answer.
+    if (activeMcpIds !== null) {
+      headers["X-FabOrch-Data-Connections"] = String(activeMcpIds.length);
+    }
+
     return new Response(upstream.body, { status: 200, headers });
   } catch (error) {
     if (error instanceof FabOrchNotConfiguredError) {

@@ -303,6 +303,42 @@ describe("a good answer streams through", () => {
     assert.equal(res.headers.get("X-FabOrch-Route"), "metric");
   });
 
+  test("the operator's data-connection count is reported to the screen", async () => {
+    // WP8's line was "refuse to send a turn with an empty tool list". Measured
+    // against the live platform, that is wrong: with an empty list
+    // FabOrchestrator still answers yield/scrap/OEE from real plant data,
+    // because its metric path reads the warehouse directly and never touches
+    // MCP. So the count is REPORTED and the screen says which half is missing,
+    // rather than the proxy withholding an answer that would have worked.
+    const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "94%" })}
+
+`];
+    stubFo((url) =>
+      url.includes("/api/mcp/connections")
+        ? Response.json([
+            { id: "m1", status: "connected" },
+            { id: "m2", status: "connected" },
+            { id: "m3", status: "disconnected" },
+          ])
+        : sse(frames),
+    );
+    const res = await call(request());
+    assert.equal(res.headers.get("X-FabOrch-Data-Connections"), "2");
+  });
+
+  test("zero connections is reported as zero, and the turn still goes through", async () => {
+    const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "yield is 94%" })}
+
+`];
+    stubFo((url) =>
+      url.includes("/api/mcp/connections") ? Response.json([]) : sse(frames),
+    );
+    const res = await call(request());
+    assert.equal(res.status, 200, "an empty list must not withhold the answer");
+    assert.equal(res.headers.get("X-FabOrch-Data-Connections"), "0");
+    assert.equal(await res.text(), frames.join(""));
+  });
+
   test("its absence is not invented — an older platform simply omits it", async () => {
     const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "hello" })}
 

@@ -299,6 +299,37 @@ body {
   text-align: left;
 }
 
+/* The first column stays put while the rest scrolls.
+   A yield table is product-then-figures, and a seven-column one at 360px puts
+   the numbers off-screen — scrolling to read them then loses the product name,
+   so the reader is holding a row in their head. Pinning the first column is
+   what makes a wide table usable one-handed rather than merely reachable.
+   `background` is not decoration here: without it the scrolling cells show
+   through the pinned one. */
+.fab-md th:first-child,
+.fab-md td:first-child {
+  background: var(--page-surface);
+  left: 0;
+  padding-right: 16px;
+  position: sticky;
+  z-index: 1;
+}
+
+/* The affordance. A table that scrolls with no edge treatment reads as a table
+   that is cut off, and on a touch screen there is no scrollbar to say
+   otherwise. The shadow appears only where a sticky cell meets scrolled
+   content. */
+.fab-md th:first-child::after,
+.fab-md td:first-child::after {
+  bottom: 0;
+  box-shadow: 6px 0 6px -6px rgb(22 28 52 / 18%);
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 6px;
+}
+
 .fab-md th {
   color: var(--text-subtle);
   font-size: var(--fs-label);

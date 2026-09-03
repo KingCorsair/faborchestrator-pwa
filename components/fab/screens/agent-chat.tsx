@@ -52,7 +52,7 @@
 import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowUp, Database, RotateCcw, Sparkles, Square } from "lucide-react";
 import Link from "next/link";
 import { ErrorState } from "@/components/fab/primitives";
 import type { FoAgent } from "@/lib/faborch/agents";
@@ -78,6 +78,20 @@ export function AgentChat({
 }) {
   const [state, dispatch] = React.useReducer(conversationReducer, EMPTY_CONVERSATION);
   const [input, setInput] = React.useState("");
+
+  /**
+   * How many data connections FabOrchestrator loaded for this operator, as the
+   * proxy reported them. Null until a turn has been answered.
+   *
+   * This is shown, not enforced. WP8's line was "refuse to send a turn with an
+   * empty tool list", and measurement says that would be wrong: with an empty
+   * list FabOrchestrator still answers yield, scrap and OEE from real plant
+   * data, because those go through its own metric path and never touch MCP.
+   * What an empty list actually costs is every OTHER plant question — WIP,
+   * lots, equipment, throughput — so the honest thing is to say which half is
+   * missing rather than to block the half that works.
+   */
+  const [dataConnections, setDataConnections] = React.useState<number | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
@@ -145,6 +159,12 @@ export function AgentChat({
             body: JSON.stringify({ messages: toFoMessages(history) }),
             signal: controller.signal,
           });
+
+          const connectionHeader = res.headers.get("X-FabOrch-Data-Connections");
+          if (connectionHeader !== null) {
+            const count = Number(connectionHeader);
+            if (Number.isFinite(count)) setDataConnections(count);
+          }
 
           if (!res.ok || !res.body) {
             const body = (await res.json().catch(() => null)) as Partial<Failure> | null;
@@ -230,6 +250,8 @@ export function AgentChat({
           )}
 
           {state.busy ? <Working activity={state.activity} /> : null}
+
+          {dataConnections === 0 ? <NoDataConnections /> : null}
 
           {state.failure ? (
             <FailureNotice
@@ -334,6 +356,46 @@ function Working({ activity }: { activity: string | null }) {
         ))}
       </span>
       {activity ? `FabOrchestrator is running ${activity}…` : "FabOrchestrator is working…"}
+    </div>
+  );
+}
+
+/**
+ * This account has no data connections.
+ *
+ * Deliberately narrow about what that costs. FabOrchestrator answers yield,
+ * scrap and OEE from its own metric path, which reads the warehouse directly
+ * and never consults the caller's connections — measured, on an account with
+ * an empty list. What the empty list actually costs is the tool path: WIP,
+ * lots, equipment, throughput, downtime.
+ *
+ * Saying "no plant data is available" would therefore be false, and would send
+ * an operator to an administrator over a question that already works. This
+ * names the half that is missing and who can restore it.
+ *
+ * Not an error state: nothing failed, and the conversation is still usable.
+ */
+function NoDataConnections() {
+  return (
+    <div
+      className="flex items-start gap-[10px] px-[16px] py-[12px]"
+      style={{
+        borderRadius: "var(--r-panel)",
+        background: "var(--status-amber-bg, var(--cockpit-surface))",
+        color: "var(--text-muted-cool)",
+      }}
+      role="status"
+    >
+      <Database size={15} strokeWidth={2} aria-hidden="true" className="mt-[2px] flex-none" />
+      <p className="m-0 text-[12px] font-normal leading-[1.6]">
+        <span className="font-bold" style={{ color: "var(--text-ink)" }}>
+          No data connections are enabled for your account.
+        </span>{" "}
+        Questions about yield, scrap and OEE are still answered from plant data.
+        Questions that need to look something up — WIP, lots, equipment, throughput
+        — cannot be answered until an administrator enables a connection for your
+        role in FabOrchestrator.
+      </p>
     </div>
   );
 }

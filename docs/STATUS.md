@@ -1,6 +1,6 @@
 # Where this project stands
 
-**As of 2 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
+**As of 3 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
@@ -9,7 +9,7 @@ file is wrong and should be corrected.
 
 ---
 
-## Update in plain English — 2 September 2026
+## Update in plain English — 3 September 2026
 
 For sending to Jothi or anyone else who wants the short version. Everything here
 is expanded, with evidence, further down.
@@ -45,7 +45,18 @@ is expanded, with evidence, further down.
   selected and it is answered. This was the behaviour Jothi asked for, and it
   needed no new code: once the master-data agent was out, every remaining agent
   was the same service, so there was nothing left to choose between.
-- **174 automated tests pass.** They run without a network.
+- **The platform already answers plant questions, and we had this wrong.**
+  Asking "give me the yield by product" returns a real table of real
+  products from the factory database — today, on the demo account, with no
+  administrator action. We had been reporting plant data as blocked. It is
+  blocked for *some* questions, not all.
+- **We found FabOrchestrator inventing data, and fixed it.** Asked for a
+  dashboard by someone without dashboard permission, it built one and filled
+  it with made-up numbers, labelled "illustrative sample values". In front of
+  a customer that is the worst thing the product can do. It now says the
+  permission is missing instead.
+- **174 automated tests pass** here, and 21 new ones on the platform side.
+  They run without a network.
 
 **Pending**
 
@@ -264,11 +275,128 @@ security review, handover) follow.
 
 | # | Blocker | Blocks | Who clears it |
 |---|---|---|---|
-| 1 | **The probe account has zero data connections.** Probe P4: `0 connected of 0 visible`. Plant questions are answered from the model's general knowledge, which reads as a wrong answer rather than a missing permission | **Phase 3 entirely** — the phase the business case rests on | A FabOrchestrator administrator, assigning MCP connections to that account's role |
+| 1 | **The probe account has zero MCP data connections.** Probe P4: `0 connected of 0 visible`. **Narrower than we reported** — see below: metric questions already answer from real plant data without them | The MCP tool path only. Not the metric path | A FabOrchestrator administrator, assigning MCP connections to that account's role |
 | 2 | The Fly deployment is stale — it carries none of this work | Anything demonstrated from a URL rather than localhost | Us, on your word |
 
-Blocker 1 is the one worth chasing. Everything through Phase 2 proceeds without
-it; nothing in Phase 3 does.
+Blocker 1 is still worth chasing, but it blocks less than this file claimed
+until 3 September. **Correction:** we had been reporting that plant questions
+cannot be answered at all. They can. FabOrchestrator answers yield, scrap and
+OEE questions from a direct database connection that has nothing to do with MCP
+connections, and it does so on this account today. What the missing connections
+block is every *other* plant question — WIP, lots on hold, equipment status,
+throughput, downtime — which do go through the MCP tool path.
+
+A third blocker now exists and is ours: the platform fixes below are written and
+tested but **not deployed**.
+
+---
+
+## FabOrchestrator's own routing, and two defects in it
+
+**Jothi was right.** The platform does substantial request routing inside
+`/api/chat`, before the model is called, and this project had not looked at it.
+There is a 5,033-line `lib/fabinsight/` subsystem nobody here had opened.
+
+### The three paths, verified in source at upstream `e5a5abd`
+
+| Path | How a turn gets there | What runs |
+|---|---|---|
+| **Metric** | `detectMetricAsk()` — an ask verb within 40 characters of yield / scrap / OEE | Fixed server-side SQL. **Not MCP** |
+| **Dashboard** | `matchDashboard()` — scored vocabulary match against seven curated deck prompts | Fixed SQL plus a pre-rendered artifact |
+| **Fallback** | everything else | The MCP tool loop; the model writes its own SQL |
+
+`lib/fabinsight/mcp.ts` is named misleadingly: it connects **directly to SQL
+Server** with server-side credentials. That is why the metric path works on an
+account with no data connections at all.
+
+**Measured live, before any change:**
+
+| Asked | Tools used | Result |
+|---|---|---|
+| "Give me the yield by product." | none | **A real table of real products** |
+| The Factory Operations deck prompt | code_execution | **An invented dashboard, "illustrative sample values"** |
+| "How many lots are currently in WIP?" | code_execution | "no live production data connected to this session" |
+
+### Two defects, root causes, and the fixes
+
+**1. A dashboard request from a user without the permission fabricated one.**
+`canCreateDashboards` sat *inside* the match condition, so a denied dashboard
+came back `undefined` — indistinguishable from "not a dashboard request" — and
+the turn fell through to ordinary chat. The system prompt's `<artifacts>` block
+is a long, emphatic instruction to build the thing when asked and says nothing
+about data, so the model built one and invented the figures. The prompt's
+"NEVER fabricate data" rule already existed; it lost to the more specific
+instruction. **Fixed:** match first, check permission second, refuse with 403
+before the model is called.
+
+**2. A metric ask whose data source was down answered from general knowledge.**
+`buildMetricBrief` ended in a bare `catch { return null }`, and `null` also
+meant "no metric was asked for". **Fixed:** a discriminated result; the route
+refuses the turn rather than guessing.
+
+**And a third case that is neither:** an ordinary question on an account with no
+connected tools. Nothing detected it. **Fixed** by stating the absence on the
+user's message — the same mechanism the glossary and the metric brief already
+use — naming the artifact case explicitly, while still permitting ordinary
+answers to questions that need no plant data.
+
+### The matcher had two false positives, found by measuring it
+
+`"Give me cycle time by step."` and `"Which equipment is running?"` each
+returned the **whole Factory Operations dashboard**. Both won on precision
+alone: three common fab words that happen to appear in a long deck prompt,
+covering 20% and 13% of it. This mattered more after fix 1 — a matched
+dashboard is now *refused* rather than quietly ignored, so an ordinary question
+about cycle time would have been answered with a permission error.
+
+**Fixed:** precision counts only when the user named the dashboard ("lot
+history") or said enough to be editing a deck prompt. Measured: a full prompt
+carries 15 content words, a heavily edited one 8, these two 3. The floor is 6.
+All seven deck prompts and an edited one still route.
+
+### Coverage: where wording still decides the answer
+
+Measured across 21 realistic phrasings. Deterministic routing covers **three
+metrics and seven dashboards**; everything else needs MCP tools.
+
+Fixed: the ask verbs missed "how is" / "how are", so *"What is the OEE?"*
+returned real figures while *"How are we doing on OEE?"* returned nothing.
+Inflections ("scrapped") now match too.
+
+**Not fixed, deliberately:** *"Which products are scrapping the most?"* is still
+missed. Adding "which" to the verb list fires on *"I'm not sure which column the
+yield is in"*, which would answer a spreadsheet question with a factory-wide
+yield table. The limit is recorded in a test rather than left to be
+rediscovered.
+
+**Uncovered intents** — WIP, lots on hold, equipment status, throughput,
+downtime, cycle time — have no deterministic path and no fixed SQL behind them.
+Adding one is real product work, not a routing tweak, and is **not** done here.
+
+### Observability
+
+`X-FabOrch-Route` on every response, one of `metric` | `dashboard` |
+`dashboard-denied` | `metric-unavailable` | `mcp` | `no-data`, plus a log line.
+The prose never said whether an answer was grounded; this does. The PWA proxy
+forwards it — one line, and the only PWA change in this work.
+
+### Where this sits, and what is *not* verified
+
+The platform changes are committed to **`fix/grounded-routing` in the
+FabOrchestrator clone** (`LLM-AT-SCALE/FabOrchestrator_product_code`), **not
+pushed and not deployed** — that repository is not ours to push to
+unilaterally.
+
+- **Verified:** 21 new tests, full typecheck clean (0 errors before and after),
+  lint clean, and the existing errors/validation suites still at 35 and 17.
+- **Verified live:** the *current* broken behaviour, before the change.
+- **Not verified live:** the fixed behaviour. It needs an FabOrchestrator
+  deployment carrying the branch. Until then the fixes are proven by test and by
+  source, not by observation.
+
+The PWA's own change — forwarding the header — is verified live: answers still
+stream (first byte 1.2 s) and the header is correctly absent against today's
+platform.
 
 ---
 

@@ -1,6 +1,6 @@
 # FabOrchestrator PWA — Product Requirements
 
-**Version 1.2 · 2 September 2026**
+**Version 1.3 · 3 September 2026**
 
 This document says **what the product is and how it should behave**. It does not
 say how to build it — that is the engineering plan in `docs/planning/`, and
@@ -330,12 +330,40 @@ transcript.**
 logic, no SQL and no model call. It passes the question to FabOrchestrator with
 the data connections that person is entitled to, and renders what comes back.
 
-**CONFIRMED — The platform only queries the data connections explicitly enabled
-for that user.** With none enabled it still answers, from general knowledge.
+**CONFIRMED — The platform routes a question three ways before the model is
+called, and only one of them uses the user's data connections.** Verified in
+source at upstream `e5a5abd` and measured against the live deployment,
+3 September:
 
-**PROPOSED — The app must detect that state and say so.** An answer from general
-knowledge presented as a plant answer is worse than no answer: it looks like a
-wrong number rather than a missing permission. *Not yet built.*
+| Path | Reached when | Data source |
+|---|---|---|
+| Metric brief | the question asks for yield, scrap or OEE | **A direct database connection, server-side.** Not MCP |
+| Curated dashboard | the question matches one of seven deck prompts | The same direct connection |
+| Tool loop | everything else | The caller's MCP connections |
+
+*Correction, 3 September: version 1.2 of this document said the platform only
+queries the connections enabled for that user, and that with none enabled it
+answers from general knowledge. That is true of the third path only. On the
+first two the platform reads the factory database directly, which is why "give
+me the yield by product" returns real figures on an account with zero data
+connections.*
+
+**CONFIRMED — The app must never present an ungrounded answer as a plant
+answer.** An answer from general knowledge shown as a plant answer is worse than
+no answer: it looks like a wrong number rather than a missing permission.
+
+*This was PROPOSED and unbuilt. It is now confirmed by a defect: asked for a
+dashboard by a user without the dashboard permission, the platform built one and
+filled it with figures it labelled "illustrative sample values". Fixed in the
+platform — written and tested, not yet deployed — by refusing the request
+instead of falling through to the model, and by stating the absence of a data
+source on the turn.*
+
+**OPEN QUESTION — Should the PWA lean on the metric path deliberately?** It is
+the only route that answers plant questions today without an administrator, so
+it is the shortest path to a real demonstration. Doing so means shaping the
+demo around the phrasings it recognises, which is a product choice about what
+the app promises.
 
 **PROPOSED — Tables must be readable on a phone**, scrolling inside their own
 container rather than making the page scroll sideways.
@@ -466,18 +494,28 @@ The product is right when all of these are true and demonstrable.
 
 ## 16. Dependencies and blockers
 
-**BLOCKER — The demonstration account has no data connections.** Verified 1
-September: zero connected, zero visible. Plant questions are answered from
-general knowledge. **Blocks acceptance criteria 10 and 13 entirely** — the
-criteria the business case rests on. Cleared by a FabOrchestrator administrator
-assigning MCP connections to that account's role. *Nothing in engineering can
-work around this.*
+**BLOCKER — The demonstration account has no MCP data connections.** Verified 1
+September: zero connected, zero visible.
+
+*Narrowed 3 September.* This blocks the **tool path only**. Metric questions —
+yield, scrap, OEE — are answered from real plant data today on this account,
+through a direct database connection that does not use MCP at all. What stays
+blocked is every other plant question: WIP, lots on hold, equipment status,
+throughput, downtime. Cleared by a FabOrchestrator administrator assigning MCP
+connections to that account's role.
 
 **DEPENDENCY — Physical devices.** One iPhone and one Android handset are needed
 to accept criterion 9. iOS install behaviour cannot be verified any other way.
 
 **DEPENDENCY — A reachable deployment** for anything demonstrated from a URL
 rather than a laptop.
+
+**BLOCKER — The platform fixes are not deployed.** The two data-integrity
+defects found on 3 September are fixed on a branch in the FabOrchestrator
+repository, with 21 tests, a clean typecheck and a clean lint — but that
+repository belongs to another team and the branch is neither pushed nor
+released. Until it is, a demonstration can still produce an invented
+dashboard.
 
 **NOT A BLOCKER — A database.** Previously believed necessary for revocable
 sessions; resolved without one.
@@ -602,6 +640,16 @@ deliberately left. Recorded so it is not mistaken for an oversight.
 8. Is the **first audience a supervisor or a demonstration**? Several choices
    above depend on it. *(§2)*
 9. Which **devices** must be supported? *(§11)*
+
+5. Should the **metric path be leaned on deliberately** for the demonstration?
+   It is the only route that answers plant questions without an administrator.
+   *(§10)*
+6. Should the demonstration account be made a **dashboard administrator**, or
+   should dashboards stay out of the PWA's demo? Without the permission a
+   dashboard request is now refused — correct, but it is a visible "no".
+   *(§10)*
+7. **Who ships the FabOrchestrator fix?** It is written and tested but sits in
+   another team's repository. *(§16)*
 
 **For an administrator, not a product question**
 

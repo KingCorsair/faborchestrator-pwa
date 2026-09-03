@@ -148,7 +148,7 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
       <div><b>Upstream</b> <span class="fp">LLM-AT-SCALE/FabOrchestrator_product_code</span></div>
       <div><b>Client repo</b> <span class="fp">progressive_web_app_demo/</span></div>
       <div><b>Inspected</b> 2026-08-29</div>
-      <div><b>Amended</b> 2026-09-02 &mdash; see &sect;00a</div>
+      <div><b>Amended</b> 2026-09-02, 2026-09-03 &mdash; see &sect;00a</div>
       <div><b>Status</b> Amended; §05–§07 superseded in part</div>
     </div>
   </div>
@@ -255,6 +255,65 @@ hr{border:0;border-top:1px solid var(--rule);margin:34px 0}
   half of the permission driver is moot. <b>The finish stays in week 5</b> &mdash; 22.0 days is 4.4
   weeks &mdash; so the saving is margin before that date, not an earlier one. Phase 2 moves from
   week 3 to week 2.</p>
+
+  <h3>Amendment 2 &mdash; 3 September 2026: FabInsight is not what &sect;01 says it is</h3>
+
+  <div class="callout warn">
+    <p><b>Two claims in this plan are wrong</b>, and they were load-bearing:</p>
+    <ul>
+      <li><b>&sect;01:</b> &ldquo;FabInsight has <b>no code of its own</b>. It is a card that
+        opens <span class="fp">/chat</span>.&rdquo;</li>
+      <li><b>&sect;12 / WP8:</b> &ldquo;There is <b>no metric detection and no query
+        planner</b>. The model reads the topic guide, writes T-SQL itself.&rdquo;</li>
+    </ul>
+    <p>There is a <b>5,033-line <span class="fp">lib/fabinsight/</span> subsystem</b> &mdash;
+    catalog, metrics, dashboards, alerts, renderer, SQL guard, scheduler &mdash; and
+    <span class="fp">/api/chat</span> routes a turn three ways <em>before the model is
+    called</em>. Both claims describe only the third path.</p>
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr><th style="width:20%">Path</th><th style="width:40%">Reached when</th><th>Data source</th></tr></thead>
+    <tbody>
+      <tr><td><b>Metric brief</b></td>
+        <td><span class="fp">detectMetricAsk()</span> &mdash; an ask verb within 40 characters
+        of yield / scrap / OEE</td>
+        <td><b>A direct SQL Server connection</b> (<span class="fp">lib/fabinsight/mcp.ts</span>
+        &rarr; <span class="fp">mssql</span>), server-side credentials. <b>Not MCP</b>, despite
+        the file name</td></tr>
+      <tr><td><b>Curated dashboard</b></td>
+        <td><span class="fp">matchDashboard()</span> &mdash; scored vocabulary match against
+        seven deck prompts; admin-gated</td>
+        <td>The same direct connection, plus a pre-rendered artifact</td></tr>
+      <tr><td><b>Tool loop</b></td><td>everything else</td>
+        <td>The caller&rsquo;s MCP connections &mdash; the only path this plan described</td></tr>
+    </tbody>
+  </table></div>
+
+  <p><b>The consequence for &sect;19 and for the demonstration:</b> the contingency driver
+  &ldquo;plant data availability&rdquo; is narrower than recorded. Measured live on 3 September,
+  on the demonstration account with <em>zero</em> MCP connections, <span class="fp">&ldquo;Give
+  me the yield by product&rdquo;</span> returned a real table of real products. The missing
+  connections block WIP, lots, equipment status, throughput and downtime &mdash; not yield,
+  scrap or OEE.</p>
+
+  <div class="callout warn">
+    <h3>And two data-integrity defects, now fixed on a branch</h3>
+    <p><b>A dashboard request from a user without the permission fabricated one.</b> The
+    permission check sat inside the match condition, so a refusal was indistinguishable from
+    &ldquo;not a dashboard request&rdquo; and the turn fell through to ordinary chat &mdash;
+    where the <span class="fp">&lt;artifacts&gt;</span> block told the model to build the thing
+    it had been asked for. It did, and labelled the numbers &ldquo;illustrative sample
+    values&rdquo;. The system prompt&rsquo;s &ldquo;NEVER fabricate data&rdquo; rule already
+    existed and lost to the more specific instruction.</p>
+    <p><b>A metric ask whose data source was down answered from general knowledge.</b>
+    <span class="fp">buildMetricBrief</span> ended in a bare <span class="fp">catch { return
+    null }</span>, and null also meant &ldquo;no metric was asked for&rdquo;.</p>
+    <p>Both are fixed on <span class="fp">fix/grounded-routing</span> in the FabOrchestrator
+    repository, with 21 tests, a clean typecheck and a clean lint &mdash; <b>not pushed and not
+    deployed</b>. That repository belongs to another team. Until it ships, a demonstration can
+    still produce an invented dashboard.</p>
+  </div>
 
   <div class="callout">
     <h3>Still outstanding, and not an engineering problem</h3>

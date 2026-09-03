@@ -19,6 +19,17 @@ changing *how* it is built.
 artifact. As with the planning documents, the markdown here is canonical: when a
 product decision changes, it changes in `PRD.md` first.
 
+## FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md
+
+**Four defects found in FabOrchestrator itself**, in the routing `/api/chat`
+performs before the model is called: a dashboard request without permission that
+fabricated a dashboard, plant questions falling back to general knowledge,
+matcher false positives, and phrasing sensitivity. Records root cause, evidence,
+the local fix and what was *not* verified.
+
+Fixes exist on a local branch in the FabOrchestrator clone. **Nothing is pushed**
+— that repository belongs to another team.
+
 ## STATUS.md
 
 **Start here.** Where the project stands, what is proved and how, what is left,

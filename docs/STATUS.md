@@ -267,11 +267,26 @@ make by accident inside a work package.
 
 | WP | What | Days | State |
 |---|---|---|---|
-| WP1 | Mobile app foundation — install to home screen, one-handed layouts | 1.5 | **Unblocked** |
+| WP1 | Mobile app foundation — install to home screen, one-handed layouts | 1.5 | **Built; device acceptance outstanding** |
 | WP8 | Live plant data answers — connection resolution, readable tables | 1.5 | **Partly unblocked** |
 
-WP1 has no outstanding dependency; only its final acceptance needs a physical
-handset. WP8 was recorded as blocked outright, which was wrong: the metric path
+**WP1 is built and measured.** `docs/probes/2026-09-03-wp1-mobile-audit.md`:
+16/16 at 360×640 and 390×844, with touch emulation so the app's own
+coarse-pointer rules actually apply. Two real defects were found and fixed —
+the section nav scrolled the whole page sideways (five pills, 561px wide, at a
+360px viewport), and the composer sat 916px down a 640px screen because the
+shell was `min-h-full` rather than a definite height.
+
+A third finding was an artefact of the measurement, not a defect: six
+"undersized" tap targets were correctly sized all along, because the app's 44px
+minimum sits behind `@media (pointer: coarse)` and a headless context reports a
+*fine* pointer. The first run had been measuring a desktop that will never
+exist. Two of the seven were real and are fixed.
+
+Only its **final acceptance needs a physical handset** — iOS install behaviour
+cannot be verified any other way.
+
+WP8 was recorded as blocked outright, which was wrong: the metric path
 returns real yield, scrap and OEE figures on this account today, so the table
 rendering and the no-data guard can both be built and demonstrated now. What
 stays blocked is the MCP half — WIP, lots, equipment, throughput, downtime.

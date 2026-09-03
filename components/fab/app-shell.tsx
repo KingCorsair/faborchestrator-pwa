@@ -37,7 +37,16 @@ export function AppShell({
   const minutesLeft = useSessionMinutes(sessionExpiresAt ?? null);
 
   return (
-    <div className="fab flex min-h-full flex-col">
+    // `h-dvh`, not `min-h-full`. The conversation screen is `h-full` with its
+    // own scrolling pane and a docked composer, and `h-full` only resolves
+    // against a parent with a DEFINITE height. Under `min-h-full` the shell
+    // grew with the answer instead, so the composer sat below the fold —
+    // measured at 916px down a 640px screen, i.e. you had to scroll the whole
+    // page to type. `dvh` rather than `vh` because a phone's URL bar changes
+    // the viewport as you scroll, and `vh` would leave the composer under it.
+    // Safe because this shell wraps the agent conversation and nothing else:
+    // the landing page and diagnostics carry their own layout.
+    <div className="fab flex h-dvh flex-col">
       {minutesLeft != null ? (
         <div
           role="status"
@@ -71,7 +80,7 @@ export function AppShell({
         <Link
           href="/"
           aria-label="FabOrchestrator home"
-          className="flex flex-none no-underline"
+          className="flex flex-none items-center no-underline min-h-[44px]"
         >
           <BrandLockup size="nav" />
         </Link>
@@ -80,9 +89,19 @@ export function AppShell({
             only section and the brand lockup already went there; with a second
             section, hiding it puts Activity out of reach on exactly the device
             this app is built for. `order-last` drops it to its own row on a
-            narrow screen rather than squeezing the user block off the edge. */}
+            narrow screen rather than squeezing the user block off the edge.
+
+            **It scrolls sideways inside itself rather than widening the page.**
+            Five pills measure 561px; at 360px that made the whole document
+            scroll horizontally, which is the one thing the mobile rule forbids
+            — a supervisor swiping to read an answer would drag the page instead.
+            The strip is the same pattern the answer's tables already use: the
+            wide thing scrolls in its own box. `fab-nav-strip` hides the
+            scrollbar, since a visible one on a 38px-tall row is more noise than
+            affordance, and the pills are ordered so the two that open come
+            first and are never the ones off the edge. */}
         <nav
-          className="order-last flex w-full items-center gap-1.5 sm:order-none sm:ml-3 sm:w-auto"
+          className="fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto sm:order-none sm:ml-3 sm:w-auto sm:overflow-visible"
           aria-label="Sections"
         >
           {NAV.map((item) => {
@@ -100,7 +119,7 @@ export function AppShell({
                   key={item.href}
                   title={item.unavailable}
                   aria-disabled="true"
-                  className="flex cursor-not-allowed items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold transition-colors"
+                  className="flex flex-none cursor-not-allowed items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold transition-colors"
                   style={{
                     borderRadius: "var(--r-chip)",
                     background: "transparent",
@@ -123,7 +142,7 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold no-underline transition-colors"
+                className="flex flex-none items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold no-underline transition-colors"
                 style={{
                   borderRadius: "var(--r-chip)",
                   background: active ? "var(--nav-active)" : "transparent",

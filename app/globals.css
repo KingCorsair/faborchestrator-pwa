@@ -115,6 +115,19 @@ body {
 /* `pointer: coarse` on its own misses a touchscreen laptop or a Surface: those
    report a *fine* pointer because a trackpad is attached, while still being
    poked with a gloved thumb on the shop floor. `hover: none` catches them. */
+/* The section nav scrolls rather than widening the page (see `app-shell.tsx`).
+   A scrollbar across a 38px-tall pill row reads as damage rather than as an
+   affordance, and the row is short enough that the cut-off pill is its own
+   signal. */
+.fab-nav-strip {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.fab-nav-strip::-webkit-scrollbar {
+  display: none;
+}
+
 @media (pointer: coarse), (hover: none) {
   /* The 44px minimum below grows the nav's control row from 34px, and with it
      the header that the decision dock and the review panel sit beneath. */
@@ -134,6 +147,17 @@ body {
   .fab button,
   .fab [role="button"] {
     min-width: 44px;
+  }
+
+  /* A link that is really a control. The rule above covers `.fab nav a`, but
+     the landing page's ask chips and agent cards are links outside any nav and
+     measured 37px. Deliberately NOT `.fab a`: an inline link inside a rendered
+     answer is prose, and giving every one of them a 44px box would space the
+     paragraph out for no reason. */
+  .fab .fab-card-link {
+    align-items: center;
+    display: inline-flex;
+    min-height: 44px;
   }
 
   /*

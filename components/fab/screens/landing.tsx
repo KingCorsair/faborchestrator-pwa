@@ -90,7 +90,7 @@ function CockpitNav() {
       className="sticky top-0 z-20 flex items-center gap-1.5 px-4 py-[14px] sm:px-[26px]"
       style={{ background: "var(--pure-white)", borderBottom: "1px solid var(--border-light)" }}
     >
-      <Link href="/" aria-label="FabOrchestrator home" className="mr-[22px] flex no-underline">
+      <Link href="/" aria-label="FabOrchestrator home" className="mr-[22px] flex min-h-[44px] items-center no-underline">
         <BrandLockup size="nav" />
       </Link>
 

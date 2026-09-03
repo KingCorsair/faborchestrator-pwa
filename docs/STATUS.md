@@ -328,8 +328,7 @@ make by accident inside a work package.
 
 **Phase 3 is closed.** Both packages are done, and the capability the business
 case rests on — a real plant question answered from real MES data on an
-installed phone — works end to end. **Phase 4 is next: WP9 (dashboards and
-artifacts, 3.0 d) and WP10 (progress and failure handling, 2.0 d).**
+installed phone — works end to end.
 
 **WP1 is built and measured.** `docs/probes/2026-09-03-wp1-mobile-audit.md`:
 16/16 at 360×640 and 390×844, with touch emulation so the app's own
@@ -357,8 +356,44 @@ the half that works. Wide tables now pin their first column, because a
 seven-column yield table at 360px put the figures off-screen and scrolling to
 reach them lost the product name.
 
-Phase 4 (dashboards, progress, failure handling) and Phase 5 (tests, device
-validation, security review, handover) follow.
+---
+
+### Phase 4 — half built
+
+| WP | What | Days | State |
+|---|---|---|---|
+| WP10 | Progress, loading & error handling | 2.0 | **Done.** 29 tests; three states seen in sequence in a browser |
+| WP9 | Dashboards & artifacts — parse `<antArtifact>`, render sandboxed | 3.0 | **Next** |
+
+**WP10 is done.** Three progress states, one error table with a next step per
+code, `errorId` copyable, and a 45-second stall watchdog that warns without
+ending the turn. Evidence is in the table above and in
+`scripts/progress-states-check.mjs`.
+
+**WP9 is what remains, and it is the last build package in the plan.** Today an
+artifact answer shows its raw `<antArtifact>` markup as text on the screen,
+which reads as a broken product rather than a missing feature — it is the most
+visible remaining gap, and the only one a viewer would notice unprompted.
+
+Two things about it are already settled rather than open:
+
+- **The sandbox.** `/reports` renders FabOrchestrator's pinned dashboards with
+  `sandbox="allow-scripts"` and deliberately **without** `allow-same-origin`,
+  because the two together cancel the sandbox. FO's own page uses both; this app
+  must not, since it holds an httpOnly FO token. WP9 inherits that.
+- **The fallback.** The plan's own rule: an artifact that will not parse shows a
+  placeholder and its source, never a blank rectangle.
+
+**It also has a dependency nobody owns yet.** WP9 renders artifacts; the
+unshipped FabOrchestrator fix is about artifacts *full of invented figures*. The
+better WP9 gets, the more convincing a fabricated dashboard becomes — so the
+grounding fix wants shipping alongside it, not after it. See "Blocked on someone
+else".
+
+### Phase 5 — not started
+
+Tests, device validation, security review, handover. No build work; it is the
+evidence pass over what Phases 0–4 produced.
 
 ---
 

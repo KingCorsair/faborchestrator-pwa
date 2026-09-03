@@ -27,11 +27,9 @@ deliberately **without** `allow-same-origin` — the two together cancel the
 sandbox, which is what FO's own page does and what this app must not. WP9
 reuses that rather than reopening it.
 
-**The deployment is one commit behind.** `518da7d` shipped at 09:24 on
-3 September and everything in "The live deployment" below was verified against
-`https://faborch-demo.fly.dev` itself. WP10 landed after it, so the progress
-states and the error table are not on that URL yet:
-`flyctl deploy --ha=false --app faborch-demo`.
+**The deployment is current**, and deploying found a defect that every local
+check had missed — see "Sign-in could silently do nothing" below. WP10 is live
+and verified on the URL itself.
 
 **One thing is waiting on someone else, and it does not block WP9:**
 
@@ -109,7 +107,7 @@ is expanded, with evidence, further down.
   "answering", instead of one spinner that means all three. Every failure says
   what to do next, and offers to try again only where trying again can work.
   If nothing arrives for 45 seconds it says so rather than spinning silently.
-- **240 automated tests pass** here, and 21 more on the platform side. They run
+- **249 automated tests pass** here, and 21 more on the platform side. They run
   without a network.
 
 **Pending**
@@ -163,7 +161,7 @@ catching up with two decisions.
 | **Reports** Read-only pinned dashboards | 14 tests + `scripts/reports-live-check.mjs`, 9/9 live: 10 real dashboards read on a non-admin account, every management verb refused, and reading provably does not overwrite the shared snapshot |
 | Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened; the platform capability list is gone |
 
-**240 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
+**249 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
 
 ### What "proved" bought us
 
@@ -397,11 +395,53 @@ evidence pass over what Phases 0–4 produced.
 
 ---
 
+## Sign-in could silently do nothing, and only the deployment showed it
+
+Deploying WP10 broke sign-in on the deployed URL while every local check
+passed. Worth recording in full, because the shape of it matters more than the
+fix.
+
+**The defect.** The credential fields were controlled inputs bound to React
+state that does not exist until hydration. The page is server-rendered, so it
+paints and accepts typing before that — and on hydration React reconciles each
+field to its empty state and **erases what was typed**. The fields are also
+`required`, so the next press is blocked by native validation, which fires no
+submit event and shows nothing the page can report. Sign-in did nothing at all:
+no request, no error, no change on screen.
+
+**Why local testing could never find it.** The window is the gap between paint
+and hydration. On localhost it is too narrow to hit. On Fly, across the public
+internet to Singapore, it is wide enough to hit by hand — and a phone on
+fab-floor signal is wider still, which is this app's entire target.
+
+**Three attempts, because the first two fixed symptoms.**
+
+| Attempt | What it addressed | Why it was not enough |
+|---|---|---|
+| Read `FormData` at submit | State was empty while the field showed text | React had already wiped the DOM too |
+| Adopt the value in an effect | Keep what was typed | Effects run *after* React commits the reset |
+| **Uncontrolled fields** | React never touches the value | — |
+
+The second attempt also **introduced a worse bug than the one it fixed**: naming
+the fields made the form natively submittable, and a pre-hydration press did a
+native GET, putting `?email=…&password=…` in the address bar. Caught on the next
+deploy by the same check. Two guards remain from it and are still right — the
+submit button waits for hydration, and the form is `method="post"` so anything
+that escapes carries the credential in a body rather than a URL.
+
+**Verified on the deployment:** typing immediately on `domcontentloaded`
+survives hydration, and sign-in completes. `scripts/hydration-typing-check.mjs`.
+
+**Note for whoever owns the demo account:** the probe credential appeared in a
+URL during these checks, so it is in the Fly request logs. It is the shared demo
+account rather than a personal one, but it should be rotated.
+
+---
+
 ## The live deployment
 
-**`https://faborch-demo.fly.dev`** — image
-`faborch-demo:deployment-01M1K999F05FC9SZ0SGGA3DZVN`, commit `518da7d`,
-deployed 3 September 09:24, one machine in `sin`, `started`.
+**`https://faborch-demo.fly.dev`** — commit `67043fd`, deployed 3 September,
+one machine in `sin`, `started`. Carries every work package through WP10.
 
 Verified against the deployed URL after shipping, not against a local server:
 
@@ -415,6 +455,8 @@ Verified against the deployed URL after shipping, not against a local server:
 | Plant data, tool path | *"How many lots are currently in WIP?"* → **238 lots**, 8 MCP calls |
 | Plant data, tool path | *"Which equipment is running right now?"* → **5 running of 39 tracked**, as a table |
 | Plant data, metric path | *"Give me the yield by product."* → a real product table, no tools |
+| **WP10 progress states** | 6/6. Observed in order on the deployed URL: *Sent to FabOrchestrator…* → four *is running `mcp_…`* lines → *Answering…* |
+| **Sign-in under a slow hydration** | Typing on `domcontentloaded` survives; sign-in completes |
 
 The two figures moved between the localhost run an hour earlier (237 lots, 7
 tools) and this one (238, 5). That is not a discrepancy — it is what live plant
@@ -607,7 +649,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 240 tests, no network needed
+npm test                          # 249 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 ```

@@ -1,6 +1,6 @@
 # FabOrchestrator PWA — Product Requirements
 
-**Version 1.0 · 1 September 2026**
+**Version 1.1 · 2 September 2026**
 
 This document says **what the product is and how it should behave**. It does not
 say how to build it — that is the engineering plan in `docs/planning/`, and
@@ -264,7 +264,8 @@ text reads as a broken app. *Proven through the live hosting chain.*
 **CONFIRMED — Follow-up questions keep their context.**
 
 **PROPOSED — A turn can be stopped mid-answer, and what already arrived is
-kept.**
+kept.** *Built and proven in a browser against the live platform, 2 September.
+Still proposed: nobody outside the engineering work has agreed it.*
 
 **PROPOSED — Tool activity is visible in plain language** — the app says the
 platform is looking something up, without exposing internals.
@@ -274,9 +275,21 @@ lives only as long as the screen is open; closing the app loses it. The platform
 has its own conversation history the app does not currently use. Persisting
 raises questions about where history lives and who can see it.
 
-**OPEN QUESTION — What happens to a very long conversation?** The app sends the
-whole thread each turn, with a cap. Beyond it, the beginning is silently lost.
-Silent truncation, an explicit warning, or a fresh thread?
+**OPEN QUESTION — What should happen to a very long conversation?** The app
+sends the whole thread each turn, and FabOrchestrator's route accepts at most
+**100 messages of 20,000 characters**.
+
+*Correction, 2 September: version 1.0 of this document said the beginning was
+silently lost beyond the cap. That was wrong. Nothing in the app truncates
+anything — the thread simply exceeded what the route accepts, and the request
+failed with the validation library's own wording, identically on every retry.*
+
+As of 2 September the app stops at the limit, says the conversation is full and
+offers a new one, which is a fix to a defect rather than an answer to this
+question. **Still undecided:** whether a long conversation should instead drop
+its oldest turns, warn before it reaches the limit, or continue to require a
+fresh thread. Silently dropping the start of somebody's conversation is a
+product decision, not an implementation detail.
 
 **OUT OF SCOPE — Editing or deleting past messages, branching, sharing a
 transcript.**

@@ -1,6 +1,6 @@
 # Where this project stands
 
-**As of 1 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
+**As of 2 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
@@ -9,7 +9,7 @@ file is wrong and should be corrected.
 
 ---
 
-## Update in plain English — 1 September 2026
+## Update in plain English — 2 September 2026
 
 For sending to Jothi or anyone else who wants the short version. Everything here
 is expanded, with evidence, further down.
@@ -32,12 +32,20 @@ is expanded, with evidence, further down.
 - **Signing out now really signs you out.** It ends the session on
   FabOrchestrator itself, not just on the phone. Checked against the live
   system: the same credential works before, and is refused after.
-- **151 automated tests pass.** They run without a network.
+- **Conversations are finished work.** You can ask, read, ask a follow-up,
+  stop an answer half-way and carry on. Stopping keeps what had already
+  arrived. Checked in a real browser against the live system.
+- **A long conversation no longer breaks in a way nobody could read.** It used
+  to fail with a programmer's error message and stay broken. It now says it is
+  full and offers a fresh one.
+- **174 automated tests pass.** They run without a network.
 
 **Pending**
 
 - Next: asking from the front page, with the system picking the right agent —
-  the behaviour Jothi confirmed he wanted.
+  the behaviour Jothi confirmed he wanted. **Waiting on a decision first**: if
+  the Master Data Load Agent does not belong in the phone app, every remaining
+  agent is the same service and there is nothing to route between.
 - After that: installing on a phone, and answering from real plant data.
 - Nothing security-related is outstanding: sign-out now genuinely cancels the
   app's session, and it turned out no database was needed for it.
@@ -77,9 +85,10 @@ connections, so plant questions cannot be answered from plant data.
 | **WP2** Sign-in & session security | **Complete.** 20 cookie/revocation tests + 15 identity and sign-out tests. FabOrchestrator is the only identity, the two expiry clocks are reconciled, and sign-out revokes on both sides |
 | **WP4** Secure connector | 15 tests against a stubbed FabOrchestrator, so the suite runs with no network |
 | **M1 / B1** Architecture proven end to end | `docs/probes/2026-09-01-e1-report.md` — 5/5 against the live CloudFront deployment: sign-in, token httpOnly and absent from the body, a real answer through the proxy, **13 network arrivals over 2.6 s** (progressive, not buffered), sign-out dropping the cookie |
+| **WP5** Conversation handling | **Complete.** 23 tests on the conversation rules, plus a live browser run of the acceptance line — ask, read, follow up, stop, ask again — 10/10 against the live platform |
 | Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit |
 
-**151 tests, all passing.** Typecheck and lint clean. Production build compiles.
+**174 tests, all passing.** Typecheck and lint clean. Production build compiles.
 
 ### What "proved" bought us
 
@@ -140,48 +149,68 @@ a token FO validates on every call — so an admin action lands on the next
 request as a 401, which the proxy already handles by clearing the cookie and
 asking for a fresh sign-in.
 
-### Phase 2 — the next build step, nothing blocking it
+### Phase 2 — WP5 done; the other two wait on a product answer
 
-| WP | What | Days |
-|---|---|---|
-| WP5 | Conversation handling — follow-ups in one thread, stop mid-answer | 0.5 |
-| WP7 | Agent menu with the Master Data Load Agent's availability check | 1.0 |
-| WP13 | **Ask-first routing** — type on the landing page, the system picks the agent | 2.0 |
+| WP | What | Days | State |
+|---|---|---|---|
+| WP5 | Conversation handling — follow-ups in one thread, stop mid-answer | 0.5 | **Done** |
+| WP7 | Agent menu with the Master Data Load Agent's availability check | 1.0 | Gated |
+| WP13 | **Ask-first routing** — type on the landing page, the system picks the agent | 2.0 | Gated |
 
-Closes **M2 / B2**. WP7 is smaller than planned now that no non-agent screens
-remain. WP13's routing decision is binary (chat or modeling), because three of
-the four cockpit cards share `/api/chat`.
+Closes **M2 / B2** when all three land. WP7 is smaller than planned now that no
+non-agent screens remain.
 
-### The next work package, in detail — WP5
+**Both remaining packages are gated on Yogita's answer**, not on engineering.
+PRD §18.2: three of the four cockpit cards are the same service, so routing is
+in practice *"is this a master-data request or not?"* If the Master Data Load
+Agent is excluded from the PWA, every exposed agent shares one service and there
+is nothing left to route between — WP13's 2 days would buy nothing, and WP7's
+availability check would have no gated agent to check. Building either before
+the answer risks building the wrong thing.
 
-**Why it is next.** Its dependencies (WP2, WP4, WP6) are done, and it blocks the
-other two: WP7's menu opens conversations, and WP13 carries a typed question
-*into* a conversation thread. Building either first means building against a
-conversation layer that is not finished.
+### WP5, as built
 
-**What already exists** — checked in the code, not assumed.
-`components/fab/screens/agent-chat.tsx` already holds the turn list, sends the
-full history on every turn, and has an `AbortController` behind Stop.
-`lib/validation.ts` already caps the payload at 64 messages of 20,000
-characters.
+**The conversation's rules moved out of React.** `lib/faborch/conversation.ts`
+holds every transition — what a stop keeps, what an empty answer leaves behind,
+when a thread is full — as a reducer. The screen renders what it produces and
+owns the network call. That is what made the layer testable without rendering
+React, which is why it had no tests before.
 
-**What is actually left:**
+- **Stop keeps what arrived.** One rule covers three endings that looked
+  different: a stop, a stream that ended with nothing in it, and a failure
+  part-way through. An assistant turn that received no characters is dropped; one
+  that received something is kept, whatever ended it.
+- **The closure hazard is gone.** `send` no longer closes over `turns`, so it is
+  no longer rebuilt on every token, and the ref the seeding effect needed to work
+  around it went with it. A second guard was added that the old code did not
+  have: two Enters in the same frame both read a `busy` React has not re-rendered
+  yet, so the in-flight check is a ref set before the request rather than state.
+- **A full thread now says so.** See below — the previous behaviour was worse
+  than the plan recorded.
 
-- **No test coverage at all.** The conversation layer is the one part of the
-  FabOrchestrator path with nothing behind it in the suite.
-- **Stop must keep what already arrived.** The acceptance line is explicit:
-  survive interruption *without losing what arrived*. Aborting mid-stream is
-  exactly where partial text gets dropped.
-- **A hazard the code already records.** A comment in `agent-chat.tsx` warns
-  that `send` closes over `turns`, so it is a new function on every token, and
-  calls the seeding effect "delicate". That is the shape of a bug that works in
-  testing and drops a follow-up in a demo.
-- **The 64-message cap needs a decision.** Today a longer conversation is
-  silently truncated rather than refused, so the model quietly loses the
-  beginning of the thread.
+**Verified in a real browser against the live platform**, not only in tests:
+ask, read, follow up *understood in context*, stop mid-answer keeping the partial
+text, ask again afterwards, and no empty bubbles left anywhere. 10/10.
 
-**Done when:** ask, read, follow up, stop, ask again — on each agent, with
-tests.
+#### One plan assumption was wrong, and the truth was worse
+
+The plan said a long conversation is **silently truncated**, losing the
+beginning. **It is not, and never was.** Nothing in this app truncates anything.
+The client posts the whole thread; `FabInsightRequestSchema` caps it at **100
+messages of 20,000 characters** (not 64 — the 64 is the parts-per-message cap),
+and over that the route returns a 400 carrying zod's own words:
+
+> Too big: expected array to have <=100 items
+
+That reached the screen verbatim, and it failed identically on every retry, so
+the thread was dead with no explanation and no way out. A schema library's
+sentence, in a conversation, to a supervisor.
+
+Fixed as a defect, not as a product decision: the limits are now checked before
+the request is made, and the screen says the conversation is full and offers a
+new one. **It still does not truncate** — whether it should is PRD §9, an open
+question, and quietly dropping the start of somebody's thread is not a choice to
+make by accident inside a work package.
 
 ### Phases 3–5 — unchanged
 
@@ -236,7 +265,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 151 tests, no network needed
+npm test                          # 174 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 ```

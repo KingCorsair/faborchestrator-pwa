@@ -20,21 +20,26 @@
  * would be three places for those to drift.
  *
  * That is also why it looks like a chat while CLAUDE.md says "no generic
- * chatbot". The prohibition is against *this demo* growing an AI feature of its
- * own — a second assistant, competing with the deterministic rule layer the
- * product's whole argument rests on. This is the opposite: it is the product's
- * existing agent, reached from the place the product puts it, and the rules and
- * the grounded analysis on `/orders` are untouched beside it.
+ * chatbot". The prohibition is against *this app* growing an AI feature of its
+ * own — a second assistant, competing with the platform it fronts. This is the
+ * opposite: it is the product's existing agent, reached from the place the
+ * product puts it.
+ *
+ * ── Where the conversation's rules live ─────────────────────────────────────
+ * Not here. `lib/faborch/conversation.ts` holds every transition — what a stop
+ * keeps, what an empty answer leaves behind, when a thread is full — as a
+ * reducer, so they can be tested without rendering React. This file renders
+ * what that produces and owns the network call.
  *
  * ── Four states, and each says what to do next ──────────────────────────────
- *  - **no FabOrchestrator session** — signed in with the demo credential, which
- *    opens the order workflow and not this. Offers sign-in.
  *  - **not configured** — nobody set `FABORCH_BASE_URL`. A deployment fault,
  *    named as one, because an operator cannot fix it and should not try.
  *  - **unavailable** — FO is down, or answered with an error of its own (a role
  *    restriction and a daily quota both arrive this way, and both are worth
  *    reading verbatim).
  *  - **expired** — FO dropped the session. Offers sign-in.
+ *  - **full** — the thread has reached the number of messages the route
+ *    accepts. Offers a new conversation, and keeps this one on screen.
  *
  * ── What it deliberately does not have ──────────────────────────────────────
  * No conversation list, no artifacts panel, no file upload, no model picker, no
@@ -47,23 +52,20 @@
 import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUp, Sparkles, Square } from "lucide-react";
+import { ArrowUp, RotateCcw, Sparkles, Square } from "lucide-react";
 import Link from "next/link";
 import { ErrorState } from "@/components/fab/primitives";
 import type { FoAgent } from "@/lib/faborch/agents";
+import type { Failure } from "@/lib/faborch/conversation";
+import {
+  EMPTY_CONVERSATION,
+  capacityFailure,
+  capacityIssue,
+  conversationReducer,
+  historyFor,
+  toFoMessages,
+} from "@/lib/faborch/conversation";
 import { readFoStream } from "@/lib/faborch/stream";
-
-/** One turn, in the shape `/api/faborch/[agent]/chat` accepts and FO understands. */
-interface Turn {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-}
-
-interface Failure {
-  code: string;
-  message: string;
-}
 
 export function AgentChat({
   agent,
@@ -74,28 +76,57 @@ export function AgentChat({
   hasFabOrchSession: boolean;
   initialPrompt?: string;
 }) {
-  const [turns, setTurns] = React.useState<Turn[]>([]);
+  const [state, dispatch] = React.useReducer(conversationReducer, EMPTY_CONVERSATION);
   const [input, setInput] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const [activity, setActivity] = React.useState<string | null>(null);
-  const [failure, setFailure] = React.useState<Failure | null>(null);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
+  /**
+   * The live conversation, readable from a callback that must not be rebuilt.
+   *
+   * `send` needs the turns so far in order to post them. Taking them from
+   * `state` would put `state` in the dependency array and rebuild `send` on
+   * every token — the exact hazard this package was here to remove. A mirror
+   * ref is read at call time instead, so `send` is stable for as long as the
+   * agent is. Written from an effect rather than during render, and declared
+   * first so it is filled before any effect that sends.
+   */
+  const live = React.useRef(state);
+  React.useEffect(() => {
+    live.current = state;
+  }, [state]);
+
+  /**
+   * Whether a turn is already running.
+   *
+   * Separate from `state.busy`, and not derived from it, because the guard has
+   * to hold **within a single tick**: two Enters in the same frame both read a
+   * `busy` that React has not re-rendered yet, and both send. A ref set before
+   * the request is the only version of this check that closes that window.
+   */
+  const inFlight = React.useRef(false);
+
   const send = React.useCallback(
     (text: string) => {
       const prompt = text.trim();
-      if (!prompt || busy || !hasFabOrchSession) return;
+      if (!prompt || inFlight.current || !hasFabOrchSession) return;
 
-      setFailure(null);
-      setInput("");
-      setBusy(true);
-      setActivity(null);
+      // The route enforces these too. Checked here so the wall is visible
+      // before the user walks into it — see `capacityIssue`.
+      const issue = capacityIssue(live.current.turns, prompt);
+      if (issue) {
+        dispatch({ type: "failed", failure: capacityFailure(issue) });
+        return;
+      }
 
-      const history: Turn[] = [...turns, { id: `u-${Date.now()}`, role: "user", text: prompt }];
+      const userId = `u-${Date.now()}`;
       const assistantId = `a-${Date.now()}`;
-      setTurns([...history, { id: assistantId, role: "assistant", text: "" }]);
+      const history = historyFor(live.current.turns, prompt, userId);
+
+      setInput("");
+      inFlight.current = true;
+      dispatch({ type: "ask", prompt, userId, assistantId });
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -111,111 +142,86 @@ export function AgentChat({
             // FO builds the model's context from this array rather than from
             // its own database, so the whole conversation travels and follow-up
             // questions work with no server state on either side.
-            body: JSON.stringify({
-              messages: history.map((turn) => ({
-                role: turn.role,
-                parts: [{ type: "text", text: turn.text }],
-              })),
-            }),
+            body: JSON.stringify({ messages: toFoMessages(history) }),
             signal: controller.signal,
           });
 
           if (!res.ok || !res.body) {
-            const body = (await res.json().catch(() => null)) as Failure | null;
-            setFailure({
-              code: body?.code ?? "faborch_unavailable",
-              message:
-                (body as unknown as { error?: string })?.error ??
-                `${agent.name} could not answer that.`,
+            const body = (await res.json().catch(() => null)) as Partial<Failure> | null;
+            dispatch({
+              type: "failed",
+              failure: {
+                code: body?.code ?? "faborch_unavailable",
+                message:
+                  (body as unknown as { error?: string })?.error ??
+                  `${agent.name} could not answer that.`,
+              },
             });
-            // Drop the empty assistant turn — an empty bubble beside an error
-            // reads as an answer that arrived blank.
-            setTurns(history);
             return;
           }
 
           await readFoStream(res.body, (event) => {
             if (event.type === "text") {
-              setActivity(null);
-              setTurns((current) =>
-                current.map((turn) =>
-                  turn.id === assistantId ? { ...turn, text: turn.text + event.delta } : turn,
-                ),
-              );
+              dispatch({ type: "delta", delta: event.delta });
             } else if (event.type === "tool") {
-              setActivity(event.name);
+              dispatch({ type: "activity", name: event.name });
             } else {
-              setFailure({ code: "faborch_unavailable", message: event.message });
+              // Mid-stream failure. Whatever already arrived is kept — the
+              // reducer decides that, not this callback.
+              dispatch({
+                type: "failed",
+                failure: { code: "faborch_unavailable", message: event.message },
+              });
             }
           });
 
-          // FO answered, but with nothing in it. Rare, and it has happened in
-          // the product when every step of a turn was a tool call: showing an
-          // empty bubble would look like a rendering fault.
-          setTurns((current) =>
-            current.filter((turn) => turn.id !== assistantId || turn.text.trim().length > 0),
-          );
+          dispatch({ type: "settled" });
         } catch (error) {
           if ((error as Error)?.name === "AbortError") {
-            // Stopped on purpose. Whatever streamed so far stays on screen.
-            setTurns((current) =>
-              current.filter((turn) => turn.id !== assistantId || turn.text.trim().length > 0),
-            );
+            dispatch({ type: "stopped" });
             return;
           }
-          setFailure({
-            code: "faborch_unavailable",
-            message: "The connection to FabOrchestrator dropped part-way through the answer.",
+          dispatch({
+            type: "failed",
+            failure: {
+              code: "faborch_unavailable",
+              message: "The connection to FabOrchestrator dropped part-way through the answer.",
+            },
           });
-          setTurns(history);
         } finally {
-          setBusy(false);
-          setActivity(null);
+          inFlight.current = false;
           abortRef.current = null;
         }
       })();
     },
-    [agent, busy, hasFabOrchSession, turns],
+    [agent, hasFabOrchSession],
   );
-
-  /**
-   * `send` closes over `turns`, so it is a new function on every token that
-   * arrives. The seeding effect below must fire **once** — depending on `send`
-   * directly would ask the landing page's question dozens of times — so the
-   * current one is parked in a ref, written from an effect rather than during
-   * render. The two effects run in declaration order, so the ref is filled
-   * before the one that reads it.
-   */
-  const sendRef = React.useRef<(text: string) => void>(() => {});
-  React.useEffect(() => {
-    sendRef.current = send;
-  }, [send]);
 
   /** The prompt typed on the landing page's ask bar, asked on arrival. */
   const seeded = React.useRef(false);
   React.useEffect(() => {
     if (seeded.current || !initialPrompt.trim() || !hasFabOrchSession) return;
     seeded.current = true;
-    sendRef.current(initialPrompt);
-  }, [initialPrompt, hasFabOrchSession]);
+    send(initialPrompt);
+  }, [initialPrompt, hasFabOrchSession, send]);
 
   /** Follow the answer down as it streams, the way the product's chat does. */
   React.useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [turns, activity]);
+  }, [state.turns, state.activity]);
 
-  const empty = turns.length === 0;
+  const empty = state.turns.length === 0;
 
   return (
     <div className="fab flex h-full min-h-0 flex-col" style={{ background: "var(--page-surface)" }}>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <div className="mx-auto flex w-full max-w-[780px] flex-col gap-[18px]">
           {empty ? (
-            <Opening agent={agent} onPick={send} disabled={!hasFabOrchSession || busy} />
+            <Opening agent={agent} onPick={send} disabled={!hasFabOrchSession || state.busy} />
           ) : null}
 
-          {turns.map((turn) =>
+          {state.turns.map((turn) =>
             turn.role === "user" ? (
               <UserTurn key={turn.id} text={turn.text} />
             ) : (
@@ -223,10 +229,15 @@ export function AgentChat({
             ),
           )}
 
-          {busy ? <Working activity={activity} /> : null}
+          {state.busy ? <Working activity={state.activity} /> : null}
 
-          {failure ? <FailureNotice agent={agent} failure={failure} /> : null}
-          {!hasFabOrchSession ? <NoFabOrchSession agent={agent} /> : null}
+          {state.failure ? (
+            <FailureNotice
+              agent={agent}
+              failure={state.failure}
+              onReset={() => dispatch({ type: "reset" })}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -236,7 +247,7 @@ export function AgentChat({
         onChange={setInput}
         onSubmit={() => send(input)}
         onStop={() => abortRef.current?.abort()}
-        busy={busy}
+        busy={state.busy}
         disabled={!hasFabOrchSession}
       />
     </div>
@@ -382,27 +393,6 @@ function Opening({
 }
 
 /**
- * Signed in here, but not to FabOrchestrator.
- *
- * Not an error — the demo credential is a legitimate way to be signed in, and
- * it opens the order workflow. It just cannot reach somebody else's product.
- */
-function NoFabOrchSession({ agent }: { agent: FoAgent }) {
-  return (
-    <SignInCard
-      next={`/${agent.slug}`}
-      title="Sign in with your FabOrchestrator account"
-      body={
-        `${agent.blurb} So it needs your FabOrchestrator credentials, not this ` +
-        "demo’s. The production order workflow is unaffected and stays open on this " +
-        "session."
-      }
-      label="Sign in to FabOrchestrator"
-    />
-  );
-}
-
-/**
  * One card, two reasons to see it: never signed in to FO, or no longer.
  *
  * The link carries only `next`, so signing in returns to this agent. The
@@ -454,7 +444,15 @@ function SignInCard({
  * restriction and a daily token quota both arrive here, and both tell the
  * operator something they can act on that no wording of ours could.
  */
-function FailureNotice({ agent, failure }: { agent: FoAgent; failure: Failure }) {
+function FailureNotice({
+  agent,
+  failure,
+  onReset,
+}: {
+  agent: FoAgent;
+  failure: Failure;
+  onReset: () => void;
+}) {
   if (failure.code === "faborch_session_expired") {
     return (
       <SignInCard
@@ -466,12 +464,48 @@ function FailureNotice({ agent, failure }: { agent: FoAgent; failure: Failure })
     );
   }
 
+  // The two this app raises before calling FO at all. They are not platform
+  // failures and nothing is wrong with the answers above, so the way out is a
+  // fresh thread rather than a retry — offered here, because a notice that
+  // names a dead end without one is the notice that sends somebody looking for
+  // whoever set the demo up.
+  if (failure.code === "conversation_full" || failure.code === "conversation_too_long") {
+    return (
+      <div className="fab-card flex flex-col gap-[10px] px-[20px] py-[18px]">
+        <h2 className="text-[16px]" style={{ color: "var(--text-ink)" }}>
+          This conversation is full
+        </h2>
+        <p
+          className="m-0 max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
+          style={{ color: "var(--text-muted-cool)" }}
+        >
+          {failure.message}
+        </p>
+        <button
+          type="button"
+          onClick={onReset}
+          className="mt-[2px] flex w-fit cursor-pointer items-center gap-[8px] border-0 px-[18px] py-[10px] text-[12px] font-bold text-white"
+          style={{
+            borderRadius: "var(--r-control)",
+            background: "linear-gradient(135deg,var(--brand-indigo),var(--cockpit-indigo))",
+            boxShadow: "var(--shadow-brand)",
+          }}
+        >
+          <RotateCcw size={14} strokeWidth={2.4} aria-hidden="true" />
+          Start a new conversation
+        </button>
+      </div>
+    );
+  }
+
   return (
     <ErrorState
       title={
         failure.code === "not_configured"
           ? `${agent.name} is not connected to a FabOrchestrator`
-          : "FabOrchestrator could not answer"
+          : failure.code === "question_too_long"
+            ? "That question is too long"
+            : "FabOrchestrator could not answer"
       }
       detail={failure.code}
       explanation={failure.message}

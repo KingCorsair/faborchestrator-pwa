@@ -161,9 +161,9 @@ footer b{color:var(--ink-2)}
 
 <header class="mast">
   <div class="in">
-    <div class="eyebrow">Product requirements · version 1.0</div>
+    <div class="eyebrow">Product requirements · version 1.1</div>
     <h1>FabOrchestrator PWA Requirements</h1>
-    <div class="stamp">1 September 2026 · what the product is, not how it is built</div>
+    <div class="stamp">2 September 2026 · what the product is, not how it is built</div>
     <div class="legend">
       <div class="lg confirmed"><span class="k">Confirmed</span><span class="c" data-count="confirmed">–</span></div>
       <div class="lg proposed"><span class="k">Proposed</span><span class="c" data-count="proposed">–</span></div>
@@ -483,6 +483,9 @@ footer b{color:var(--ink-2)}
     </div>
     <div class="stmt proposed"><span class="lab">Proposed</span>
       <p><b>A turn can be stopped mid-answer, and what already arrived is kept.</b></p>
+      <p class="note"><em>Built and proven in a browser against the live platform,
+      2 September. Still proposed: nobody outside the engineering work has agreed
+      it.</em></p>
     </div>
     <div class="stmt proposed"><span class="lab">Proposed</span>
       <p><b>Tool activity is visible in plain language</b> — the app says the platform is
@@ -495,9 +498,20 @@ footer b{color:var(--ink-2)}
       where history lives and who can see it.</p>
     </div>
     <div class="stmt open"><span class="lab">Open question</span>
-      <p><b>What happens to a very long conversation?</b> The app sends the whole thread
-      each turn, with a cap. Beyond it, the beginning is silently lost. Silent truncation,
-      an explicit warning, or a fresh thread?</p>
+      <p><b>What should happen to a very long conversation?</b> The app sends the whole
+      thread each turn, and FabOrchestrator's route accepts at most <b>100 messages of
+      20,000 characters</b>.</p>
+      <p class="note"><em>Correction, 2 September: version 1.0 of this document said the
+      beginning was silently lost beyond the cap. That was wrong. Nothing in the app
+      truncates anything — the thread simply exceeded what the route accepts, and the
+      request failed with the validation library's own wording, identically on every
+      retry.</em></p>
+      <p>As of 2 September the app stops at the limit, says the conversation is full and
+      offers a new one, which is a fix to a defect rather than an answer to this question.
+      <b>Still undecided:</b> whether a long conversation should instead drop its oldest
+      turns, warn before it reaches the limit, or continue to require a fresh thread.
+      Silently dropping the start of somebody's conversation is a product decision, not an
+      implementation detail.</p>
     </div>
     <div class="stmt out"><span class="lab">Out of scope</span>
       <p><b>Editing or deleting past messages, branching, sharing a transcript.</b></p>
@@ -797,7 +811,7 @@ footer b{color:var(--ink-2)}
   </section>
 
   <footer>
-    <b>FabOrchestrator PWA — Product Requirements, version 1.0.</b> This document says what
+    <b>FabOrchestrator PWA — Product Requirements, version 1.1.</b> This document says what
     the product is and how it should behave. It does not say how to build it — that is the
     engineering plan, and progress against it is in <code>docs/STATUS.md</code>. The
     canonical copy is <code>docs/PRD.md</code> in the repository; this page is published from

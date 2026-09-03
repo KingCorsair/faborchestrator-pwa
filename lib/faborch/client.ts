@@ -64,11 +64,44 @@ export class FabOrchRequestError extends Error {
 }
 
 /**
+ * Hosts for which plain HTTP is a development convenience rather than a defect.
+ *
+ * Loopback only, and matched exactly. `localhost.example.com` is a public host
+ * that merely *starts* with the word, so a `startsWith`/`includes` test here
+ * would be a hole big enough to drive a real deployment through.
+ */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/**
  * Where FabOrchestrator is.
  *
  * No default. A localhost fallback would mean a deployment that forgot to set
  * this silently answered from whatever happened to be on :3000, and the failure
  * would surface as strange answers rather than as a missing setting.
+ *
+ * ── The scheme is checked here, and only here ───────────────────────────────
+ * Every call to FabOrchestrator is built from this one value (`fetchFo`), so
+ * this function is the only place the transport can be got wrong. Everything
+ * that crosses this hop is either a credential or plant data: the operator's
+ * FabOrchestrator password on sign-in, their session bearer token on every
+ * subsequent call, and the questions and answers themselves. Over plain HTTP
+ * all of it is readable by anything on the path.
+ *
+ * So **HTTPS is required**, with exactly one exception: a loopback host. That
+ * is the documented local-development setup in `.env.example`
+ * (`http://localhost:3000`, a `claudeai_athena` running on the same machine),
+ * where the traffic never leaves the box and there is no TLS to have.
+ *
+ * The exception is deliberately keyed on the *host*, not on `NODE_ENV`.
+ * `npm start` sets `NODE_ENV=production` for an ordinary local production
+ * build, so keying on it would either break that documented workflow or make
+ * the guard depend on a variable that a deployment can set wrongly. A loopback
+ * address is not reachable from anywhere else by construction, which is a
+ * stronger guarantee than any flag.
+ *
+ * There is no override. An escape hatch for "just this once" is how an
+ * insecure production URL gets introduced, and the failure it produces is
+ * silent — everything works, and the credentials are simply in the clear.
  */
 export function foBaseUrl(): string {
   const value = process.env.FABORCH_BASE_URL?.trim();
@@ -78,6 +111,33 @@ export function foBaseUrl(): string {
         "point this at that app (see .env.example).",
     );
   }
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new FabOrchNotConfiguredError(
+      `FABORCH_BASE_URL is not a valid URL ("${value}"). It needs a scheme and ` +
+        "a host, like https://faborchestrator.example.com.",
+    );
+  }
+
+  if (url.protocol === "http:" && !LOOPBACK_HOSTS.has(url.hostname)) {
+    throw new FabOrchNotConfiguredError(
+      `FABORCH_BASE_URL uses plain HTTP (${url.protocol}//${url.host}). Sign-in ` +
+        "sends a FabOrchestrator password over this connection and every later " +
+        "call carries a session token, so it must be https. Plain http is " +
+        "accepted only for a FabOrchestrator on localhost.",
+    );
+  }
+
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new FabOrchNotConfiguredError(
+      `FABORCH_BASE_URL has an unsupported scheme (${url.protocol}). ` +
+        "FabOrchestrator is reached over https.",
+    );
+  }
+
   return value.replace(/\/+$/, "");
 }
 

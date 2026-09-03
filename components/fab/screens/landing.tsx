@@ -61,9 +61,7 @@ import type { LucideIcon } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
 import { NAV } from "@/components/fab/nav-items";
 import { SignOutLink } from "@/components/fab/sign-out-link";
-import { Label } from "@/components/fab/primitives";
 import { Ask } from "@/components/fab/screens/landing-ask";
-import { PLATFORM_CAPABILITIES } from "@/lib/capabilities";
 
 /* ── The product's cockpit ───────────────────────────────────────────────── */
 
@@ -525,74 +523,6 @@ function FooterStats() {
   );
 }
 
-/* ── This demo's own workflow ────────────────────────────────────────────── */
-
-function ThisDemo() {
-  return (
-    <section className="mt-[58px] flex flex-col gap-[14px]" aria-label="In this demo">
-      <div className="flex flex-col gap-[6px]">
-        <Label as="h2">In this PWA</Label>
-        <p
-          className="m-0 max-w-[var(--measure)] text-[12px] font-normal"
-          style={{ color: "var(--text-subtle)" }}
-        >
-          The agents above are FabOrchestrator&rsquo;s, reached from this app. The
-          capabilities below name what the platform does; they are not screens in this
-          app and are not links.
-        </p>
-      </div>
-
-      <ul className="grid list-none grid-cols-1 gap-[10px] p-0 sm:grid-cols-2 lg:grid-cols-3">
-
-        {PLATFORM_CAPABILITIES.map((capability) => (
-          <CapabilityCard key={capability.id} {...capability} />
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-/**
- * One capability of the wider platform. **Not a link, and it must not become
- * one** — see `lib/capabilities.ts` and its test.
- */
-function CapabilityCard({
-  icon: Icon,
-  title,
-  line,
-}: {
-  icon: LucideIcon;
-  title: string;
-  line: string;
-}) {
-  return (
-    <li className="fab-card flex flex-col gap-[10px] px-[18px] py-[16px] sm:px-[20px] sm:py-[18px]">
-      <span
-        className="grid flex-none place-items-center"
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: "var(--r-control)",
-          background: "var(--cockpit-surface)",
-          color: "var(--text-muted-cool)",
-        }}
-        aria-hidden="true"
-      >
-        <Icon size={17} strokeWidth={2} />
-      </span>
-      <h3 className="text-[16px] leading-[1.3]" style={{ color: "var(--text-ink)" }}>
-        {title}
-      </h3>
-      <p
-        className="m-0 text-[12px] font-normal leading-[1.6]"
-        style={{ color: "var(--text-muted-cool)" }}
-      >
-        {line}
-      </p>
-    </li>
-  );
-}
-
 /* ── The page ────────────────────────────────────────────────────────────── */
 
 export function Landing() {
@@ -608,18 +538,15 @@ export function Landing() {
 
         <Nucleus />
         <FooterStats />
-        <ThisDemo />
 
+        {/* The strapline that sat here named the production order workflow's
+            mock MES, and that workflow was removed on 1 September — so half the
+            sentence had been false for two days. It went with the capability
+            list above it: nothing on this page is a fixture any more, and a
+            "demo environment" note that has to be qualified is worse than none.
+            Every answer on this screen comes from FabOrchestrator, which is
+            what the Nucleus already says. */}
         <div className="mt-[40px] flex flex-wrap items-center gap-x-[10px] gap-y-[6px]">
-          <p className="m-0 text-[12px] font-normal" style={{ color: "var(--text-subtle)" }}>
-            {/* Both halves are true and both matter: the order workflow runs on
-                a fixture, and FabInsight does not — it reaches a real
-                FabOrchestrator. A visitor who read "mock MES data" and then
-                asked FabInsight for the yield would be entitled to think the
-                answer was made up too. */}
-            Demo environment · production orders run on mock MES data · FabInsight answers
-            from the connected FabOrchestrator
-          </p>
           <SignOutLink />
         </div>
       </div>

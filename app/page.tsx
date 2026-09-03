@@ -11,10 +11,14 @@ import { Landing } from "@/components/fab/screens/landing";
  * ── The front door is the platform's, not one workflow's (2026-08-21) ───────
  * This page was headed *Production Order Assistant* until 2026-08-21, which
  * made the one workflow this demo implements look like the entire product.
- * It now opens on FabOrchestrator, lists what the platform does, and offers the
- * production order workflow as its single primary action. The screen is in
- * `components/fab/screens/landing.tsx` and the capability list is in
- * `lib/capabilities.ts`; both carry the reasoning.
+ * It now opens on FabOrchestrator's own cockpit. The screen is in
+ * `components/fab/screens/landing.tsx`, which carries the reasoning.
+ *
+ * Two things this page used to carry are gone. The production order workflow
+ * went on 1 September with its mock MES. The "In this PWA" list of platform
+ * capabilities went on 3 September: it named five things the platform does and
+ * this app does not open, which read as a feature list for a product the
+ * visitor cannot reach from here.
  *
  * ── Synchronous again, as of 2026-08-23 ────────────────────────────────────
  * It was `async` from 2026-08-20 so the front door could open on a real order

@@ -1,6 +1,6 @@
 # FabOrchestrator PWA — Product Requirements
 
-**Version 1.3 · 3 September 2026**
+**Version 1.4 · 3 September 2026**
 
 This document says **what the product is and how it should behave**. It does not
 say how to build it — that is the engineering plan in `docs/planning/`, and
@@ -105,10 +105,19 @@ without choosing anything (see §5).
 **PROPOSED — It also lists the platform's agents as cards**, in the product's own
 numbering and wording, as a direct path for anyone who prefers to choose.
 
-**PROPOSED — It names the platform's wider capabilities without pretending to
-offer them.** Master-data loading, generated dashboards, roles and access
-control, usage and cost tracking, the audit trail. These are stated as facts
-about FabOrchestrator and are **not links** — the app does not open them.
+**CONFIRMED — The landing page does not list the platform's wider capabilities.**
+*Decided 3 September 2026.*
+
+An "In this PWA" section named five things FabOrchestrator does — master-data
+loading, generated dashboards, roles and access control, usage and cost tracking,
+the audit trail — as facts about the platform, deliberately not as links.
+
+The reasoning was honesty: say what the product does without implying this app
+opens it. In practice it read as a feature list, on a phone, for five things the
+visitor cannot reach from the screen they are looking at. The Nucleus already
+says where answers come from. Removed, along with the strapline beneath it, which
+still described the production-order workflow's mock MES two days after that
+workflow was deleted.
 
 **PROPOSED — The navigation mirrors the product's cockpit nav** — Cockpit,
 Agents, Workflows, Sites, Reports — with sections this app cannot open shown

@@ -35,8 +35,27 @@ export interface LoginPageProps {
 
 export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
   const router = useRouter();
-  const [email, setEmail] = React.useState("");
-  const [password, setPassword] = React.useState("");
+  /*
+    The credential fields are deliberately **uncontrolled**.
+
+    As controlled inputs they were bound to state that does not exist until
+    React hydrates. The page is server-rendered, so it paints and accepts typing
+    before that — and on hydration React reconciles each field to its state,
+    which is empty, and erases what was typed. The operator watches their own
+    email vanish out of the box with no error and nothing to react to.
+
+    Adopting the value in an effect does not fix it: effects run after React has
+    already committed the reset, so there is nothing left to read.
+
+    Uncontrolled, React never touches the value. Early typing is simply kept by
+    the DOM, and `FormData` at submit reads exactly what the operator sees. The
+    fields are read at one moment — submission — and nothing else here needs
+    their value between keystrokes.
+
+    Measured on the deployment, where the hydration window is wide enough to hit
+    by hand. On localhost it is too narrow to notice, which is why every local
+    check passed while this was broken.
+  */
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -115,11 +134,25 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     };
   }, []);
 
+  const formRef = React.useRef<HTMLFormElement>(null);
+
   /**
-   * Has React attached yet?
+   * Has React attached yet — and keep whatever was typed before it did.
    *
    * An effect cannot run during server rendering or before hydration, so this
    * flips exactly when the form becomes able to handle its own submission.
+   *
+   * The adoption is the important half. These are controlled inputs, so on
+   * hydration React reconciles each field to its state — which is empty — and
+   * **erases anything typed into the server-rendered HTML before it attached.**
+   * The operator watches their own email disappear out of the box, with no
+   * error and nothing to react to. Reading the DOM here and seeding state from
+   * it keeps those keystrokes, so early typing is merely early rather than
+   * lost.
+   *
+   * Measured on the deployment: the window is wide enough to hit by hand, and
+   * on localhost it is too narrow to notice — which is why every local check
+   * passed while this was broken.
    */
   const [hydrated, setHydrated] = React.useState(false);
   React.useEffect(() => setHydrated(true), []);
@@ -140,16 +173,10 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     // can be tested without rendering React.
     const { email: submittedEmail, password: submittedPassword } = submittedCredentials(
       new FormData(event.currentTarget),
-      { email, password },
     );
 
     setBusy(true);
     setError(null);
-
-    // Keep the state in step, so the fields still show what was sent if the
-    // attempt fails and hydration has since caught up.
-    setEmail(submittedEmail);
-    setPassword(submittedPassword);
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -219,6 +246,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
       {/* Form */}
       <main className="flex items-center justify-center p-6">
         <form
+          ref={formRef}
           onSubmit={onSubmit}
           /*
             `method="post"` is a safety net, not a route.
@@ -330,8 +358,6 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
                 type="email"
                 autoComplete="username"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
                 className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
                 style={{ border: 0, color: "var(--text-ink)" }}
               />
@@ -349,8 +375,6 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
                 className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
                 style={{ border: 0, color: "var(--text-ink)" }}
               />

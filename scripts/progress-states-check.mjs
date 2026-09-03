@@ -33,8 +33,41 @@ const page = await context.newPage();
 await page.goto(`${APP}/login`, { waitUntil: "domcontentloaded" });
 await page.fill('input[type="email"]', env.FABORCH_PROBE_EMAIL);
 await page.fill('input[type="password"]', env.FABORCH_PROBE_PASSWORD);
-await page.click('button[type="submit"]');
-await page.waitForURL((u) => !u.pathname.startsWith("/login"), { timeout: 45000 });
+
+// The submit button is disabled until React has attached, deliberately: a
+// click in that gap is handled by the browser rather than by the form, and a
+// native submit put the password in the query string. Waiting for it to
+// enable is what a person does too, since they can see it greyed out.
+await page.locator('button[type="submit"]').waitFor({ state: "attached", timeout: 60000 });
+await page.waitForFunction(
+  () => {
+    const b = document.querySelector('button[type="submit"]');
+    return !!b && !b.disabled;
+  },
+  null,
+  { timeout: 60000 },
+);
+// Clicked, not tapped. Playwright's `tap()` dispatches touch events only and
+// does not synthesise the compatibility `click` that a real mobile browser
+// generates after a touch, so `tap()` on a submit button silently does nothing
+// here while working perfectly on an actual phone.
+//
+// Retried because the click can land in the instant React is still settling
+// after enabling the button, and lose. A person would simply press it again.
+for (let attempt = 0; attempt < 3; attempt += 1) {
+  await page.click('button[type="submit"]');
+  try {
+    await page.waitForFunction(() => !location.pathname.startsWith("/login"), null, {
+      timeout: 20000,
+    });
+    break;
+  } catch {
+    if (attempt === 2) throw new Error("sign-in did not navigate after three attempts");
+  }
+}
+// The loop above already waited for the navigation. Polled rather than
+// `waitForURL`, which waits for a `load` event the App Router never fires on a
+// client-side navigation.
 
 await page.goto(`${APP}/fabinsight`, { waitUntil: "domcontentloaded" });
 const box = page.locator("textarea");

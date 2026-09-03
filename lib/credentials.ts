@@ -30,11 +30,8 @@ export interface SubmittedCredentials {
 }
 
 /**
- * Prefer what is in the form over what is in React state.
- *
- * The DOM is the authority because it is what the operator can see. State is
- * the fallback for the one case the DOM cannot cover: a browser that submitted
- * without populating `FormData` at all.
+ * Read the fields, which are uncontrolled and therefore hold exactly what the
+ * operator typed — including anything typed before React attached.
  *
  * Email is trimmed — a phone keyboard adds a trailing space readily, and an
  * address with one is rejected by the API for a reason nobody could guess from
@@ -42,15 +39,9 @@ export interface SubmittedCredentials {
  * legitimate characters in a password, and silently removing them would turn a
  * correct credential into a failed sign-in.
  */
-export function submittedCredentials(
-  form: Pick<FormData, "get">,
-  state: { email: string; password: string },
-): SubmittedCredentials {
-  const formEmail = String(form.get("email") ?? "").trim();
-  const formPassword = String(form.get("password") ?? "");
-
+export function submittedCredentials(form: Pick<FormData, "get">): SubmittedCredentials {
   return {
-    email: formEmail || state.email.trim(),
-    password: formPassword || state.password,
+    email: String(form.get("email") ?? "").trim(),
+    password: String(form.get("password") ?? ""),
   };
 }

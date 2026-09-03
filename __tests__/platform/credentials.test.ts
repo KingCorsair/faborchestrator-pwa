@@ -25,44 +25,21 @@ const form = (fields: Record<string, string>) => ({
   get: (key: string) => (key in fields ? fields[key] : null),
 });
 
-const EMPTY_STATE = { email: "", password: "" };
-
 describe("sign-in submits what is in the fields", () => {
-  test("the DOM wins when React state is empty — the bug", () => {
-    // Typing landed before hydration: the field has it, state does not.
+  test("the fields are read, not React state — the bug", () => {
+    // The fields are uncontrolled precisely so that typing which lands before
+    // hydration is still there at submit. This reads them.
     const got = submittedCredentials(
       form({ email: "supervisor@athenatech.example", password: "hunter2hunter2" }),
-      EMPTY_STATE,
     );
     assert.equal(got.email, "supervisor@athenatech.example");
     assert.equal(got.password, "hunter2hunter2");
   });
 
-  test("state is the fallback when the form carries nothing", () => {
-    // A browser that submitted without populating FormData at all.
-    const got = submittedCredentials(form({}), {
-      email: "typed@athenatech.example",
-      password: "fromstate",
-    });
-    assert.equal(got.email, "typed@athenatech.example");
-    assert.equal(got.password, "fromstate");
-  });
-
-  test("the two agree in the ordinary case", () => {
-    const got = submittedCredentials(
-      form({ email: "a@b.example", password: "pw" }),
-      { email: "a@b.example", password: "pw" },
-    );
-    assert.deepEqual(got, { email: "a@b.example", password: "pw" });
-  });
-
   test("a trailing space on the email is trimmed", () => {
     // A phone keyboard adds one readily, and the API rejects the address for a
     // reason nobody could guess from the screen.
-    assert.equal(
-      submittedCredentials(form({ email: "  a@b.example \n" }), EMPTY_STATE).email,
-      "a@b.example",
-    );
+    assert.equal(submittedCredentials(form({ email: "  a@b.example  " })).email, "a@b.example");
   });
 
   test("the password is NOT trimmed", () => {
@@ -70,24 +47,19 @@ describe("sign-in submits what is in the fields", () => {
     // a correct credential into a failed sign-in, which is worse than the bug
     // this module exists to fix.
     assert.equal(
-      submittedCredentials(form({ email: "a@b.example", password: "  pad  " }), EMPTY_STATE)
-        .password,
+      submittedCredentials(form({ email: "a@b.example", password: "  pad  " })).password,
       "  pad  ",
     );
   });
 
-  test("an all-whitespace email falls back rather than submitting blanks", () => {
-    assert.equal(
-      submittedCredentials(form({ email: "   " }), { email: "real@b.example", password: "p" })
-        .email,
-      "real@b.example",
-    );
-  });
-
-  test("missing everywhere stays empty, so the API's own message stands", () => {
+  test("missing fields stay empty, so the API's own message stands", () => {
     // Not this module's job to invent a validation error; the route already
     // says "Email is required" and that is the right message when it is true.
-    assert.deepEqual(submittedCredentials(form({}), EMPTY_STATE), { email: "", password: "" });
+    assert.deepEqual(submittedCredentials(form({})), { email: "", password: "" });
+  });
+
+  test("an all-whitespace email is empty, not whitespace", () => {
+    assert.equal(submittedCredentials(form({ email: "   " })).email, "");
   });
 });
 
@@ -133,5 +105,15 @@ describe("a submit that escapes React must not leak the credential", () => {
   test("the fields are named, or FormData reads nothing", () => {
     assert.match(source, /name="email"/);
     assert.match(source, /name="password"/);
+  });
+
+  test("and they are uncontrolled, or hydration erases what was typed", () => {
+    // A `value={...}` on either credential field re-binds it to state that does
+    // not exist until React attaches, and hydration then wipes anything typed
+    // into the server-rendered page. That was the bug.
+    assert.ok(
+      !/value=\{email\}/.test(source) && !/value=\{password\}/.test(source),
+      "the credential fields must stay uncontrolled",
+    );
   });
 });

@@ -17,15 +17,16 @@ today.
 
 **Do these first, in this order:**
 
-1. **Deploy.** `https://faborch-demo.fly.dev` is two commits behind — it does
-   not carry Reports or WP8. `flyctl deploy --ha=false --app faborch-demo`, then
-   `node scripts/reports-live-check.mjs`.
-2. **Close WP1.** The iPhone was confirmed working on 3 September. If
+1. **Close WP1.** The iPhone was confirmed working on 3 September. If
    install-to-home-screen and airplane-mode both behaved, WP1 is accepted and
    Phase 3 closes with it — write that down here.
-3. **Then Phase 4**, which is WP9 (dashboards and artifacts, 3.0 d) and WP10
+2. **Then Phase 4**, which is WP9 (dashboards and artifacts, 3.0 d) and WP10
    (progress and failure handling, 2.0 d). WP9 is the larger and the more
    security-sensitive: it renders model-authored HTML.
+
+**The deployment is current.** `518da7d` shipped at 09:24 on 3 September and
+everything below was verified against `https://faborch-demo.fly.dev` itself, not
+against localhost — see "The live deployment" below.
 
 **Two things are waiting on other people, and neither blocks Phase 4:**
 
@@ -90,7 +91,8 @@ is expanded, with evidence, further down.
   equipment is running?" comes back **7**; "give me the yield by product" comes
   back as a real table. This was the thing we had been calling blocked.
 - **The app is live on a real URL and works on a phone.** Installed to an
-  iPhone home screen, confirmed by hand — not only by tests.
+  iPhone home screen, confirmed by hand — not only by tests. Everything above
+  was then re-checked against that URL rather than a laptop.
 - **Reports work.** A supervisor can read the dashboards an administrator
   pinned in FabOrchestrator. Ten of them, on the phone, read-only.
 - **The app fits a phone properly.** Two real layout faults found by measuring
@@ -101,8 +103,6 @@ is expanded, with evidence, further down.
 
 **Pending**
 
-- The live URL is two commits behind and does not carry Reports or the latest
-  work. One deploy.
 - Next build step: dashboards on the phone, then progress and failure states.
 - The four planning documents still describe four agents and budget work that
   no longer exists.
@@ -347,6 +347,37 @@ reach them lost the product name.
 
 Phase 4 (dashboards, progress, failure handling) and Phase 5 (tests, device
 validation, security review, handover) follow.
+
+---
+
+## The live deployment
+
+**`https://faborch-demo.fly.dev`** — image
+`faborch-demo:deployment-01M1K999F05FC9SZ0SGGA3DZVN`, commit `518da7d`,
+deployed 3 September 09:24, one machine in `sin`, `started`.
+
+Verified against the deployed URL after shipping, not against a local server:
+
+| Check | Result |
+|---|---|
+| TLS | 1.3, `TLS_AES_256_GCM_SHA384`, Let's Encrypt, chain authorized |
+| `http://` | 301 to `https://` |
+| Installability | manifest, service worker, offline page, icons all served |
+| Sign-in | a real FabOrchestrator account, 200, token in a `Secure; HttpOnly` cookie |
+| Reports | 9/9 — 10 pinned dashboards read on a **non-admin** account; POST/DELETE/PUT 405, refresh 404; `refreshedAt` unchanged after reading |
+| Plant data, tool path | *"How many lots are currently in WIP?"* → **238 lots**, 8 MCP calls |
+| Plant data, tool path | *"Which equipment is running right now?"* → **5 running of 39 tracked**, as a table |
+| Plant data, metric path | *"Give me the yield by product."* → a real product table, no tools |
+
+The two figures moved between the localhost run an hour earlier (237 lots, 7
+tools) and this one (238, 5). That is not a discrepancy — it is what live plant
+data looks like, and it is the clearest evidence that nothing here is a fixture.
+
+Reproduce with:
+
+```bash
+node scripts/reports-live-check.mjs        # point APP at the deployed URL
+```
 
 ---
 

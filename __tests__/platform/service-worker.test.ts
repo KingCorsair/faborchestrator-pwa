@@ -46,6 +46,15 @@ interface Harness {
   /** Sends a navigation through the worker and returns whatever it answered. */
   navigate(options?: NavigateOptions): Promise<FakeResponse | null>;
   fetchCalls: FakeRequest[];
+  /**
+   * Every URL the worker looked for in the cache.
+   *
+   * Recorded so a test can assert what the worker **never asks for**, which is
+   * the only honest way to prove a negative about caching: a worker that could
+   * answer a navigation from a stored copy of `/` would have to look it up
+   * here first.
+   */
+  cacheLookups: string[];
 }
 
 interface NavigateOptions {
@@ -66,6 +75,7 @@ function loadWorker(script: (FakeResponse | Error)[], onLine = false): Harness {
 
   const listeners = new Map<string, FetchListener>();
   const fetchCalls: FakeRequest[] = [];
+  const cacheLookups: string[] = [];
 
   const scope = {
     addEventListener(type: string, listener: FetchListener) {
@@ -93,6 +103,7 @@ function loadWorker(script: (FakeResponse | Error)[], onLine = false): Harness {
     },
     caches: {
       async match(url: string) {
+        cacheLookups.push(url);
         return url === "/offline" ? OFFLINE_RESPONSE : undefined;
       },
       async open() {
@@ -118,6 +129,7 @@ function loadWorker(script: (FakeResponse | Error)[], onLine = false): Harness {
 
   return {
     fetchCalls,
+    cacheLookups,
     async navigate(options: NavigateOptions = {}) {
       const listener = listeners.get("fetch");
       assert.ok(listener, "the worker registered no fetch listener");
@@ -253,5 +265,73 @@ describe("service worker navigation handling", () => {
 
     assert.equal(await harness.navigate({ url: "https://faborch-demo.fly.dev/api/activity" }), null);
     assert.equal(harness.fetchCalls.length, 0);
+  });
+});
+
+/**
+ * The half of the 2026-09-04 cold-launch defect that turned out **not** to be
+ * the cause, pinned so it cannot become one.
+ *
+ * The report — a signed-out cold launch showing the cockpit — has an obvious
+ * suspect in a service worker, because it reproduces only on the installed app
+ * and only after a force-quit. It was not this file: the worker stores the
+ * offline page and two icons and nothing else, and answers every navigation
+ * from the network. The real cause was that `/` never checked the session, and
+ * the fix is `proxy.ts`.
+ *
+ * That fix depends on this staying true. A gate in front of the document is
+ * worth nothing if a worker can replay a document from before the sign-out, so
+ * the property under test is that authenticated HTML is never stored and never
+ * served — asserted from what the worker *asks the cache for*, not from what
+ * the cache happens to hold.
+ */
+describe("no authenticated HTML survives a cold launch", () => {
+  test("a launch of / is answered by the server, never by a stored copy", async () => {
+    const harness = loadWorker([LIVE_RESPONSE]);
+
+    assert.equal(await harness.navigate({ url: "https://faborch-demo.fly.dev/" }), LIVE_RESPONSE);
+    assert.deepEqual(harness.cacheLookups, [], "the cockpit must never be looked for in the cache");
+  });
+
+  /**
+   * And when the network really is gone, the fallback is the offline page —
+   * which says the device is offline and shows nothing about anybody's session.
+   * A cached cockpit here would be the same defect wearing a different cause.
+   */
+  test("offline, / falls back to the offline page and not to a stored cockpit", async () => {
+    const harness = loadWorker([]);
+
+    assert.equal(await harness.navigate({ url: "https://faborch-demo.fly.dev/" }), OFFLINE_RESPONSE);
+    assert.deepEqual(harness.cacheLookups, ["/offline"]);
+  });
+
+  test("the redirect to sign-in is followed by the browser, not swallowed here", async () => {
+    // The gate answers a session-less navigation with a 307. To the worker that
+    // is an *answer*, not a failure, so it is returned untouched and the
+    // browser follows it — the same rule that keeps a 404 or a 500 visible.
+    const redirect: FakeResponse = { marker: "307-to-login" };
+    const harness = loadWorker([redirect]);
+
+    assert.equal(await harness.navigate({ url: "https://faborch-demo.fly.dev/" }), redirect);
+    assert.equal(harness.fetchCalls.length, 1, "a redirect must not be retried as a failure");
+  });
+
+  test("only the offline page and its icons are ever precached", () => {
+    const source = readFileSync(join(import.meta.dirname, "..", "..", "public", "sw.js"), "utf8");
+    const precache = source.match(/const PRECACHE = \[([^\]]*)\]/)?.[1] ?? "";
+
+    assert.deepEqual(
+      precache
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+      ["OFFLINE_URL", '"/icon-192.png"', '"/apple-touch-icon.png"'],
+      "adding a document here would put a cockpit back in the cache",
+    );
+
+    // `cache.add` appears once, in `install`, for the list above. A `cache.put`
+    // anywhere would mean responses are being stored as they pass through,
+    // which is how an app shell gets cached by accident.
+    assert.ok(!/cache\.put|caches\.put/.test(source), "the worker must not store responses");
   });
 });

@@ -48,11 +48,18 @@
  * border, the live icon tile and the arrow it had before, which are this app's
  * three signals for *pressable*.
  *
- * ── Still ships no JavaScript of its own ────────────────────────────────────
- * It reads no session and fetches nothing, so `/` still prerenders as static —
- * and the ask bar is a plain GET form rather than a client component, so the
- * front door works before any bundle arrives. `SignOutLink` is the one client
- * leaf, and it renders nothing without a session.
+ * ── Still ships almost no JavaScript of its own ─────────────────────────────
+ * It fetches nothing, so `/` still prerenders as static — and the ask bar is a
+ * plain GET form rather than a client component, so the cockpit paints before
+ * any bundle arrives. `SignOutLink` is the one client leaf.
+ *
+ * That leaf changed on 2026-09-04, when `proxy.ts` put this screen behind
+ * the session. It used to render nothing when it found no token, because a
+ * signed-out visitor was expected to be standing here; one cannot be now, so a
+ * missing token means the two halves of the session disagree and it redirects.
+ * The gate itself is deliberately **not** on this page: a check that runs after
+ * hydration cannot stop the cockpit painting first, and a cockpit painted for
+ * somebody who signed out was the whole defect.
  */
 
 import Link from "next/link";

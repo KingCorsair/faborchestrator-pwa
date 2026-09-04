@@ -1,6 +1,6 @@
 # Where this project stands
 
-**As of 3 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
+**As of 4 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
@@ -18,8 +18,17 @@ the operating documentation written.
 
 **Nothing is outstanding in this app.** What remains is external and listed in
 `docs/OPEN_ISSUES.md` — most urgently, a **shared demo password that must be
-rotated** because it reached the Fly request logs during today's sign-in
+rotated** because it reached the Fly request logs during the 3 September sign-in
 investigation.
+
+**One defect was reported and fixed on 4 September**, from the installed iPhone
+app: after signing out and force-quitting, reopening from the Home Screen showed
+the cockpit as though the session were still live. It was a presentation defect
+with no residual access — `/` was simply the one screen that read no session,
+and `start_url` points at it. Fixed with a server-side session gate in
+`proxy.ts`, deployed and verified on the URL. Full write-up below: "The cockpit
+opened for somebody who had signed out". **The one thing left on it is a check
+on a physical iPhone**, which no automation can stand in for.
 
 **Where to start reading:** `docs/HANDOVER.md` is the operating note — how to
 run it, what every failure message means, and the four decisions that look odd
@@ -112,8 +121,9 @@ is expanded, with evidence, further down.
   "answering", instead of one spinner that means all three. Every failure says
   what to do next, and offers to try again only where trying again can work.
   If nothing arrives for 45 seconds it says so rather than spinning silently.
-- **272 automated tests pass** here, and 21 more on the platform side. They run
-  without a network.
+- **295 automated tests pass** here, and 21 more on the platform side. They run
+  without a network. (272 on 3 September; 23 were added on 4 September with the
+  cold-launch session gate.)
 - **The whole suite was re-run against the live URL, not a laptop**, plus a
   security review of the running app (24 checks) and the five user journeys
   walked end to end (13 steps). All pass.
@@ -173,7 +183,7 @@ catching up with two decisions.
 | **Reports** Read-only pinned dashboards | 14 tests + `scripts/reports-live-check.mjs`, 9/9 live: 10 real dashboards read on a non-admin account, every management verb refused, and reading provably does not overwrite the shared snapshot |
 | Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened; the platform capability list is gone |
 
-**272 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
+**295 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
 
 ### What "proved" bought us
 
@@ -461,6 +471,146 @@ account rather than a personal one, but it should be rotated.
 
 ---
 
+## The cockpit opened for somebody who had signed out
+
+**Reported 4 September 2026**, on the installed iPhone app: sign in, sign out,
+force-quit from the app switcher, reopen from the Home Screen — and the app
+opened on the cockpit as though the operator could carry on. Pressing an agent
+card was the first thing that said otherwise.
+
+### It was never an access-control failure
+
+Worth stating first, because the symptom reads like one and it was not. Nothing
+behind `/api/` was reachable. Sign-out worked perfectly: the FabOrchestrator
+cookie was deleted, FO's own session row was deleted (`faborchRevoked: true`),
+and `localStorage` was cleared. What leaked was the *appearance* of a session —
+four agent cards, a Live ops panel and a Recent activity feed shown to somebody
+with no right to see them. For a product whose whole argument is that you do not
+show a supervisor a number you cannot stand behind, that is its own kind of
+wrong, but it is not a breach.
+
+### The root cause
+
+`/` was the one screen in the app that read no session, and
+`manifest.webmanifest` sets `start_url: "/"` — **so every cold launch of the
+installed app landed on the only page that never asked who you were.** Every
+session check lived in `useSession`, which runs on the screens behind the
+cockpit.
+
+The landing page read nothing deliberately, so the front door would paint before
+any bundle arrived. That was right while `/` was a public front door. It stopped
+being right the moment the front door became the app's start URL.
+
+Nothing was broken. The check simply was not there.
+
+**Reproduced on the pre-fix build** before anything was changed — Chromium with
+an iPhone profile, a persistent profile directory, and the service worker
+installed and controlling:
+
+```
+1. signed in, at: /          service worker: controlled
+2. signed out, at: /login    cookies left: (none)
+3. COLD LAUNCH lands at: /   shows cockpit: true   shows sign-in form: false
+```
+
+`cookies left: (none)` is the line that matters: sign-out had done its whole job.
+`GET /` with no cookie returned `200` carrying the full cockpit markup.
+
+### Three suspects that were cleared, and how
+
+| Suspect | Verdict |
+|---|---|
+| Service worker replaying a cached app shell | **No.** It caches `/offline` and two icons, intercepts navigations only, and answers every one from the network. Now pinned by tests that assert what it *asks the cache for* |
+| Stale client session being restored | **No.** `clearAuthStorage()` removes both keys, and the landing page never read them |
+| Cookies not actually cleared | **No.** `Max-Age=0` on sign-out, verified in the `Set-Cookie` line and in the browser's jar afterwards |
+
+### The fix
+
+**`proxy.ts`** — a deny-by-default session gate in Next middleware, which
+answers before the document exists. A client-side check could not have fixed
+this: it cannot run before the HTML it is meant to suppress has painted, and a
+cold standalone launch is where that gap is widest.
+
+It reads the `faborch_token` httpOnly cookie — the only half of the session a
+server can see on a navigation, the credential `requireAuth` cannot proceed
+without, and the thing sign-out deletes. `PUBLIC` is an allowlist (`/login`,
+`/offline`, `/diagnostics`), so a screen added later is gated on the day it is
+created rather than the day somebody remembers.
+
+Named `proxy.ts` because Next 16.1 deprecates the `middleware.ts` convention.
+
+**`sign-out-link.tsx`** redirects instead of rendering nothing when it finds no
+token — a backstop for the one state the server cannot see (FO cookie present,
+`localStorage` empty), not the gate.
+
+**The consequence to know:** `/` is no longer public. A visitor with no session
+meets `/login` first and gets the cockpit after signing in.
+
+### The bug inside the fix, which is why there is a live check
+
+The `matcher` was first written `"/((?!api/|_next/|.*\.[^/]+$).*)"`. That is a
+regular expression inside a string literal, so `\.` parses as a bare `.`, the
+lookahead then matches almost every path, and the gate is excluded from the
+routes it exists to protect.
+
+**It built, typechecked and passed all 295 tests**, because those tests call
+`proxy()` directly and never see the matcher. It would have deployed as a fix
+that did nothing at all. Caught by reading the file, and now caught by
+`scripts/gate-live-check.mjs`, which requests `/sw.js` and the manifest over the
+wire — the assets a broken matcher redirects.
+
+### Verified on the deployment
+
+Not on a laptop, for the reason the section above this one records.
+
+| Check | Result | Script |
+|---|---|---|
+| Unit and integration | **295 / 295** | `npm test` |
+| The gate, over the wire | **32 / 32** | `scripts/gate-live-check.mjs` |
+| Cold launch, real browser, worker-controlled | **11 / 11** | `scripts/cold-launch-check.mjs` |
+| The five journeys, unbroken | **13 / 13** | `scripts/journeys-check.mjs` |
+
+The cold-launch check performs the reported sequence exactly: `context.close()`
+is the force-quit, a second `launchPersistentContext` on the same profile is the
+Home Screen tap, and the profile carries the cookie jar, `localStorage` and the
+registered worker across it. Three consecutive relaunches, because a gate that
+lets the second one through would pass in the demo. The document trail on the
+relaunch is `307 / → 200 /login`, so no cockpit is painted on the way.
+
+### Still to do, by a person
+
+**Check it on a physical iPhone.** The automation is Chromium with an iPhone
+viewport and user agent — not WebKit, not iOS, and not a home-screen app in a
+standalone window, so it cannot speak for Safari's cookie handling or for the
+separate storage an installed iOS app may be given.
+
+1. Sign in → sign out → force-quit → reopen. Expect sign-in, never a cockpit.
+2. **The more important one:** sign in → force-quit *while signed in* → reopen.
+   Expect the cockpit directly, with no bounce through sign-in. If this bounces,
+   the cookie is not surviving Safari's standalone storage and the gate needs to
+   read something else.
+3. Airplane mode still reaches the offline page — it is on the public allowlist.
+
+The installed copy does not need reinstalling: `id` and `start_url` are
+unchanged.
+
+### One limit, recorded rather than fixed
+
+`/api/auth/me` answers `200` to a *replayed* pair — the bearer token plus a copy
+of the FO cookie taken before sign-out. It returns only the id, email and role
+already inside the token the caller is holding, and opens nothing: every route
+that reaches FabOrchestrator refuses the same pair with `faborch_session_expired`
+and drops the cookie on the way out, which makes a replay self-healing.
+
+Making it ask FO would fix a leak of nothing at the cost of a real one.
+`useSession` calls that route on every screen mount, and every authenticated call
+to FabOrchestrator sets `last_activity_at = NOW()` — so the check would be a
+keep-alive silently defeating FO's 30-minute idle eviction and corrupting its
+session audit, which is somebody else's compliance record. `lib/auth.ts` recorded
+and refused that trade before this change; nothing here alters it.
+
+---
+
 ## Phase 5 — the handover pass
 
 No build work. Everything below was run **against
@@ -471,8 +621,10 @@ kept passing while the deployed app could not be signed into at all.
 
 | Suite | Result | Script |
 |---|---|---|
-| Unit and integration | **272 / 272**, no network | `npm test` |
+| Unit and integration | **295 / 295**, no network | `npm test` |
 | Security review | **24 / 24** | `scripts/security-review.mjs` |
+| Session gate, over the wire | **32 / 32** | `scripts/gate-live-check.mjs` |
+| Cold launch, real browser | **11 / 11** | `scripts/cold-launch-check.mjs` |
 | User journeys, end to end | **13 / 13** across 5 journeys | `scripts/journeys-check.mjs` |
 | Reports, read-only | **9 / 9** | `scripts/reports-live-check.mjs` |
 | Artifacts | **8 / 8** | `scripts/artifact-live-check.mjs` |
@@ -756,9 +908,14 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 272 tests, no network needed
+npm test                          # 295 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
+
+# The session gate. Run both against the deployment, not a laptop — the
+# matcher that decides whether the gate runs at all is invisible to `npm test`.
+APP_URL=https://faborch-demo.fly.dev node scripts/gate-live-check.mjs
+APP_URL=https://faborch-demo.fly.dev node scripts/cold-launch-check.mjs
 ```
 
 ---
@@ -781,6 +938,7 @@ npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 | `lib/faborch/` | The only code that knows FabOrchestrator's HTTP contract |
 | `app/api/faborch/[agent]/chat/` | The connector — holds the credential, streams the answer back |
 | `app/api/auth/` | Sign-in, sign-out, session |
+| `proxy.ts` | The session gate. Decides, before any document is rendered, whether this visitor gets a screen or `/login` |
 | `docs/planning/` | The four planning documents (see debt above) |
 | `docs/probes/` | Evidence: the environment probes and the E1 report |
 | `CLAUDE.md` | The design record — why things are the way they are |

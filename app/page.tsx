@@ -4,9 +4,17 @@ import { Landing } from "@/components/fab/screens/landing";
 /**
  * `/` — the FabOrchestrator landing page.
  *
- * Unauthenticated, and the only screen in the app that is. Sign-in used to live
- * here and now lives at `/login`; see that file for why they cannot share a
- * route.
+ * **Behind the session since 2026-09-04**, which reversed the oldest decision
+ * about this page. Sign-in used to live here and now lives at `/login`; see
+ * that file for why they cannot share a route.
+ *
+ * This was the one screen in the app that read no session, and the manifest's
+ * `start_url` points at it — so every cold launch of the installed app landed
+ * on the only page that never asked who you were, and a signed-out operator
+ * was shown a cockpit until they pressed something. `proxy.ts` carries the
+ * report, the trace and the reasoning. What matters here is the consequence: a
+ * visitor with no session now meets `/login` first, and this page is what they
+ * get after signing in.
  *
  * ── The front door is the platform's, not one workflow's (2026-08-21) ───────
  * This page was headed *Production Order Assistant* until 2026-08-21, which
@@ -28,9 +36,11 @@ import { Landing } from "@/components/fab/screens/landing";
  * still tested — kept because the target design may want the derived count
  * ("orders awaiting review"), and its provenance is expensive to rebuild.
  *
- * `/` prerenders as `○` in the build output either way, which is what matters
- * for a public entry point: it has to render for somebody who has never signed
- * in, on a cold cache, before any bundle arrives.
+ * `/` still prerenders as `○` in the build output either way, and that still
+ * matters even now the page is behind a session: the gate runs in middleware,
+ * so a request that gets this far is one that has already been decided, and
+ * what it should meet is finished HTML rather than a skeleton waiting on a
+ * fetch. The cockpit paints on a cold cache, before any bundle arrives.
  *
  * Thin, like every other page in this app — the screen is in
  * `components/fab/screens/`.

@@ -62,8 +62,14 @@ const askBox = page.locator("#cockpit-ask");
 await askBox.waitFor({ timeout: 40000 });
 await askBox.fill("How many lots are currently in WIP?");
 await page.locator('form[action="/fabinsight"] button[type="submit"]').click();
-await page.waitForFunction(() => location.pathname.startsWith("/fabinsight"), null, { timeout: 40000 });
-ok("2", "asking from the cockpit opens a conversation", true, page.url());
+// **The cockpit answers where it is asked, since 5 September.** This step used
+// to wait for a navigation to /fabinsight, which is what the ask bar used to do.
+// The conversation now opens on the cockpit itself, the way the product's own
+// cockpit does — so this waits for the transcript to appear, and asserts that
+// the walk never left the front door to get it.
+await page.waitForSelector("textarea", { timeout: 40000 });
+ok("2", "asking from the cockpit opens a conversation in place",
+  new URL(page.url()).pathname === "/", page.url());
 
 await page.waitForFunction(
   () => (document.querySelector(".fab-md")?.textContent ?? "").length > 40,

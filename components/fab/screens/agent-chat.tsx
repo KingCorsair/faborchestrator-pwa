@@ -86,14 +86,45 @@ import { ArtifactTile } from "@/components/fab/artifact-tile";
 import { segmentMessageText, type FoArtifact } from "@/lib/faborch/artifacts";
 import { readFoStream } from "@/lib/faborch/stream";
 
+/**
+ * Where this conversation is being drawn.
+ *
+ * ── `"inline"` added 2026-09-05, and it changes layout only ─────────────────
+ * The cockpit's ask bar now answers where it is asked, the way
+ * FabOrchestrator's own does (`components/cockpit/cockpit-ask.tsx`). That is a
+ * different *shape* for the same conversation, not a different conversation —
+ * so it is a prop here rather than a second implementation somewhere else.
+ *
+ * Everything that decides what the operator actually gets is shared and
+ * untouched by this flag: the send path, the stream reader, the reducer, the
+ * progress states, the failure notices with their retry, the artifacts, the
+ * data-connection count. A copy of that on the landing page would be a second
+ * place for the 45-second stall watchdog to be wrong.
+ *
+ * Four things differ, all of them CSS or omission:
+ *
+ *   screen   owns the viewport: a full-height flex column with its own
+ *            scrolling pane and a composer pinned to the bottom above the
+ *            home indicator.
+ *   inline   sits in a scrolling document: the transcript is a bounded card
+ *            that appears only once there is something in it, and the composer
+ *            is an ordinary block under it.
+ *
+ * `Opening` is suppressed inline because the landing page already carries the
+ * hero and the suggestion chips it would duplicate.
+ */
+export type AgentChatVariant = "screen" | "inline";
+
 export function AgentChat({
   agent,
   hasFabOrchSession,
   initialPrompt = "",
+  variant = "screen",
 }: {
   agent: FoAgent;
   hasFabOrchSession: boolean;
   initialPrompt?: string;
+  variant?: AgentChatVariant;
 }) {
   const [state, dispatch] = React.useReducer(conversationReducer, EMPTY_CONVERSATION);
   const [input, setInput] = React.useState("");
@@ -274,12 +305,46 @@ export function AgentChat({
   }, [state.turns, state.activity]);
 
   const empty = state.turns.length === 0;
+  const inline = variant === "inline";
+
+  /**
+   * Inline, the transcript card appears only when it has something to say —
+   * the same rule as `hasMessages &&` on the product's cockpit. An empty
+   * bordered box under the ask bar reads as a thing that failed to load.
+   *
+   * `state.busy` is in the condition because the first turn is dispatched and
+   * the panel must already be open to show it; `state.failure` because a turn
+   * that fails before the answer starts drops its placeholder, and the notice
+   * would otherwise have nowhere to appear.
+   */
+  const showTranscript = !inline || !empty || state.busy || state.failure !== null;
 
   return (
-    <div className="fab flex h-full min-h-0 flex-col" style={{ background: "var(--page-surface)" }}>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
+    <div
+      // `max-w-[780px]` so the transcript lines up with the ask bar above it,
+      // and `text-left` because the cockpit centres its hero and this is prose.
+      className={
+        inline
+          ? "mx-auto mt-[26px] flex w-full max-w-[780px] flex-col gap-4 text-left"
+          : "fab flex h-full min-h-0 flex-col"
+      }
+      style={inline ? undefined : { background: "var(--page-surface)" }}
+    >
+      <div
+        ref={scrollRef}
+        className={
+          inline
+            ? // Bounded rather than growing without limit: the cockpit continues
+              // below this, and a long answer that pushed the agent cards off
+              // the page would hide the rest of the product. `55vh` keeps the
+              // ask bar and the start of the answer on screen together at
+              // 360×640, where a fixed 420px would not.
+              (showTranscript ? "fab-card max-h-[min(420px,55vh)] overflow-y-auto overscroll-contain px-4 py-4" : "hidden")
+            : "min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6"
+        }
+      >
         <div className="mx-auto flex w-full max-w-[780px] flex-col gap-[18px]">
-          {empty ? (
+          {empty && !inline ? (
             <Opening agent={agent} onPick={send} disabled={!hasFabOrchSession || state.busy} />
           ) : null}
 
@@ -324,6 +389,7 @@ export function AgentChat({
         onStop={() => abortRef.current?.abort()}
         busy={state.busy}
         disabled={!hasFabOrchSession}
+        inline={inline}
       />
     </div>
   );
@@ -898,6 +964,7 @@ function Composer({
   onStop,
   busy,
   disabled,
+  inline = false,
 }: {
   agent: FoAgent;
   value: string;
@@ -906,11 +973,26 @@ function Composer({
   onStop: () => void;
   busy: boolean;
   disabled: boolean;
+  /**
+   * On the cockpit this is an ordinary block in a scrolling page, so it drops
+   * the rule above it, the page-surface fill and the home-indicator padding —
+   * all three of which exist to make a *pinned* bar read as one, and all three
+   * of which are wrong for a control sitting in the middle of a document.
+   */
+  inline?: boolean;
 }) {
   return (
     <div
-      className="flex-none border-t px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-4 sm:px-6"
-      style={{ borderColor: "var(--border-light)", background: "var(--page-surface)" }}
+      className={
+        inline
+          ? "flex-none"
+          : "flex-none border-t px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-4 sm:px-6"
+      }
+      style={
+        inline
+          ? undefined
+          : { borderColor: "var(--border-light)", background: "var(--page-surface)" }
+      }
     >
       <form
         onSubmit={(e) => {

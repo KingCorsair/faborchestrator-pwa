@@ -1,6 +1,6 @@
 # Where this project stands
 
-**As of 4 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
+**As of 5 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
@@ -20,6 +20,15 @@ the operating documentation written.
 `docs/OPEN_ISSUES.md` — most urgently, a **shared demo password that must be
 rotated** because it reached the Fly request logs during the 3 September sign-in
 investigation.
+
+**The cockpit answers where it is asked, since 5 September.** The ask bar used
+to navigate to `/fabinsight?q=…`; it now expands into the conversation on the
+landing page, the way FabOrchestrator's own cockpit does. It is the same
+`AgentChat` component the conversation screen uses, in an `inline` variant that
+changes layout only — no second chat implementation, no new prompt, model or
+routing logic, and the same `/api/faborch/insight/chat` → FO `/api/chat` path
+underneath. The GET form is still there as the no-JavaScript fallback. Verified
+by `scripts/landing-ask-check.mjs`, 24/24 on the deployment.
 
 **One defect was reported and fixed on 4 September**, from the installed iPhone
 app: after signing out and force-quitting, reopening from the Home Screen showed
@@ -121,9 +130,9 @@ is expanded, with evidence, further down.
   "answering", instead of one spinner that means all three. Every failure says
   what to do next, and offers to try again only where trying again can work.
   If nothing arrives for 45 seconds it says so rather than spinning silently.
-- **295 automated tests pass** here, and 21 more on the platform side. They run
-  without a network. (272 on 3 September; 23 were added on 4 September with the
-  cold-launch session gate.)
+- **308 automated tests pass** here, and 21 more on the platform side. They run
+  without a network. (272 on 3 September; 23 more on 4 September with the
+  cold-launch session gate; 13 more on 5 September with the inline cockpit ask.)
 - **The whole suite was re-run against the live URL, not a laptop**, plus a
   security review of the running app (24 checks) and the five user journeys
   walked end to end (13 steps). All pass.
@@ -183,7 +192,7 @@ catching up with two decisions.
 | **Reports** Read-only pinned dashboards | 14 tests + `scripts/reports-live-check.mjs`, 9/9 live: 10 real dashboards read on a non-admin account, every management verb refused, and reading provably does not overwrite the shared snapshot |
 | Scope correction | The production-order workflow and its mock MES are removed; the nav mirrors FabOrchestrator's own cockpit; the Master Data Load Agent is shown greyed rather than opened; the platform capability list is gone |
 
-**295 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
+**308 tests, all passing.** Typecheck and lint clean. Production build compiles. The mobile audit is 16/16 at both viewports.
 
 ### What "proved" bought us
 
@@ -621,10 +630,11 @@ kept passing while the deployed app could not be signed into at all.
 
 | Suite | Result | Script |
 |---|---|---|
-| Unit and integration | **295 / 295**, no network | `npm test` |
+| Unit and integration | **308 / 308**, no network | `npm test` |
 | Security review | **24 / 24** | `scripts/security-review.mjs` |
 | Session gate, over the wire | **32 / 32** | `scripts/gate-live-check.mjs` |
 | Cold launch, real browser | **11 / 11** | `scripts/cold-launch-check.mjs` |
+| Inline cockpit ask, real browser | **24 / 24** | `scripts/landing-ask-check.mjs` |
 | User journeys, end to end | **13 / 13** across 5 journeys | `scripts/journeys-check.mjs` |
 | Reports, read-only | **9 / 9** | `scripts/reports-live-check.mjs` |
 | Artifacts | **8 / 8** | `scripts/artifact-live-check.mjs` |
@@ -908,7 +918,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 295 tests, no network needed
+npm test                          # 308 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 

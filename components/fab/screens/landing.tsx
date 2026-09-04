@@ -48,12 +48,21 @@
  * border, the live icon tile and the arrow it had before, which are this app's
  * three signals for *pressable*.
  *
- * ── Still ships almost no JavaScript of its own ─────────────────────────────
- * It fetches nothing, so `/` still prerenders as static — and the ask bar is a
- * plain GET form rather than a client component, so the cockpit paints before
- * any bundle arrives. `SignOutLink` is the one client leaf.
+ * ── The cockpit answers where it is asked (2026-09-05) ──────────────────────
+ * `Ask` used to be a plain GET form that navigated to `/fabinsight?q=…`. It now
+ * answers inline, the way the product's own cockpit does, by rendering
+ * `AgentChat` in its `inline` variant — the same conversation component
+ * `/fabinsight` uses, not a second one. That file carries the reasoning.
  *
- * That leaf changed on 2026-09-04, when `proxy.ts` put this screen behind
+ * The consequence for this page: `Ask` is a client component now, so `/` ships
+ * a bundle it did not before. Two things hold anyway. The page still prerenders
+ * as static, because nothing here fetches during render — the ask bar is drawn
+ * server-side and the session resolves after. And the form is still a real GET
+ * form with a real `action`, so with no JavaScript at all the front door still
+ * works exactly as it did: it navigates to `/fabinsight`.
+ *
+ * ── The other client leaf ───────────────────────────────────────────────────
+ * `SignOutLink` changed on 2026-09-04, when `proxy.ts` put this screen behind
  * the session. It used to render nothing when it found no token, because a
  * signed-out visitor was expected to be standing here; one cannot be now, so a
  * missing token means the two halves of the session disagree and it redirects.

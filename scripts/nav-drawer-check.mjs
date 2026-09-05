@@ -67,13 +67,13 @@ async function signedInPage(width = 390, height = 844) {
   return { context, page };
 }
 
-const drawer = (page) => page.locator('[role="dialog"][aria-label="Navigation"]');
+const drawer = (page) => page.locator('[role="dialog"][aria-label="Conversations"]');
 const trigger = (page) => page.locator('button[aria-label="Open navigation"]');
 
 /** Tap the backdrop where the panel does not cover it. */
 async function tapOutside(page) {
   const at = await page.evaluate(() => {
-    const el = document.querySelector('[role="dialog"][aria-label="Navigation"]');
+    const el = document.querySelector('[role="dialog"][aria-label="Conversations"]');
     const right = el ? el.getBoundingClientRect().right : 0;
     return { x: Math.round((right + window.innerWidth) / 2), y: Math.round(window.innerHeight / 2) };
   });
@@ -84,7 +84,7 @@ async function tapOutside(page) {
  *  is still "visible" to a naive check while sitting entirely off-screen. */
 const isOpen = async (page) =>
   page.evaluate(() => {
-    const el = document.querySelector('[role="dialog"][aria-label="Navigation"]');
+    const el = document.querySelector('[role="dialog"][aria-label="Conversations"]');
     if (!el) return false;
     const box = el.getBoundingClientRect();
     return getComputedStyle(el).visibility === "visible" && box.right > 8;
@@ -105,7 +105,7 @@ console.log("── 1. open, then close by backdrop, Escape and the button ─�
 
   await trigger(page).click();
   await page.waitForFunction(() => {
-    const el = document.querySelector('[role="dialog"][aria-label="Navigation"]');
+    const el = document.querySelector('[role="dialog"][aria-label="Conversations"]');
     return el && el.getBoundingClientRect().right > 8;
   }, null, { timeout: 10_000 });
   ok("tapping it opens the drawer", await isOpen(page));
@@ -140,31 +140,36 @@ console.log("── 1. open, then close by backdrop, Escape and the button ─�
 
   await trigger(page).click();
   await page.waitForTimeout(350);
+  // Give the list its round trip to FabOrchestrator.
+  await page
+    .waitForFunction(() => !/Loading your conversations/.test(document.body.innerText), null, {
+      timeout: 30_000,
+    })
+    .catch(() => {});
   const text = await drawer(page).innerText();
 
-  for (const label of ["New chat", "Cockpit", "Agents", "Workflows", "Sites", "Reports"]) {
-    ok(`it offers ${label}`, text.includes(label));
+  ok("it offers New chat", text.includes("New chat"));
+  ok("it offers one way back", text.includes("Back to Cockpit"));
+  // Case-insensitively: the heading is set in CSS `uppercase`, and `innerText`
+  // reports what is rendered rather than what is in the source.
+  ok("it lists Recents", /recents/i.test(text));
+
+  // The app's own navigation is gone from here — it lives on the cockpit.
+  for (const label of ["Agents", "Workflows", "Sites", "Reports"]) {
+    ok(`the ${label} nav entry is gone from the drawer`, !text.includes(label), label);
   }
-  for (const forbidden of ["Recents", "Pinned"]) {
-    ok(`it shows no ${forbidden}`, !text.includes(forbidden), forbidden);
-  }
-  ok("it states that conversations are not saved", /not saved/i.test(text));
   ok("Master Data Load is not in it", !/master data/i.test(text));
 
-  // The two placeholders must not be links — the "dead control" rule.
-  const deadLinks = await page.evaluate(() => {
-    const el = document.querySelector('[role="dialog"][aria-label="Navigation"]');
-    return [...el.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+  // Real threads, from FabOrchestrator, not a seeded list.
+  const rowCount = await page.evaluate(() => {
+    const el = document.querySelector('[role="dialog"][aria-label="Conversations"]');
+    return el.querySelectorAll("ul li").length;
   });
-  ok(
-    "Workflows and Sites are not links",
-    !deadLinks.includes("/workflows") && !deadLinks.includes("/sites"),
-    deadLinks.join(" "),
-  );
+  ok("real conversations are listed", rowCount > 0, `${rowCount} thread(s)`);
 
   // Touch targets.
   const small = await page.evaluate(() => {
-    const el = document.querySelector('[role="dialog"][aria-label="Navigation"]');
+    const el = document.querySelector('[role="dialog"][aria-label="Conversations"]');
     return [...el.querySelectorAll("a,button")]
       .map((n) => ({ t: (n.innerText || n.getAttribute("aria-label") || "?").slice(0, 20), h: Math.round(n.getBoundingClientRect().height) }))
       .filter((n) => n.h > 0 && n.h < 44);
@@ -221,6 +226,88 @@ console.log("\n── 3. opening and closing it does not reset the conversation 
     (await page.locator('button[aria-label="Stop"]').count()) === 0);
   ok("the composer is ready for a new one", await page.locator("textarea").isVisible());
   ok("…still on /fabinsight", new URL(page.url()).pathname === "/fabinsight", page.url());
+  ok("…and the conversation was dropped from the URL", !page.url().includes("c="), page.url());
+
+  await context.close();
+}
+
+/* ── 4b. the thread just asked was written to FabOrchestrator ───────────── */
+console.log("\n── 4b. a question asked here is saved in FabOrchestrator ──────────");
+
+{
+  const { context, page } = await signedInPage();
+
+  // A question distinctive enough to find again in a list of a hundred.
+  const marker = `PWA drawer check ${Date.now()}`;
+  await page.goto(`${APP}/fabinsight`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("textarea", { timeout: 30_000 });
+  await page.fill("#insight-prompt", `${marker} — how many lots are currently in WIP?`);
+  await page.click('button[aria-label="Send"]');
+
+  // The conversation id lands in the URL as soon as FO assigns one.
+  await page.waitForFunction(() => location.search.includes("c="), null, { timeout: 60_000 });
+  const withId = new URL(page.url()).searchParams.get("c");
+  ok("FabOrchestrator assigned a conversation id", !!withId, withId ?? "none");
+
+  await page.waitForSelector('button[aria-label="Send"]', { timeout: 240_000 });
+
+  // Reload: the thread must come back from FO, not from anything local.
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(
+    (m) => document.body.innerText.includes(m),
+    marker,
+    { timeout: 60_000 },
+  ).catch(() => {});
+  const reloaded = await page.evaluate(() => document.body.innerText);
+  ok("the thread survives a reload", reloaded.includes(marker));
+  ok("…with its answer", (await page.locator(".fab-md").count()) > 0);
+
+  // And it is in the list the drawer reads — the same list the website reads.
+  await trigger(page).click();
+  await page
+    .waitForFunction(() => !/Loading your conversations/.test(document.body.innerText), null, {
+      timeout: 30_000,
+    })
+    .catch(() => {});
+  const listed = await drawer(page).innerText();
+  ok("…and appears in Recents", listed.includes("PWA drawer check"), marker);
+
+  await context.close();
+}
+
+/* ── 4c. opening an existing thread from Recents ────────────────────────── */
+console.log("\n── 4c. an existing FabOrchestrator thread opens here ──────────────");
+
+{
+  const { context, page } = await signedInPage();
+  await page.goto(`${APP}/fabinsight`, { waitUntil: "domcontentloaded" });
+  await trigger(page).waitFor({ timeout: 30_000 });
+  await trigger(page).click();
+  await page
+    .waitForFunction(() => !/Loading your conversations/.test(document.body.innerText), null, {
+      timeout: 30_000,
+    })
+    .catch(() => {});
+
+  const first = drawer(page).locator("ul li button").first();
+  const title = (await first.innerText()).trim();
+  await first.click();
+  await page.waitForFunction(() => location.search.includes("c="), null, { timeout: 30_000 });
+  ok("picking a conversation opens it", page.url().includes("c="), page.url());
+  // The 220ms slide, plus margin. Every other close assertion waits; this one
+  // did not, and reported a drawer "still open" that was two frames from gone.
+  await page.waitForTimeout(400);
+  ok("…and the drawer closed behind it", (await isOpen(page)) === false);
+  ok("…without leaving /fabinsight", new URL(page.url()).pathname === "/fabinsight");
+
+  await page
+    .waitForFunction(() => document.querySelectorAll(".fab-md").length > 0, null, { timeout: 60_000 })
+    .catch(() => {});
+  ok("its messages are shown", (await page.locator(".fab-md").count()) > 0, title.slice(0, 40));
+
+  // The stripping is the point: no generated SQL may reach the phone.
+  const body = await page.evaluate(() => document.body.innerText);
+  ok("no tool output leaked into the transcript", !/SELECT\s+COUNT\(\*\)/i.test(body));
 
   await context.close();
 }
@@ -235,21 +322,33 @@ console.log("\n── 5. the destinations work, and close it behind them ──�
   ok("the Back-end Agent screen has one too", await trigger(page).isVisible());
 
   await trigger(page).click();
-  await page.waitForTimeout(350);
-  await drawer(page).getByText("Reports", { exact: true }).click();
-  await page.waitForFunction(() => location.pathname === "/reports", null, { timeout: 30_000 });
-  ok("Reports opens", new URL(page.url()).pathname === "/reports", page.url());
+  await page.waitForTimeout(400);
+  const backendText = await drawer(page).innerText();
+  ok("…and says it keeps no history, rather than showing an empty list",
+    /does not keep conversation history/i.test(backendText));
+  ok("…and offers no Recents heading", !backendText.includes("Recents"));
+
+  await drawer(page).getByText("Back to Cockpit", { exact: true }).click();
+  await page.waitForFunction(() => location.pathname === "/", null, { timeout: 30_000 });
+  ok("Back to Cockpit opens the cockpit", new URL(page.url()).pathname === "/", page.url());
   await page.waitForTimeout(400);
   ok("…and the drawer closed behind it", (await isOpen(page)) === false);
-  ok("…and /reports offers no drawer of its own",
-    (await trigger(page).count()) === 0);
 
-  await page.goto(`${APP}/fabinsight`, { waitUntil: "domcontentloaded" });
-  await trigger(page).click();
-  await page.waitForTimeout(350);
-  await drawer(page).getByText("Cockpit", { exact: true }).click();
-  await page.waitForFunction(() => location.pathname === "/", null, { timeout: 30_000 });
-  ok("Cockpit opens", new URL(page.url()).pathname === "/", page.url());
+  /* The reason removing the drawer's nav costs nothing: everything it used to
+     offer is one tap further, on the cockpit, at phone width. */
+  const reachable = await page.evaluate(() =>
+    [...document.querySelectorAll("a[href^='/']")]
+      .filter((a) => {
+        const b = a.getBoundingClientRect();
+        return b.width > 0 && b.height > 0;
+      })
+      .map((a) => a.getAttribute("href")),
+  );
+  ok("the cockpit reaches Reports on a phone", reachable.includes("/reports"), reachable.join(" "));
+
+  await page.goto(`${APP}/reports`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(600);
+  ok("/reports offers no drawer of its own", (await trigger(page).count()) === 0);
 
   await context.close();
 }
@@ -274,7 +373,7 @@ for (const [w, h] of [
   await trigger(page).click();
   await page.waitForTimeout(400);
   const open = await page.evaluate(() => {
-    const el = document.querySelector('[role="dialog"][aria-label="Navigation"]');
+    const el = document.querySelector('[role="dialog"][aria-label="Conversations"]');
     const box = el.getBoundingClientRect();
     return {
       doc: document.documentElement.scrollWidth,
@@ -287,12 +386,34 @@ for (const [w, h] of [
   ok(`${w}×${h}: the panel fits`, open.width <= w, `${open.width}px panel`);
   ok(`${w}×${h}: there is backdrop left to tap`, open.backdrop >= 40, `${open.backdrop}px`);
 
-  // The pill strip must not also be showing — that was the duplicate row.
-  const pills = await page.evaluate(() => {
-    const nav = document.querySelector('header nav[aria-label="Sections"]');
-    return nav ? nav.getBoundingClientRect().height : 0;
+  // The agent screen carries no pill strip at all now — FO's own /chat has
+  // none either. `querySelector` rather than a height check: it must not be in
+  // the document, not merely collapsed.
+  const pills = await page.evaluate(
+    () => !!document.querySelector('header nav[aria-label="Sections"]'),
+  );
+  ok(`${w}×${h}: the agent screen has no pill strip`, pills === false);
+
+  // And the cockpit, which is now where that navigation lives, must show it
+  // here without the document scrolling sideways.
+  await page.goto(`${APP}/`, { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(600);
+  const cockpit = await page.evaluate(() => {
+    const nav = document.querySelector('nav[aria-label="Sections"]');
+    return {
+      present: !!nav,
+      reports: !!document.querySelector("a[href='/reports']"),
+      doc: document.documentElement.scrollWidth,
+      win: window.innerWidth,
+    };
   });
-  ok(`${w}×${h}: the duplicate nav row is gone`, pills === 0, `${pills}px`);
+  ok(`${w}×${h}: the cockpit shows its navigation`, cockpit.present);
+  ok(`${w}×${h}: …including Reports`, cockpit.reports);
+  ok(
+    `${w}×${h}: …without scrolling the page sideways`,
+    cockpit.doc <= cockpit.win,
+    `${cockpit.doc} ≤ ${cockpit.win}`,
+  );
 
   await context.close();
 }

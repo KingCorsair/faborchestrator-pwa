@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { AgentChatClient } from "../fabinsight/agent-chat-client";
 
 /**
@@ -21,5 +23,13 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <AgentChatClient agentId="backend" />;
+  // The shared client reads `?c=` with `useSearchParams`, which needs a
+  // Suspense boundary. This agent keeps no history and will never have a `?c=`
+  // to read — the boundary is here because the hook runs regardless, and a
+  // statically rendered page without one fails the build.
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <AgentChatClient agentId="backend" />
+    </Suspense>
+  );
 }

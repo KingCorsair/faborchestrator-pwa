@@ -152,4 +152,43 @@ export const FabInsightRequestSchema = z.object({
     // (`fitMessagesToContextWindow`); the cap is here so an unbounded body
     // cannot be posted at an authenticated route.
     .max(100),
+
+  /**
+   * Which FabOrchestrator conversation to write this turn into.
+   *
+   * **Accepting this field is not the same as trusting it.** `/api/chat` in
+   * FabOrchestrator does not verify that a `conversationId` belongs to the
+   * caller — it has no `getConversation` and no `userId` comparison, and passes
+   * the value straight to `addMessage` and to the S3-reference lookup. Every
+   * other conversation route there checks ownership. That one does not.
+   *
+   * So the shape is validated here and the **ownership is proved in the route**,
+   * against the caller's own conversation list, before anything is forwarded.
+   * A uuid that parses is still not a uuid this operator may write to.
+   */
+  conversationId: z.string().uuid().nullish(),
+});
+
+/**
+ * Creating a conversation: the question it starts with, and nothing else.
+ *
+ * `model` and `agent` are **not** accepted. Both are decided server-side, for
+ * the same reason the chat route decides `model` and `activeMcpIds`: a client
+ * that could name the agent bucket could write rows into the Modeling Agent's
+ * history, which this app does not open and has no business creating.
+ */
+export const CreateConversationSchema = z.object({
+  title: z.string().min(1).max(20_000),
+});
+
+/**
+ * Updating a conversation: pinning, and only pinning.
+ *
+ * FO's PATCH also takes `title`, `model` and `isShared`. None is accepted here.
+ * `isShared` in particular flips a flag whose only consumer is `/share/<id>`, a
+ * page that exists in no upstream branch — an app that offered it would be
+ * offering a link that goes nowhere.
+ */
+export const UpdateConversationSchema = z.object({
+  isPinned: z.boolean(),
 });

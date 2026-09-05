@@ -65,7 +65,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import type { FoAgent } from "@/lib/faborch/agents";
-import type { ConversationPhase, Failure } from "@/lib/faborch/conversation";
+import type { ConversationPhase, Failure, Turn } from "@/lib/faborch/conversation";
 import {
   EMPTY_CONVERSATION,
   capacityFailure,
@@ -115,16 +115,46 @@ import { readFoStream } from "@/lib/faborch/stream";
  */
 export type AgentChatVariant = "screen" | "inline";
 
+/**
+ * The default for `initialTurns`.
+ *
+ * A module constant rather than `[]` in the parameter list: a fresh array
+ * literal is a new identity on every render, and it feeds the effect that
+ * hydrates the thread. That effect is guarded by a ref so it would not have
+ * looped, but a dependency that changes every render is a trap left for the
+ * next person to remove the guard.
+ */
+const NO_TURNS: Turn[] = [];
+
 export function AgentChat({
   agent,
   hasFabOrchSession,
   initialPrompt = "",
   variant = "screen",
+  initialTurns = NO_TURNS,
+  conversationId = null,
+  continuable = true,
+  onConversationCreated,
 }: {
   agent: FoAgent;
   hasFabOrchSession: boolean;
   initialPrompt?: string;
   variant?: AgentChatVariant;
+  /** A thread loaded from FabOrchestrator, already reduced by `history.ts`. */
+  initialTurns?: Turn[];
+  /** The FO conversation to continue, or null to start one on first send. */
+  conversationId?: string | null;
+  /**
+   * Whether this thread can be added to.
+   *
+   * False when a stored answer is longer than `MAX_TEXT`, which the route
+   * reports. Such a thread can be read but not continued: posting it back as
+   * context would be rejected, and truncating what FabOrchestrator said to make
+   * it fit would misrepresent the product.
+   */
+  continuable?: boolean;
+  /** Called once, with the id FO assigned, when the first question creates one. */
+  onConversationCreated?: (id: string) => void;
 }) {
   const [state, dispatch] = React.useReducer(conversationReducer, EMPTY_CONVERSATION);
   const [input, setInput] = React.useState("");
@@ -184,6 +214,51 @@ export function AgentChat({
    */
   const inFlight = React.useRef(false);
 
+  /**
+   * The FabOrchestrator conversation this thread is being written into.
+   *
+   * A ref, not state, for the same reason `live` is a ref: `send` must stay
+   * stable for the lifetime of the screen. Putting the id in its dependency
+   * array would rebuild `send` the moment a conversation is created — in the
+   * middle of the very turn that created it.
+   *
+   * Null means the turn is not persisted, which is the correct state for the
+   * Back-end Agent always, and for FabInsight until its first question.
+   */
+  const conversationRef = React.useRef<string | null>(conversationId ?? null);
+  React.useEffect(() => {
+    conversationRef.current = conversationId ?? null;
+  }, [conversationId]);
+
+  /**
+   * The "a conversation now exists" callback, kept current without rebuilding
+   * `send`.
+   *
+   * The caller passes a new closure on every render. Captured directly, `send`
+   * would hold the first one forever — which happens to work today and would
+   * break silently the first time that callback closed over changing state.
+   * Same mirror-ref treatment as `live`, and for the same reason.
+   */
+  const onCreatedRef = React.useRef(onConversationCreated);
+  React.useEffect(() => {
+    onCreatedRef.current = onConversationCreated;
+  }, [onConversationCreated]);
+
+  /**
+   * A thread loaded from FabOrchestrator, put on screen.
+   *
+   * Runs on mount only. The screen is remounted by `key` whenever the thread
+   * changes — New chat, or picking a different conversation — so there is no
+   * case where turns arrive for a conversation already in progress, and no need
+   * to reconcile one thread's answer with another's.
+   */
+  const hydrated = React.useRef(false);
+  React.useEffect(() => {
+    if (hydrated.current || initialTurns.length === 0) return;
+    hydrated.current = true;
+    dispatch({ type: "hydrate", turns: initialTurns });
+  }, [initialTurns]);
+
   const send = React.useCallback(
     (text: string) => {
       const prompt = text.trim();
@@ -211,16 +286,53 @@ export function AgentChat({
 
       void (async () => {
         try {
+          const bearer = `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}`;
+
+          /**
+           * Start the FabOrchestrator conversation, on the first question only.
+           *
+           * Lazily, exactly as the product does it (`full-chat-app.tsx:1425`).
+           * Creating one when New chat is pressed instead would fill the
+           * FabOrchestrator website's sidebar with identical empty "New Chat"
+           * rows every time somebody opened the drawer and changed their mind.
+           *
+           * A failure here is not the operator's problem: `id` comes back null,
+           * the turn goes unpersisted, and the answer arrives exactly as it did
+           * before any of this existed. History is an enhancement; answering is
+           * the product.
+           */
+          if (agent.keepsHistory && !conversationRef.current) {
+            try {
+              const made = await fetch("/api/faborch/conversations", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: bearer },
+                body: JSON.stringify({ title: prompt }),
+                signal: controller.signal,
+              });
+              const body = (await made.json().catch(() => null)) as { id?: string } | null;
+              if (made.ok && typeof body?.id === "string") {
+                conversationRef.current = body.id;
+                onCreatedRef.current?.(body.id);
+              }
+            } catch {
+              /* Unpersisted is a worse conversation, not a broken one. */
+            }
+          }
+
           const res = await fetch(`/api/faborch/${agent.id}/chat`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}`,
-            },
+            headers: { "Content-Type": "application/json", Authorization: bearer },
             // FO builds the model's context from this array rather than from
             // its own database, so the whole conversation travels and follow-up
             // questions work with no server state on either side.
-            body: JSON.stringify({ messages: toFoMessages(history) }),
+            //
+            // `conversationId` decides only whether FO writes the turn down.
+            // The route proves it belongs to this operator before forwarding it
+            // — FO's own `/api/chat` does not check.
+            body: JSON.stringify({
+              messages: toFoMessages(history),
+              conversationId: conversationRef.current,
+            }),
             signal: controller.signal,
           });
 
@@ -287,6 +399,10 @@ export function AgentChat({
         }
       })();
     },
+    // `onConversationCreated` is deliberately absent, and reached through
+    // `onCreatedRef` instead: the caller passes a fresh closure on every render,
+    // and depending on it would rebuild `send` constantly — the exact hazard the
+    // `live` ref removed.
     [agent, hasFabOrchSession],
   );
 
@@ -393,16 +509,36 @@ export function AgentChat({
         <ArtifactSheet artifact={openArtifact} onClose={() => setOpenArtifact(null)} />
       ) : null}
 
-      <Composer
-        agent={agent}
-        value={input}
-        onChange={setInput}
-        onSubmit={() => send(input)}
-        onStop={() => abortRef.current?.abort()}
-        busy={state.busy}
-        disabled={!hasFabOrchSession}
-        inline={inline}
-      />
+      {/* A thread FabOrchestrator stored, carrying an answer longer than one
+          message may be. It can be read; it cannot be added to, because posting
+          it back as context would be rejected and shortening what FO said to
+          make it fit would misrepresent the product. Said plainly, with the way
+          out, rather than leaving a composer that fails on every press. */}
+      {!continuable ? (
+        <p
+          className="m-0 flex-none border-t px-4 py-3 text-[12px] leading-[1.6] sm:px-6"
+          style={{
+            borderColor: "var(--border-light)",
+            background: "var(--status-amber-bg)",
+            color: "var(--status-amber-ink)",
+          }}
+          role="status"
+        >
+          This conversation is too long to continue here. You can read it, and
+          start a new chat to ask something else.
+        </p>
+      ) : (
+        <Composer
+          agent={agent}
+          value={input}
+          onChange={setInput}
+          onSubmit={() => send(input)}
+          onStop={() => abortRef.current?.abort()}
+          busy={state.busy}
+          disabled={!hasFabOrchSession}
+          inline={inline}
+        />
+      )}
     </div>
   );
 }

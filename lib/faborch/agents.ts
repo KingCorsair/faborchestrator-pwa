@@ -76,6 +76,25 @@ export interface FoAgent {
    * non-`/api/chat` agent needs to know that before they send it.
    */
   sendMcpIds: boolean;
+  /**
+   * Whether this agent's conversations are stored in FabOrchestrator.
+   *
+   * Not a capability of this app — a fact about the product. FO partitions its
+   * conversation store by an `agent` column (`prisma/schema.prisma:109`), and
+   * FabInsight's bucket is `"chat"`, the same one the FabOrchestrator website
+   * reads. That is what makes a thread started on a phone appear in the
+   * website's sidebar, and one started there open here.
+   *
+   * The Back-end Agent is `false` because **the product's own Back-end Agent
+   * stores nothing.** `components/agent-chat/backend-agent-app.tsx:25` says it
+   * outright — "The sidebar has no conversation history because this agent has
+   * none: its artifacts are dashboards, not saved chats" — and a live read on
+   * 5 September confirmed it: `GET /api/conversations?agent=backend-agent`
+   * returns zero rows for an account holding 104 in `chat` and 35 in
+   * `modeling`. Giving it history here would invent a behaviour the product
+   * does not have, and would file its threads under FabInsight's list.
+   */
+  keepsHistory: boolean;
   /** Shown on the empty state. FabInsight's are the cockpit ask bar's own. */
   chips: string[];
   blurb: string;
@@ -88,6 +107,7 @@ export const FO_AGENTS: Record<FoAgentId, FoAgent> = {
     name: "FabInsight",
     foPath: "/api/chat",
     sendMcpIds: true,
+    keepsHistory: true,
     chips: ["Yield variance · Line 4", "Compliance · Fab West", "Monthly OEE trend"],
     blurb:
       "FabInsight runs inside FabOrchestrator and answers with your tools, your role " +
@@ -101,6 +121,7 @@ export const FO_AGENTS: Record<FoAgentId, FoAgent> = {
     // `/chat`, not a separate service (see the verification note above).
     foPath: "/api/chat",
     sendMcpIds: true,
+    keepsHistory: false,
     chips: ["Show scrap by line this week", "Build a yield dashboard"],
     blurb:
       "The Back-end Agent is FabOrchestrator's workflow-integration framing of the " +

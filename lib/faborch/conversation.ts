@@ -102,6 +102,15 @@ export type ConversationAction =
   | { type: "stalled" }
   /** Start again with an empty thread. */
   | { type: "reset" }
+  /**
+   * Replace the thread with one loaded from FabOrchestrator.
+   *
+   * Distinct from `reset` because it is not a beginning: these turns already
+   * happened, in FO, possibly on the website. The state it produces is settled —
+   * not busy, no failure, nothing streaming — because a loaded conversation is
+   * finished by definition, however it originally ended.
+   */
+  | { type: "hydrate"; turns: Turn[] }
   /** Dismiss a failure notice without touching the thread. */
   | { type: "clearFailure" };
 
@@ -210,6 +219,13 @@ export function conversationReducer(
 
     case "reset":
       return EMPTY_CONVERSATION;
+
+    case "hydrate":
+      // Built from EMPTY_CONVERSATION rather than spread over the current
+      // state, so nothing from the thread being replaced — a failure notice, a
+      // stalled phase, a half-written streaming id — can survive into a
+      // conversation it does not belong to.
+      return { ...EMPTY_CONVERSATION, turns: action.turns };
 
     case "clearFailure":
       return { ...state, failure: null };

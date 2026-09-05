@@ -1,54 +1,65 @@
 "use client";
 
 /**
- * The agent screens' navigation drawer — FabOrchestrator's chat sidebar, on a phone.
+ * The agent screens' conversation drawer — FabOrchestrator's chat sidebar, on a
+ * phone.
  *
  * ── This is FO's own mobile branch, not a new idea ──────────────────────────
  * `claudeai_athena/components/ui/sidebar.tsx:170-191`: below 768px the product
- * does not render its 16rem rail at all. It renders a **left slide-over Sheet
- * at 18rem**, dismissed by backdrop, Escape or the trigger. Every agent chat
- * there (`full-chat-app.tsx`, `modeling-chat-app.tsx`, `backend-agent-app.tsx`)
- * mounts that same component. So the desktop rail was never the thing to copy;
- * 288px of slide-over is what the product itself shows on a phone, and this is
- * that, in this app's vocabulary.
+ * does not render its 16rem rail. It renders a **left slide-over Sheet at
+ * 18rem**, dismissed by backdrop, Escape or the trigger, and every agent chat
+ * there mounts that same component. The desktop rail was never the thing to
+ * copy; 288px of slide-over is what FabOrchestrator itself shows on a phone.
  *
- * ── What it deliberately does NOT carry ─────────────────────────────────────
- * FO's sidebar has **Pinned** and **Recents**, read from
- * `GET /api/conversations`. This app has neither, and inventing them was the
- * one thing ruled out: `lib/faborch/client.ts` sends no `conversationId`, so
- * `app/api/chat/route.ts:882` (`if (!conversationId) return;`) never persists a
- * turn — a conversation held here exists only in `useReducer` state, and a list
- * of thread names would be a list of fictions.
+ * ── Why there is no navigation block in here any more ───────────────────────
+ * There was one until 5 September — Cockpit, Agents, Workflows, Sites, Reports,
+ * mirroring the top bar. It came out the same day the conversations went in,
+ * because a sidebar carrying both is two things badly.
  *
- * The product already set this precedent. `backend-agent-app.tsx:25` omits the
- * same section for the same kind of reason, and says so: "The sidebar has no
- * conversation history because this agent has none." The muted line where
- * Recents would sit follows that lead — it states the absence rather than
- * dressing it up, because a drawer that silently lacks the section a user saw
- * in FabOrchestrator is exactly how somebody concludes the app is broken.
+ * FabOrchestrator's own sidebar is the argument. It lists twelve nav entries
+ * and **exactly one of them navigates**: Dashboard, to `/home`. Projects,
+ * Agents, Workflows, Reports, Sites, Integrations, Compliance and Settings have
+ * no handler at all, and FO's source labels them itself — "Static workspace nav
+ * — non-functional links" (`full-chat-app.tsx:452`) and "Static enterprise nav
+ * — non-functional links" (`:484`). Strip the decoration and the product's real
+ * structure is: New chat · one link home · Pinned · Recents · account. Which is
+ * this file.
  *
- * ── One nav list, and it is not this file's ─────────────────────────────────
- * `NAV` comes from `nav-items.ts`, which the top bar and the cockpit header
- * already share. That module's header records why: the shell and the cockpit
- * drifted apart once, and the app disagreed with itself about what the platform
- * offered depending on which page you stood on. A third copy here would be the
- * same bug with three ways to be wrong instead of two.
+ * This app cannot ship the decoration anyway: a control that looks pressable
+ * and does nothing is the defect it has already been reported for once.
+ *
+ * The navigation those five entries offered has not been lost. `CockpitNav` now
+ * carries the full set at every width, so **Back to Cockpit reaches all of it in
+ * one further tap** — and the cockpit is where an operator chooses what to do
+ * next anyway. That ordering matters: the cockpit was fixed first, in the same
+ * change, because until it was, Reports was reachable on a phone *only* from
+ * this drawer.
+ *
+ * ── Pinned and Recents are real, or they are absent ─────────────────────────
+ * Every row here is a conversation FabOrchestrator has, read live over the
+ * operator's own token from `GET /api/conversations`. Nothing is invented,
+ * nothing is cached, and nothing is stored by this app. When the list cannot be
+ * loaded the sections do not appear at all and the drawer degrades to New chat
+ * and Back to Cockpit — because a chat screen must not stop working when a
+ * history endpoint does.
+ *
+ * Pinned is hidden entirely when empty rather than shown as a heading with
+ * nothing under it. The same rule the inline ask follows: an empty labelled box
+ * reads as a thing that failed to load.
  *
  * ── Why the panel is `visibility: hidden` when closed ───────────────────────
  * It stays mounted so it can slide. `display: none` cannot transition, and a
- * panel left merely translated off-screen keeps its links in the tab order —
- * you would tab off the composer into five invisible destinations.
- * `visibility: hidden` removes them from the tab order AND animates, provided
- * the property change is delayed until the slide finishes on the way out.
+ * panel merely translated off-screen keeps its links in the tab order — you
+ * would tab off the composer into a hundred invisible conversations.
+ * `visibility: hidden` removes them and still animates, provided the property
+ * change is delayed until the slide finishes on the way out.
  */
 
 import * as React from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Plus, X } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutGrid, Loader2, Pin, PinOff, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
-import { NAV } from "./nav-items";
 import type { SessionUser } from "./use-session";
 
 /** FO's own `SIDEBAR_WIDTH_MOBILE` is 18rem. Capped so 360px keeps a backdrop. */
@@ -56,21 +67,74 @@ const PANEL_WIDTH = "min(288px, 86vw)";
 
 const MS = 220;
 
+/** One row of the operator's FabOrchestrator history. */
+export interface DrawerConversation {
+  id: string;
+  title: string;
+  isPinned: boolean;
+  updatedAt: string;
+}
+
+/** What the shell passes when the screen below keeps history. */
+export interface DrawerHistory {
+  selectedId: string | null;
+  onOpen: (id: string) => void;
+}
+
 export function NavDrawer({
   open,
   onClose,
   onNewChat,
   user,
+  history,
 }: {
   open: boolean;
   onClose: () => void;
-  /** Clears the conversation on screen. Nothing is stored, so nothing is lost. */
+  /** Clears the conversation on screen. The FO thread itself is untouched. */
   onNewChat: () => void;
   user: SessionUser | null;
+  /** Absent for an agent that keeps no history — see `FoAgent.keepsHistory`. */
+  history?: DrawerHistory;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const panelRef = React.useRef<HTMLDivElement>(null);
   const restoreTo = React.useRef<HTMLElement | null>(null);
+
+  const [rows, setRows] = React.useState<DrawerConversation[] | null>(null);
+  const [failed, setFailed] = React.useState(false);
+  const [busyId, setBusyId] = React.useState<string | null>(null);
+
+  const bearer = () =>
+    `Bearer ${typeof window === "undefined" ? "" : (localStorage.getItem("llmatscale_auth_token") ?? "")}`;
+
+  /**
+   * Load the list when the drawer opens, not on a timer and not on mount.
+   *
+   * On open, because that is the only moment it is about to be read and the
+   * only moment it can be stale in a way anybody notices — a thread started on
+   * the FabOrchestrator website a minute ago should be here. On a timer it
+   * would poll a database from a phone for a panel nobody has opened.
+   */
+  const load = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/faborch/conversations", { headers: { Authorization: bearer() } });
+      if (!res.ok) {
+        setFailed(true);
+        return;
+      }
+      const body = (await res.json()) as { conversations?: DrawerConversation[] };
+      setRows(Array.isArray(body.conversations) ? body.conversations : []);
+      setFailed(false);
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!open || !history) return;
+    void load();
+  }, [open, history, load]);
 
   /* Escape, exactly as `artifact-sheet.tsx` does it. */
   React.useEffect(() => {
@@ -92,8 +156,6 @@ export function NavDrawer({
   React.useEffect(() => {
     if (open) {
       restoreTo.current = document.activeElement as HTMLElement | null;
-      // After the paint that makes it visible; focusing a `visibility: hidden`
-      // element does nothing at all.
       const id = window.setTimeout(() => panelRef.current?.focus(), 0);
       return () => window.clearTimeout(id);
     }
@@ -104,16 +166,50 @@ export function NavDrawer({
   /**
    * A route change closes it.
    *
-   * Next navigates client-side, so without this the drawer would still be
-   * standing open over the page it just sent you to. Keyed on `pathname` rather
-   * than on the click, so it also covers Back, a redirect, and the sign-out
-   * path.
+   * Keyed on `pathname` only. Picking a conversation changes the *query* and
+   * not the path, so this deliberately does not fire for that — the drawer
+   * closes itself in the row's own handler, after the navigation is under way,
+   * which keeps the two cases independent.
    */
   React.useEffect(() => {
     if (open) onClose();
-    // Only `pathname`: adding `open` would close it in the same tick it opened.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
+
+  const pinned = rows?.filter((row) => row.isPinned) ?? [];
+  const recents = rows?.filter((row) => !row.isPinned) ?? [];
+
+  /** Pin or unpin, then reload — FO decides the order, not this component. */
+  const togglePin = async (row: DrawerConversation) => {
+    setBusyId(row.id);
+    try {
+      await fetch(`/api/faborch/conversations/${encodeURIComponent(row.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: bearer() },
+        body: JSON.stringify({ isPinned: !row.isPinned }),
+      });
+      await load();
+    } catch {
+      /* Leaves the list as it was; the next open reloads it. */
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** One conversation, wired to this drawer's handlers. */
+  const row = (item: DrawerConversation) => (
+    <ConversationRow
+      key={item.id}
+      row={item}
+      active={history?.selectedId === item.id}
+      busy={busyId === item.id}
+      onOpen={() => {
+        history?.onOpen(item.id);
+        onClose();
+      }}
+      onTogglePin={() => void togglePin(item)}
+    />
+  );
 
   return (
     <div
@@ -144,10 +240,10 @@ export function NavDrawer({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Navigation"
+        aria-label="Conversations"
         tabIndex={-1}
         className={cn(
-          "absolute inset-y-0 left-0 flex flex-col overflow-y-auto overscroll-contain shadow-2xl outline-none",
+          "absolute inset-y-0 left-0 flex flex-col overflow-hidden shadow-2xl outline-none",
           "transition-transform duration-200 ease-out motion-reduce:transition-none",
           open ? "translate-x-0" : "-translate-x-full",
         )}
@@ -177,17 +273,17 @@ export function NavDrawer({
           </button>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-1 p-2">
-          {/* FO's first sidebar item, and the only action in here that is not
-              navigation. It resets the turns on screen; there is nothing to
-              save and nothing to leave behind. */}
+        {/* The one scrolling region. A hundred conversations is an ordinary
+            number — the demo account holds 104 — so the list scrolls inside the
+            panel while New chat and Back to Cockpit stay put. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-2">
           <button
             type="button"
             onClick={() => {
               onNewChat();
               onClose();
             }}
-            className="flex min-h-[44px] w-full cursor-pointer items-center gap-[10px] border-0 px-3 text-left text-[14px] font-bold transition-colors hover:bg-[var(--cockpit-surface)]"
+            className="flex min-h-[44px] w-full flex-none cursor-pointer items-center gap-[10px] border-0 px-3 text-left text-[14px] font-bold transition-colors hover:bg-[var(--cockpit-surface)]"
             style={{
               borderRadius: "var(--r-chip)",
               background: "transparent",
@@ -198,75 +294,78 @@ export function NavDrawer({
             New chat
           </button>
 
-          <p
-            className="m-0 px-3 pb-1 pt-3 text-[11px] font-bold uppercase tracking-[0.6px]"
-            style={{ color: "var(--text-subtle)" }}
-          >
-            FabOrchestrator
-          </p>
+          {history ? (
+            <>
+              {pinned.length > 0 ? (
+                <>
+                  <Heading>Pinned</Heading>
+                  <ul className="m-0 flex list-none flex-col gap-0.5 p-0">{pinned.map(row)}</ul>
+                </>
+              ) : null}
 
-          <nav className="flex flex-col gap-1" aria-label="Sections">
-            {NAV.map((item) => {
-              const Icon = item.icon;
+              <Heading>Recents</Heading>
 
-              // Same rule as the top bar: an entry this app cannot open is a
-              // <span>, never a disabled <a>. A link with no destination is
-              // still focusable and still looks pressable, which is the "dead
-              // control" this app has been reported for once already.
-              if (item.unavailable) {
-                return (
-                  <span
-                    key={item.href}
-                    title={item.unavailable}
-                    aria-disabled="true"
-                    className="flex min-h-[44px] cursor-not-allowed items-center gap-[10px] px-3 text-[14px] font-bold"
-                    style={{
-                      borderRadius: "var(--r-chip)",
-                      color: "var(--text-subtle)",
-                      opacity: 0.55,
-                    }}
-                  >
-                    <Icon size={17} strokeWidth={2} aria-hidden="true" />
-                    {item.label}
-                  </span>
-                );
-              }
-
-              const active =
-                item.href === "/" ? pathname === "/" : (pathname?.startsWith(item.href) ?? false);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className="flex min-h-[44px] items-center gap-[10px] px-3 text-[14px] font-bold no-underline transition-colors"
-                  style={{
-                    borderRadius: "var(--r-chip)",
-                    background: active ? "var(--nav-active)" : "transparent",
-                    color: active ? "var(--pure-white)" : "var(--text-muted-cool)",
-                  }}
+              {rows === null && !failed ? (
+                <p
+                  className="m-0 flex items-center gap-2 px-3 py-2 text-[12px]"
+                  style={{ color: "var(--text-subtle)" }}
                 >
-                  <Icon size={17} strokeWidth={2} aria-hidden="true" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* Where FabOrchestrator lists Pinned and Recents. See the file
-              header: this app stores no conversation, so it states that rather
-              than showing names it would have to invent. */}
-          <p
-            className="m-0 mt-auto px-3 pb-2 pt-6 text-[11px] font-normal leading-[1.6]"
-            style={{ color: "var(--text-subtle)" }}
-          >
-            Conversations are not saved. This thread lasts while the screen is open.
-          </p>
+                  <Loader2 size={13} className="animate-spin" aria-hidden="true" />
+                  Loading your conversations…
+                </p>
+              ) : failed ? (
+                // Named as FabOrchestrator's, because that is whose they are and
+                // where they still exist. Nothing here was lost.
+                <p
+                  className="m-0 px-3 py-2 text-[12px] leading-[1.6]"
+                  style={{ color: "var(--text-subtle)" }}
+                >
+                  Your conversations could not be loaded from FabOrchestrator.
+                  You can still start a new chat.
+                </p>
+              ) : recents.length === 0 ? (
+                <p
+                  className="m-0 px-3 py-2 text-[12px] leading-[1.6]"
+                  style={{ color: "var(--text-subtle)" }}
+                >
+                  No conversations yet. Ask something and it will be saved to
+                  FabOrchestrator.
+                </p>
+              ) : (
+                <ul className="m-0 flex list-none flex-col gap-0.5 p-0">{recents.map(row)}</ul>
+              )}
+            </>
+          ) : (
+            // The Back-end Agent. FabOrchestrator's own Back-end Agent stores no
+            // conversations and says why; this states the same thing rather than
+            // showing an empty Recents that looks like a failure.
+            <p
+              className="m-0 px-3 py-3 text-[12px] leading-[1.6]"
+              style={{ color: "var(--text-subtle)" }}
+            >
+              This agent does not keep conversation history, in this app or in
+              FabOrchestrator.
+            </p>
+          )}
         </div>
 
-        {/* The header hides the name and role below `sm` to buy a row for the
-            nav. This is where they come back. */}
+        {/* The one navigation left, and the only one needed: everything else is
+            one tap further, on the cockpit. */}
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            router.push("/");
+          }}
+          className="flex min-h-[44px] flex-none cursor-pointer items-center gap-[10px] border-0 bg-transparent px-3 text-left text-[13px] font-bold transition-colors hover:bg-[var(--cockpit-surface)]"
+          style={{ borderTop: "1px solid var(--border-light)", color: "var(--text-muted-cool)" }}
+        >
+          <LayoutGrid size={16} strokeWidth={2} aria-hidden="true" />
+          Back to Cockpit
+        </button>
+
+        {/* The header hides the name and role below `sm`. This is where they
+            come back. */}
         <div
           className="flex flex-none items-center gap-[9px] px-3 py-[10px]"
           style={{ borderTop: "1px solid var(--border-light)" }}
@@ -297,6 +396,78 @@ export function NavDrawer({
         </div>
       </div>
     </div>
+  );
+}
+
+/** A section label. Module level so it is not a new component type per render. */
+function Heading({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="m-0 px-3 pb-1 pt-4 text-[11px] font-bold uppercase tracking-[0.6px]"
+      style={{ color: "var(--text-subtle)" }}
+    >
+      {children}
+    </p>
+  );
+}
+
+/**
+ * One conversation: open it, or change whether it is pinned.
+ *
+ * The pin control is a **separate button beside** the row rather than a menu on
+ * it. A phone has no hover to reveal an affordance on, and a long-press menu is
+ * a gesture nobody discovers; two adjacent targets, both clearing 44px, are the
+ * honest version. It is also the only write this app makes to a conversation —
+ * there is deliberately no rename, no share and no delete.
+ */
+function ConversationRow({
+  row,
+  active,
+  busy,
+  onOpen,
+  onTogglePin,
+}: {
+  row: DrawerConversation;
+  active: boolean;
+  busy: boolean;
+  onOpen: () => void;
+  onTogglePin: () => void;
+}) {
+  return (
+    <li className="flex items-stretch gap-0.5">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-current={active ? "page" : undefined}
+        className="flex min-h-[44px] min-w-0 flex-1 cursor-pointer items-center border-0 px-3 text-left text-[13px] font-semibold transition-colors hover:bg-[var(--cockpit-surface)]"
+        style={{
+          borderRadius: "var(--r-chip)",
+          background: active ? "var(--nav-active)" : "transparent",
+          color: active ? "var(--pure-white)" : "var(--text-muted-cool)",
+        }}
+      >
+        {/* Truncated, never wrapped: FO titles are the question's first fifty
+            characters, so wrapping would give most rows three lines and turn a
+            hundred conversations into a very long scroll. */}
+        <span className="truncate">{row.title}</span>
+      </button>
+      <button
+        type="button"
+        onClick={onTogglePin}
+        disabled={busy}
+        aria-label={row.isPinned ? `Unpin ${row.title}` : `Pin ${row.title}`}
+        className="grid min-h-[44px] w-[38px] flex-none cursor-pointer place-items-center border-0 bg-transparent transition-colors hover:bg-[var(--cockpit-surface)]"
+        style={{ borderRadius: "var(--r-chip)", color: "var(--text-subtle)" }}
+      >
+        {busy ? (
+          <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+        ) : row.isPinned ? (
+          <PinOff size={14} strokeWidth={2} aria-hidden="true" />
+        ) : (
+          <Pin size={14} strokeWidth={2} aria-hidden="true" />
+        )}
+      </button>
+    </li>
   );
 }
 

@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { AgentChatClient } from "./agent-chat-client";
 
 /**
@@ -46,5 +48,15 @@ export default async function Page({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  return <AgentChatClient agentId="insight" initialPrompt={safePrompt((await searchParams).q)} />;
+  return (
+    // `?c=` — which stored conversation is open — is read on the *client* with
+    // `useSearchParams`, unlike `?q=` above. The difference is that it changes
+    // while the screen is open: picking a thread in the drawer is a client-side
+    // navigation, and a server-read prop would not follow it. That hook needs a
+    // Suspense boundary, which is this. The fallback is the same skeleton the
+    // client shows while the session resolves, so nothing flashes.
+    <Suspense fallback={<PageSkeleton />}>
+      <AgentChatClient agentId="insight" initialPrompt={safePrompt((await searchParams).q)} />
+    </Suspense>
+  );
 }

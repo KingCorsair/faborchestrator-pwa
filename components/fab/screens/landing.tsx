@@ -101,7 +101,7 @@ import { Ask } from "@/components/fab/screens/landing-ask";
 function CockpitNav() {
   return (
     <div
-      className="sticky top-0 z-20 flex items-center gap-1.5 px-4 py-[14px] sm:px-[26px]"
+      className="sticky top-0 z-20 flex flex-wrap items-center gap-1.5 px-4 py-[14px] sm:px-[26px]"
       style={{ background: "var(--pure-white)", borderBottom: "1px solid var(--border-light)" }}
     >
       <Link href="/" aria-label="FabOrchestrator home" className="mr-[22px] flex min-h-[44px] items-center no-underline">
@@ -113,8 +113,30 @@ function CockpitNav() {
         not use AppShell — it is the cockpit and carries its own sticky header —
         and that is precisely how the two drifted: this header went on listing
         the demo's own screens after the shell had stopped.
+
+        ── Visible at every width, since 5 September ───────────────────────────
+        It was `hidden md:flex`, so the cockpit — the app's front door —
+        advertised none of the platform on the device this app is built for.
+        That was survivable only because `AppShell` carried the same pills on
+        every other screen: a phone reached Reports from an agent screen rather
+        than from here. Measured at 360px before the change, the cockpit offered
+        `/` and the agent cards and **no path to `/reports` at all**.
+
+        The agent screens now carry a conversation drawer and no pill strip, so
+        the cockpit is where navigation lives. Had this stayed `md:`, Reports
+        would have become unreachable on a phone entirely — which is why this
+        changed first, in the same commit, before the strip came off the shell.
+
+        `order-last w-full` drops it to its own row on a narrow screen rather
+        than squeezing the wordmark, and it scrolls inside itself rather than
+        widening the page: five pills measure 561px against a 360px screen, and
+        a document that scrolls sideways is the one thing the mobile rule
+        forbids. Same `fab-nav-strip` as the shell, so the two behave alike.
       */}
-      <nav className="hidden items-center gap-1.5 md:flex" aria-label="Sections">
+      <nav
+        className="fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto md:order-none md:w-auto md:overflow-visible"
+        aria-label="Sections"
+      >
         {NAV.map((item) => {
           if (item.unavailable) {
             return (
@@ -122,7 +144,11 @@ function CockpitNav() {
                 key={item.href}
                 title={item.unavailable}
                 aria-disabled="true"
-                className="flex cursor-not-allowed items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
+                // `flex-none` and `min-h-[44px]` since this strip became visible
+                // on a phone: a shrinking pill in a scrolling row squashes to
+                // its text, and 44px is the app's own tap-target floor, which
+                // `py-2` alone leaves 8px short.
+                className="flex min-h-[44px] flex-none cursor-not-allowed items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
                 style={{
                   borderRadius: "var(--r-chip)",
                   color: "var(--text-subtle)",
@@ -140,7 +166,7 @@ function CockpitNav() {
             <span
               key={item.href}
               aria-current="page"
-              className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
+              className="flex min-h-[44px] flex-none items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold"
               style={{
                 borderRadius: "var(--r-chip)",
                 background: "var(--nav-active)",
@@ -153,7 +179,7 @@ function CockpitNav() {
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold no-underline"
+              className="flex min-h-[44px] flex-none items-center gap-[7px] px-[14px] py-2 text-[14px] font-bold no-underline"
               style={{ borderRadius: "var(--r-chip)", color: "var(--text-muted-cool)" }}
             >
               {item.label}

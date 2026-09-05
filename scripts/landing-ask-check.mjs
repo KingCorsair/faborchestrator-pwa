@@ -90,7 +90,20 @@ console.log("── 1. ask on the cockpit, stay on the cockpit ─────�
     if (r.method() === "POST" && /\/api\/faborch\/\w+\/chat/.test(r.url())) sends.push(r.url());
   });
 
+  // Waited for as a *request*, not as text on screen.
+  //
+  // Since 5 September the first question also creates a FabOrchestrator
+  // conversation, so there is a round trip between the question appearing in
+  // the transcript and the chat request leaving. This step used to wait for the
+  // text and then count the sends, and read zero — the question was on screen
+  // and its request was still one hop away. What it means to assert is "the
+  // question sent itself", so it waits for the send itself.
+  const chatSent = page.waitForRequest(
+    (r) => r.method() === "POST" && /\/api\/faborch\/\w+\/chat$/.test(r.url()),
+    { timeout: 60_000 },
+  );
   await askOnLanding(page, "How many lots are currently in WIP?");
+  await chatSent;
 
   // No second press. The question must go on its own.
   await page.waitForFunction(() => document.body.innerText.includes("WIP"), null, {

@@ -23,7 +23,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
-import { NavDrawer } from "./nav-drawer";
+import { NavDrawer, type DrawerHistory } from "./nav-drawer";
 import { NAV } from "./nav-items";
 import { logout, type SessionUser } from "./use-session";
 
@@ -33,6 +33,7 @@ export function AppShell({
   sessionExpiresAt,
   onRefresh,
   onNewChat,
+  history,
   children,
 }: {
   user: SessionUser | null;
@@ -44,6 +45,12 @@ export function AppShell({
    * is an agent conversation", which is the only place the drawer belongs.
    */
   onNewChat?: () => void;
+  /**
+   * The operator's FabOrchestrator conversations, when the agent below keeps
+   * them. Absent for the Back-end Agent, which keeps none — in this app or in
+   * the product.
+   */
+  history?: DrawerHistory;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -131,17 +138,27 @@ export function AppShell({
             scrollbar, since a visible one on a 38px-tall row is more noise than
             affordance, and the pills are ordered so the two that open come
             first and are never the ones off the edge. */}
+        {/*
+          **Not rendered at all on an agent screen, since 5 September.**
+
+          FabOrchestrator's own `/chat` has no top navigation: the sidebar is
+          the navigation, at every width. This now matches, and the reason is
+          the same one the product has — a conversation screen with a nav strip
+          above it is offering two ways to leave and none to manage the thing
+          you came for.
+
+          It briefly hid only below `sm`, when the drawer still carried a copy
+          of these five pills. The drawer carries conversations now, so there is
+          nothing left to duplicate, and the strip's remaining job — reaching
+          Reports on a phone — moved to the cockpit's own header, which is
+          visible at every width as of the same change. Removing this without
+          that would have made `/reports` unreachable on a phone.
+
+          Untouched on every screen without a drawer: `/reports` still shows it.
+        */}
+        {hasDrawer ? null : (
         <nav
-          className={cn(
-            "fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto sm:order-none sm:ml-3 sm:w-auto sm:overflow-visible",
-            // **The one reduction the drawer earns.** Below `sm` this strip is
-            // a full-width second row; with the drawer carrying the identical
-            // five destinations, that row is duplicate navigation costing ~46px
-            // of a 640px screen on the one page where vertical space is the
-            // composer's. It is untouched at `sm` and above, and untouched
-            // everywhere on screens with no drawer.
-            hasDrawer && "hidden sm:flex",
-          )}
+          className="fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto sm:order-none sm:ml-3 sm:w-auto sm:overflow-visible"
           aria-label="Sections"
         >
           {NAV.map((item) => {
@@ -195,6 +212,7 @@ export function AppShell({
             );
           })}
         </nav>
+        )}
 
         <div className="flex-1" />
 
@@ -279,6 +297,7 @@ export function AppShell({
           onClose={() => setDrawerOpen(false)}
           onNewChat={onNewChat}
           user={user}
+          history={history}
         />
       ) : null}
     </div>

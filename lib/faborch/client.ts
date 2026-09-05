@@ -342,6 +342,112 @@ export interface FoUiMessage {
   parts: { type: "text"; text: string }[];
 }
 
+/* ── Conversations ───────────────────────────────────────────────────────────
+ *
+ * FabOrchestrator owns conversation history outright: two Prisma tables, an
+ * ownership check on every route, soft deletes, pinning. This app stores
+ * nothing and adds nothing — these four functions reach into what the product
+ * already keeps, over the same bearer token `foChat` uses.
+ *
+ * The `agent` column partitions the store (`prisma/schema.prisma:109`).
+ * `"chat"` is FabInsight's bucket **and the one the FabOrchestrator website
+ * reads**, which is the entire point: a thread started on a phone appears in
+ * the website's sidebar, and one started there opens here.
+ *
+ * Each returns raw JSON. Reducing it to what a screen may see is
+ * `lib/faborch/history.ts`, deliberately separate: the shape FO stores and the
+ * shape this app renders are different problems, and the second is where a
+ * 1.3 MB thread becomes a few kilobytes.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/** Every conversation this operator owns: pinned first, then newest. */
+export async function foConversations(token: string, agent = "chat"): Promise<unknown> {
+  const res = await fetchFo(`/api/conversations?agent=${encodeURIComponent(agent)}`, {
+    headers: authHeader(token),
+  });
+  if (!res.ok) {
+    throw new FabOrchRequestError(
+      await foErrorTextOf(res, "Could not load your conversations from FabOrchestrator."),
+      res.status,
+    );
+  }
+  return res.json();
+}
+
+/**
+ * One conversation with its messages, or null when it is not this caller's.
+ *
+ * FO answers 404 for a thread that never existed and 403 for one belonging to
+ * somebody else. Both mean "not yours to read" here, and both become null —
+ * the screen has the same thing to say either way, and distinguishing them out
+ * loud would confirm to a caller that somebody else's thread exists.
+ */
+export async function foConversation(token: string, id: string): Promise<unknown | null> {
+  const res = await fetchFo(`/api/conversations/${encodeURIComponent(id)}`, {
+    headers: authHeader(token),
+  });
+  if (res.status === 404 || res.status === 403) return null;
+  if (!res.ok) {
+    throw new FabOrchRequestError(
+      await foErrorTextOf(res, "Could not load that conversation from FabOrchestrator."),
+      res.status,
+    );
+  }
+  return res.json();
+}
+
+/**
+ * Start a conversation in FabOrchestrator and return its id.
+ *
+ * Called on the **first send**, never when New chat is pressed — which is what
+ * FO's own client does (`full-chat-app.tsx:1425`), and the reason is visible in
+ * the product: a conversation created per button press fills the website's
+ * sidebar with identical empty "New Chat" rows.
+ *
+ * The title is the question's first fifty characters, formed exactly as FO
+ * forms it. FO also has an endpoint that writes a better one with a model; this
+ * app does not call it, because this app makes no model calls.
+ */
+export async function foCreateConversation(
+  token: string,
+  title: string,
+  agent = "chat",
+): Promise<string | null> {
+  const trimmed = title.trim();
+  const res = await fetchFo("/api/conversations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader(token) },
+    body: JSON.stringify({
+      title: trimmed.slice(0, 50) + (trimmed.length > 50 ? "..." : ""),
+      model: FO_DEFAULT_MODEL,
+      agent,
+    }),
+  });
+  // A failure here must not cost the operator their question, so this reports
+  // rather than throws: the caller sends the turn unpersisted and the answer
+  // still arrives. History is an enhancement; answering is the product.
+  if (!res.ok) return null;
+  const body = (await res.json().catch(() => null)) as { id?: unknown } | null;
+  return typeof body?.id === "string" ? body.id : null;
+}
+
+/**
+ * Pin or unpin a conversation.
+ *
+ * The only write this app makes to a conversation's own record. FO's PATCH also
+ * accepts `title`, `model` and `isShared`; none is sent. Renaming is not
+ * offered, the model is not this app's to choose, and `isShared` points at
+ * `/share/<id>` — a page that exists in no upstream branch.
+ */
+export async function foSetPinned(token: string, id: string, isPinned: boolean): Promise<boolean> {
+  const res = await fetchFo(`/api/conversations/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader(token) },
+    body: JSON.stringify({ isPinned }),
+  });
+  return res.ok;
+}
+
 /**
  * Forward a prompt to FabInsight and hand back FO's response **untouched**.
  *
@@ -352,15 +458,29 @@ export interface FoUiMessage {
  *
  * `messages` carries the whole conversation. That is not a shortcut — FO's
  * route builds the model's context from the request body
- * (`convertToModelMessages(uiMessages)`), not from its database, so follow-up
- * questions work with no server state on either side. `conversationId` exists
- * and is deliberately not sent: it only adds FO-side persistence and S3 file
- * refs, neither of which this interface has.
+ * (`convertToModelMessages(uiMessages)`), not from its database, so a thread
+ * resumed from history is resumed by **sending it back**, not by pointing at an
+ * id. `conversationId` decides only whether FO writes the turn down.
  */
 export async function foChat(options: {
   token: string;
   messages: FoUiMessage[];
   model?: string;
+  /**
+   * The FO conversation to write this turn into, or null/absent for a turn
+   * that is not persisted.
+   *
+   * **`/api/chat` does not check that this id belongs to the caller.** That
+   * route has no `getConversation` and no `userId` comparison — it passes the
+   * value straight to `addMessage` and to the S3-reference lookup. Every other
+   * conversation route in FabOrchestrator checks ownership; that one does not.
+   *
+   * So an id reaching here must already have been proved to belong to the
+   * caller. `app/api/faborch/[agent]/chat/route.ts` checks it against that
+   * caller's own conversation list first. Never pass a value straight out of a
+   * request body.
+   */
+  conversationId?: string | null;
   /** `null` for the agents that build their own tools server-side. */
   activeMcpIds: string[] | null;
   /**
@@ -390,6 +510,11 @@ export async function foChat(options: {
           webSearch: false,
           enableReasoning: true,
         };
+
+  // Omitted entirely when absent, rather than sent as null: `/api/chat` gates
+  // every write on `if (!conversationId) return`, and a field that is not there
+  // is the clearest possible way to say "do not persist this turn".
+  if (options.conversationId) body.conversationId = options.conversationId;
 
   return fetchFo(options.path ?? "/api/chat", {
     method: "POST",

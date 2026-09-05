@@ -1,25 +1,20 @@
 /**
  * The agent drawer, as an architecture rather than as pixels.
  *
- * The interaction — opens, slides, closes on backdrop and Escape, survives a
- * conversation — needs a browser, and `scripts/nav-drawer-check.mjs` drives it
- * on the deployment at both phone widths. What this file guards is the set of
- * properties a browser check would never notice going wrong:
+ * The interaction — opens, slides, lists real threads, closes — needs a
+ * browser, and `scripts/nav-drawer-check.mjs` drives it on the deployment at
+ * both phone widths. What this file guards is the set of properties a browser
+ * check would never notice going wrong:
  *
- *  1. **No invented conversation history.** The drawer's whole risk is that
- *     somebody fills the space where FabOrchestrator shows Recents and Pinned.
- *     This app persists no conversation — `lib/faborch/client.ts` sends no
- *     `conversationId`, so FO's `/api/chat` never writes one — and a list of
- *     thread names here would be a list of fictions. Asserted as an absence,
- *     because an absence is what a future edit will quietly remove.
- *  2. **One nav list.** `nav-items.ts` already feeds the top bar and the
- *     cockpit header. Those two drifted apart once, and the app disagreed with
- *     itself about what the platform offered depending on which page you were
- *     standing on. A third hardcoded copy would be the same bug, cubed.
- *  3. **The conversation is not the drawer's to reset.** The thread key lives
- *     above `AppShell`; the open/closed flag lives inside it. That is the
- *     structural reason opening the drawer cannot clear an answer, and it is
- *     invisible in a screenshot.
+ *  1. **The history is FabOrchestrator's, and this app stores none of it.**
+ *     No database, no cache, no localStorage. The moment a copy exists here it
+ *     is a second source of truth that can disagree with the product.
+ *  2. **No id from a browser reaches FO's `/api/chat` unproved.** That route
+ *     does not check conversation ownership; this app must not become the
+ *     vehicle for the gap.
+ *  3. **The drawer is not a second copy of the app's navigation**, and the
+ *     navigation it dropped is still reachable on a phone.
+ *  4. **The conversation is not the drawer's to reset.**
  *
  * Source is read as text for the same reason `landing-ask.test.ts` and
  * `service-worker.test.ts` do it: what a module imports, and what it declines
@@ -38,123 +33,186 @@ const drawer = read("components", "fab", "nav-drawer.tsx");
 const shell = read("components", "fab", "app-shell.tsx");
 const client = read("app", "fabinsight", "agent-chat-client.tsx");
 const chat = read("components", "fab", "screens", "agent-chat.tsx");
-const navItems = read("components", "fab", "nav-items.ts");
+const landing = read("components", "fab", "screens", "landing.tsx");
+const chatRoute = read("app", "api", "faborch", "[agent]", "chat", "route.ts");
+const listRoute = read("app", "api", "faborch", "conversations", "route.ts");
+const oneRoute = read("app", "api", "faborch", "conversations", "[id]", "route.ts");
+const owns = read("lib", "faborch", "owns.ts");
+const agents = read("lib", "faborch", "agents.ts");
 
-/** The drawer's code, with its documentation stripped out.
- *
- *  The header comment necessarily *discusses* Recents and Pinned — explaining
- *  why they are absent is most of the point. Asserting against the raw file
- *  would therefore fail on its own explanation, so the checks below run against
- *  what actually ships. */
-const code = drawer
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .replace(/^\s*\/\/.*$/gm, "");
+/** Code with documentation stripped: these files necessarily *discuss* the
+ *  things they must not *do*, and asserting against raw text would fail on the
+ *  explanations rather than on the behaviour. */
+const bare = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
-describe("the drawer invents no conversation history", () => {
-  test("it names no history section", () => {
-    for (const forbidden of ["Recents", "Recent chats", "Pinned", "isPinned"]) {
-      assert.ok(!code.includes(forbidden), `nav-drawer.tsx must not render ${forbidden}`);
+const code = bare(drawer);
+
+describe("the history is FabOrchestrator's, and only FabOrchestrator's", () => {
+  test("this app stores no conversation anywhere", () => {
+    for (const file of [drawer, client, chat, listRoute, oneRoute]) {
+      assert.ok(!bare(file).includes("localStorage.setItem"), "no thread may be stashed locally");
+      assert.ok(!/indexedDB|openDatabase/.test(bare(file)));
     }
   });
 
-  test("it fetches nothing", () => {
-    // A conversation list could only come from FO, and reaching for it is the
-    // first step of the thing this change explicitly is not.
-    for (const forbidden of ["fetch(", "/api/conversations", "useEffect(() => {\n    fetch"]) {
-      assert.ok(!code.includes(forbidden), `nav-drawer.tsx must not reference ${forbidden}`);
+  test("no PWA database was introduced", () => {
+    // The rule from the plan. A local store would be a second source of truth
+    // that silently disagrees with the product it demonstrates.
+    for (const forbidden of ["prisma", "sqlite", "better-sqlite3", "drizzle"]) {
+      assert.ok(!read("package.json").includes(forbidden), `${forbidden} must not be a dependency`);
     }
   });
 
-  test("no conversation persistence was added anywhere", () => {
-    // The one field that would make FO start saving threads. Its absence is
-    // what makes "conversations are not saved" a true statement rather than a
-    // stale one. `client.ts` documents why it is withheld; this pins it.
-    const wire = read("lib", "faborch", "client.ts");
-    assert.ok(
-      !/conversationId:\s/.test(wire),
-      "client.ts must not send conversationId — see docs and CLAUDE.md",
-    );
-    assert.ok(!chat.includes("conversationId"));
-    assert.ok(!drawer.includes("localStorage"), "the drawer must not stash threads either");
+  test("the rows shown come from the proxy, not from an invented list", () => {
+    assert.match(code, /fetch\("\/api\/faborch\/conversations"/);
+    // No literal conversation data anywhere in the file. A seeded list is the
+    // exact failure this whole feature exists to avoid — the drawer showed no
+    // history for a fortnight rather than showing plausible-looking history.
+    assert.ok(!/title:\s*"/.test(code), "no hardcoded conversation title");
+    assert.ok(!/isPinned:\s*(true|false)/.test(code), "no hardcoded pin state");
   });
 
-  test("it says so, rather than leaving a silent gap", () => {
-    // The honest counterpart to the assertions above, and the reason somebody
-    // coming from FabOrchestrator does not conclude the screen is broken.
-    assert.match(code, /Conversations are not saved/);
+  test("the list route reduces FO's rows before they leave the server", () => {
+    // FO's rows carry isShared, model and agent. `toSummaries` is what keeps
+    // them off the wire — isShared in particular points at /share/<id>, a page
+    // that exists in no upstream branch.
+    assert.match(listRoute, /toSummaries/);
+    assert.ok(!bare(listRoute).includes("isShared"));
+  });
+
+  test("a thread is stripped server-side, never in the browser", () => {
+    // 1,306 KB measured for one 18-message thread, almost all tool parts.
+    assert.match(oneRoute, /toTurns/);
+    assert.ok(!chat.includes("toTurns"), "the screen must receive turns, not raw messages");
+    assert.ok(!client.includes("toTurns"));
   });
 });
 
-describe("it reuses the one navigation definition", () => {
-  test("the items come from nav-items.ts", () => {
-    assert.match(drawer, /import \{ NAV \} from "\.\/nav-items"/);
-    assert.match(code, /NAV\.map/);
+describe("no unproved conversation id reaches FabOrchestrator", () => {
+  test("the chat route checks ownership before forwarding", () => {
+    // FO's /api/chat has no getConversation and no userId comparison. This is
+    // the check that stands in front of it.
+    assert.match(chatRoute, /ownsConversation/);
+    assert.match(
+      chatRoute,
+      /agent\.keepsHistory && \(await ownsConversation\(foToken, requested\)\)/,
+    );
   });
 
-  test("no label is hardcoded in the drawer", () => {
-    // Every destination in the drawer must be one NAV already knows about.
-    for (const label of ["Cockpit", "Workflows", "Sites", "Reports"]) {
-      assert.ok(navItems.includes(`"${label}"`), `nav-items.ts should define ${label}`);
-      assert.ok(!code.includes(`>${label}<`), `nav-drawer.tsx must not hardcode ${label}`);
+  test("an unproved id becomes null rather than an error", () => {
+    // The operator still gets their answer; it simply is not written down.
+    assert.match(chatRoute, /\?\s*requested\s*:\s*null/);
+  });
+
+  test("the ownership check fails closed", () => {
+    assert.match(owns, /catch\s*\{[\s\S]*?return false/);
+  });
+
+  test("the schema accepts the field but does not vouch for it", () => {
+    const validation = read("lib", "validation.ts");
+    assert.match(validation, /conversationId: z\.string\(\)\.uuid\(\)\.nullish\(\)/);
+  });
+
+  test("only pinning may be written to a conversation", () => {
+    const validation = read("lib", "validation.ts");
+    assert.match(validation, /UpdateConversationSchema = z\.object\(\{\s*isPinned: z\.boolean\(\)/);
+    for (const forbidden of ["isShared", "title:", "model:"]) {
+      assert.ok(
+        !bare(oneRoute).includes(forbidden) || forbidden === "title:",
+        `${forbidden} must not be writable from here`,
+      );
     }
   });
 
-  test("Master Data Load is not a destination", () => {
-    // It is excluded on purpose: FO gates it behind `modeling_agent` and Jothi
-    // confirmed on 2 September it does not belong in this app.
+  test("nothing destructive is exposed", () => {
+    for (const file of [listRoute, oneRoute]) {
+      assert.ok(!/export async function DELETE/.test(file), "no delete proxy");
+    }
+  });
+
+  test("the agent bucket is a server constant, never a request field", () => {
+    assert.match(listRoute, /const AGENT = "chat"/);
+    assert.ok(!bare(listRoute).includes("searchParams.get"));
+  });
+});
+
+describe("the drawer is a conversation sidebar, not a second navigation", () => {
+  test("the app's sections are gone from it", () => {
+    for (const label of ["Cockpit", "Agents", "Workflows", "Sites", "Reports"]) {
+      assert.ok(!code.includes(`>${label}<`), `nav-drawer.tsx must not list ${label}`);
+    }
+    assert.ok(!code.includes("NAV.map"), "the nav list must not be rendered here any more");
+    assert.ok(!drawer.includes('from "./nav-items"'), "and must not be imported");
+  });
+
+  test("one way back, and it is the cockpit", () => {
+    assert.match(code, /Back to Cockpit/);
+    assert.match(code, /router\.push\("\/"\)/);
+  });
+
+  test("the cockpit carries the real navigation, at every width", () => {
+    // The reason removing those five entries costs nothing. Before this, the
+    // cockpit's own nav was `hidden md:flex` and a phone could reach /reports
+    // only from an agent screen.
+    assert.ok(!landing.includes('className="hidden items-center gap-1.5 md:flex"'));
+    assert.match(landing, /fab-nav-strip order-last flex w-full/);
+    assert.match(landing, /NAV\.map/);
+  });
+
+  test("the agent screens carry no pill strip at all", () => {
+    // FO's own /chat has no top navigation either; the sidebar is the
+    // navigation. Nothing is duplicated because nothing is shared.
+    assert.match(shell, /hasDrawer \? null : \(/);
+  });
+
+  test("Master Data Load is still not a destination", () => {
     for (const forbidden of ["modeling", "Master Data", "master-data"]) {
       assert.ok(!code.includes(forbidden), `nav-drawer.tsx must not link ${forbidden}`);
     }
   });
-
-  test("an unreachable entry is a span, never a dead link", () => {
-    // The same rule the top bar follows, and the defect this app has already
-    // been reported for once: a link with no destination is still focusable and
-    // still looks pressable.
-    assert.match(code, /item\.unavailable/);
-    assert.match(code, /aria-disabled="true"/);
-  });
 });
 
-describe("the drawer belongs to the agent screens only", () => {
-  test("the shell shows it only when a conversation is below", () => {
-    assert.match(shell, /const hasDrawer = typeof onNewChat === "function"/);
-    assert.match(shell, /hasDrawer \? \(/);
+describe("Pinned and Recents are real, or they are absent", () => {
+  test("Pinned is not rendered when empty", () => {
+    assert.match(code, /pinned\.length > 0 \? \(/);
   });
 
-  test("both agent doors get it, because both use one client", () => {
-    // `/fabinsight` (FabInsight, and the AI Support Engineer card, which has no
-    // separate surface) and `/backend-agent`.
-    const insight = read("app", "fabinsight", "page.tsx");
-    const backend = read("app", "backend-agent", "page.tsx");
-    assert.match(insight, /AgentChatClient/);
-    assert.match(backend, /AgentChatClient/);
-    assert.match(client, /onNewChat=\{/);
+  test("a failed load degrades the drawer instead of the chat", () => {
+    assert.match(code, /could not be loaded from FabOrchestrator/);
+    // New chat and Back to Cockpit sit outside the history block, so a failure
+    // cannot take them with it.
+    const historyBlock = code.slice(code.indexOf("{history ? ("), code.indexOf("Back to Cockpit"));
+    assert.ok(!historyBlock.includes("New chat"));
   });
 
-  test("/reports passes no callback, so it grows no drawer", () => {
-    const reports = read("components", "fab", "screens", "reports.tsx");
-    assert.ok(!reports.includes("onNewChat"));
+  test("an agent that keeps no history says so rather than showing an empty list", () => {
+    assert.match(code, /does not keep conversation history/);
+    assert.match(agents, /keepsHistory: false/);
+    assert.match(agents, /keepsHistory: true/);
+  });
+
+  test("the list is loaded when the drawer opens, not polled", () => {
+    assert.match(code, /if \(!open \|\| !history\) return;/);
+    assert.ok(!/setInterval/.test(code), "a phone must not poll a database for a closed panel");
   });
 });
 
 describe("opening the drawer cannot disturb the conversation", () => {
-  test("the thread key is held above the shell", () => {
-    // The structural guarantee. `thread` is state in the client; `drawerOpen`
-    // is state in the shell. Toggling the second cannot change the first.
-    assert.match(client, /const \[thread, setThread\] = React\.useState\(0\)/);
-    assert.match(client, /key=\{thread\}/);
+  test("which thread is open lives in the URL, above the shell", () => {
+    assert.match(client, /search\.get\("c"\)/);
+    assert.match(client, /key=\{thread\?\.id \?\? "new"\}/);
     assert.match(shell, /const \[drawerOpen, setDrawerOpen\] = React\.useState\(false\)/);
   });
 
-  test("New chat only bumps that key", () => {
-    assert.match(client, /onNewChat=\{\(\) => setThread\(\(n\) => n \+ 1\)\}/);
+  test("a new thread is not re-seeded with ?q=", () => {
+    assert.match(client, /initialPrompt=\{selected \? "" : initialPrompt\}/);
   });
 
-  test("a new thread is not re-seeded with ?q=", () => {
-    // Otherwise asking for a blank conversation would immediately re-ask the
-    // question the URL carried.
-    assert.match(client, /thread === 0 \? initialPrompt : ""/);
+  test("a conversation is created on the first send, not on New chat", () => {
+    // Otherwise every stray tap leaves an empty "New Chat" row in the
+    // FabOrchestrator website's own sidebar.
+    assert.match(chat, /if \(agent\.keepsHistory && !conversationRef\.current\)/);
+    assert.ok(!bare(drawer).includes("method: \"POST\""), "the drawer creates nothing");
   });
 
   test("a discarded turn is aborted, not left running", () => {
@@ -163,26 +221,22 @@ describe("opening the drawer cannot disturb the conversation", () => {
 });
 
 describe("it is dismissible, and reachable, the way a dialog must be", () => {
-  test("Escape closes it", () => {
+  test("Escape, backdrop and a close button all dismiss it", () => {
     assert.match(code, /e\.key === "Escape"/);
-  });
-
-  test("the backdrop is a real control, not a div with a handler", () => {
     assert.match(code, /aria-label="Close navigation"/);
-  });
-
-  test("there is a close button as well", () => {
     assert.match(code, /aria-label="Close"/);
   });
 
-  test("a route change closes it", () => {
+  test("a path change closes it, a query change does not", () => {
+    // Picking a conversation changes only `?c=`, and closes the drawer in the
+    // row's own handler — keeping the two cases independent.
     assert.match(code, /\[pathname\]\)/);
   });
 
   test("it is announced as a dialog", () => {
     assert.match(code, /role="dialog"/);
     assert.match(code, /aria-modal="true"/);
-    assert.match(code, /aria-label="Navigation"/);
+    assert.match(code, /aria-label="Conversations"/);
   });
 
   test("focus goes in on open and comes back on close", () => {
@@ -191,16 +245,13 @@ describe("it is dismissible, and reachable, the way a dialog must be", () => {
   });
 
   test("closed means out of the tab order, not merely off-screen", () => {
-    // `-translate-x-full` alone leaves five links tabbable from the composer.
+    // A hundred conversations tabbable from the composer, otherwise.
     assert.match(code, /visibility: open \? "visible" : "hidden"/);
   });
 });
 
 describe("it fits a phone", () => {
   test("the panel is capped below the narrowest supported width", () => {
-    // FO's own SIDEBAR_WIDTH_MOBILE is 18rem; 86vw keeps a backdrop to tap at
-    // 360px, where a flat 288px would leave 72px and a fixed 18rem in `vw`
-    // terms would not scale at all.
     assert.match(drawer, /min\(288px, 86vw\)/);
   });
 
@@ -208,12 +259,16 @@ describe("it fits a phone", () => {
     const targets = code.match(/min-h-\[(\d+)px\]/g) ?? [];
     assert.ok(targets.length >= 4, `expected several sized targets, saw ${targets.length}`);
     for (const t of targets) {
-      const px = Number(t.replace(/\D/g, ""));
-      assert.ok(px >= 44, `touch target ${t} is under 44px`);
+      assert.ok(Number(t.replace(/\D/g, "")) >= 44, `touch target ${t} is under 44px`);
     }
   });
 
-  test("the trigger clears 44px too", () => {
+  test("the cockpit's pills clear 44px too, now that a phone sees them", () => {
+    const pills = landing.match(/min-h-\[44px\] flex-none/g) ?? [];
+    assert.ok(pills.length >= 3, `expected the three pill variants, saw ${pills.length}`);
+  });
+
+  test("the trigger clears 44px", () => {
     assert.match(shell, /aria-label="Open navigation"[\s\S]{0,400}min-h-\[44px\] min-w-\[44px\]/);
   });
 
@@ -221,10 +276,7 @@ describe("it fits a phone", () => {
     assert.match(code, /motion-reduce:transition-none/);
   });
 
-  test("the duplicate mobile nav row is dropped only where the drawer replaces it", () => {
-    // Below `sm` the pill strip is a full-width second row carrying the same
-    // five destinations. It stays at `sm` and above, and on screens with no
-    // drawer it is untouched.
-    assert.match(shell, /hasDrawer && "hidden sm:flex"/);
+  test("the thread list scrolls inside the panel", () => {
+    assert.match(code, /overflow-y-auto overscroll-contain/);
   });
 });

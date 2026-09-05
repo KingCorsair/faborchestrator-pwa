@@ -51,6 +51,7 @@ import {
   foErrorTextOf,
 } from "@/lib/faborch/client";
 import { codeForStatus, splitErrorId, statusForCode, type PwaErrorCode } from "@/lib/faborch/errors";
+import { ownsConversation } from "@/lib/faborch/owns";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
 import { FabInsightRequestSchema } from "@/lib/validation";
 
@@ -108,9 +109,35 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     // user server-side, so there is nothing to ask.
     const activeMcpIds = agent.sendMcpIds ? await foConnectedMcpIds(foToken) : null;
 
+    /**
+     * The conversation this turn is written into — **proved, not accepted.**
+     *
+     * `claudeai_athena/app/api/chat/route.ts` takes a `conversationId` and never
+     * checks whose it is: no `getConversation`, no `userId` comparison, straight
+     * to `addMessage` (`:338`, `:947`) and to the S3-reference lookup (`:571`).
+     * Every other conversation route there checks ownership; that one does not.
+     * Forwarding a browser's id unchecked would make this app a convenient way
+     * to write into somebody else's thread.
+     *
+     * So the id is matched against this caller's own list first. One that fails
+     * becomes `null` rather than a 403: the question is still answered, it
+     * simply is not written down. Refusing to answer would punish an operator
+     * for a stale tab.
+     *
+     * Only the agents that keep history are eligible. The Back-end Agent is
+     * historyless here because it is historyless in the product —
+     * `backend-agent-app.tsx:25` omits the section and says why.
+     */
+    const requested = parsed.data.conversationId ?? null;
+    const conversationId =
+      requested && agent.keepsHistory && (await ownsConversation(foToken, requested))
+        ? requested
+        : null;
+
     const upstream = await foChat({
       token: foToken,
       messages: parsed.data.messages,
+      conversationId,
       activeMcpIds,
       path: agent.foPath,
       // Client disconnects propagate, so FO is not left streaming into nothing

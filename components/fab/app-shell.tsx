@@ -8,14 +8,22 @@
  * sidebar costs a third of the screen to show two links. The nav pills, the
  * brand lockup, the 34px icon buttons and the gradient avatar are the
  * cockpit's; the navy fill moves to the active pill, exactly as it does there.
+ *
+ * ── The agent screens also get a drawer, since 5 September ──────────────────
+ * That reasoning holds against a *permanent* rail and only against that. The
+ * product's own chat pages carry a sidebar, and below 768px they render it as a
+ * slide-over — see `components/fab/nav-drawer.tsx`. `onNewChat` is what turns
+ * it on here, because New chat is the one thing in that drawer this top bar
+ * cannot offer: `/reports` passes no callback and shows no trigger.
  */
 
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LogOut, RefreshCw } from "lucide-react";
+import { LogOut, Menu, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
+import { NavDrawer } from "./nav-drawer";
 import { NAV } from "./nav-items";
 import { logout, type SessionUser } from "./use-session";
 
@@ -24,17 +32,25 @@ export function AppShell({
   token,
   sessionExpiresAt,
   onRefresh,
+  onNewChat,
   children,
 }: {
   user: SessionUser | null;
   token: string | null;
   sessionExpiresAt?: Date | null;
   onRefresh?: () => void;
+  /**
+   * Clears the conversation below. Its presence is also what says "this screen
+   * is an agent conversation", which is the only place the drawer belongs.
+   */
+  onNewChat?: () => void;
   children: React.ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const minutesLeft = useSessionMinutes(sessionExpiresAt ?? null);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const hasDrawer = typeof onNewChat === "function";
 
   return (
     // `h-dvh`, not `min-h-full`. The conversation screen is `h-full` with its
@@ -77,6 +93,21 @@ export function AppShell({
             obvious way back to the other capabilities. `aria-label` because
             the lockup's visible text is the wordmark, which does not say where
             the link goes. */}
+        {/* The drawer's trigger, where FO's `SidebarTrigger` sits: top-left,
+            before the mark. Only on agent screens — see `hasDrawer`. */}
+        {hasDrawer ? (
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation"
+            aria-expanded={drawerOpen}
+            className="-ml-1 flex min-h-[44px] min-w-[44px] flex-none cursor-pointer items-center justify-center border-0 bg-transparent transition-colors hover:bg-[var(--cockpit-surface)]"
+            style={{ borderRadius: "var(--r-chip)", color: "var(--text-muted-cool)" }}
+          >
+            <Menu size={20} strokeWidth={2.2} aria-hidden="true" />
+          </button>
+        ) : null}
+
         <Link
           href="/"
           aria-label="FabOrchestrator home"
@@ -101,7 +132,16 @@ export function AppShell({
             affordance, and the pills are ordered so the two that open come
             first and are never the ones off the edge. */}
         <nav
-          className="fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto sm:order-none sm:ml-3 sm:w-auto sm:overflow-visible"
+          className={cn(
+            "fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto sm:order-none sm:ml-3 sm:w-auto sm:overflow-visible",
+            // **The one reduction the drawer earns.** Below `sm` this strip is
+            // a full-width second row; with the drawer carrying the identical
+            // five destinations, that row is duplicate navigation costing ~46px
+            // of a 640px screen on the one page where vertical space is the
+            // composer's. It is untouched at `sm` and above, and untouched
+            // everywhere on screens with no drawer.
+            hasDrawer && "hidden sm:flex",
+          )}
           aria-label="Sections"
         >
           {NAV.map((item) => {
@@ -229,6 +269,18 @@ export function AppShell({
       <main id="main-content" className={cn("min-h-0 flex-1")}>
         {children}
       </main>
+
+      {/* Outside `<main>`, and a sibling of it: the panel is `position: fixed`
+          over the whole shell, and nesting it inside the scrolling content
+          would put a dialog inside the region it covers. */}
+      {hasDrawer ? (
+        <NavDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          onNewChat={onNewChat}
+          user={user}
+        />
+      ) : null}
     </div>
   );
 }

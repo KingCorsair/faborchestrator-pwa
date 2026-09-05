@@ -298,6 +298,18 @@ export function AgentChat({
     send(initialPrompt);
   }, [initialPrompt, hasFabOrchSession, send]);
 
+  /**
+   * A turn in flight is abandoned when this screen goes.
+   *
+   * Added with "New chat" (5 September), which discards the conversation by
+   * remounting. Without it the fetch behind the old thread keeps running and
+   * keeps FabOrchestrator generating an answer nobody will ever see — on a
+   * phone, over a metered connection, for a question the operator has visibly
+   * cancelled. It applies just as well to navigating away mid-answer, which
+   * had the same leak and no one had noticed.
+   */
+  React.useEffect(() => () => abortRef.current?.abort(), []);
+
   /** Follow the answer down as it streams, the way the product's chat does. */
   React.useEffect(() => {
     const el = scrollRef.current;

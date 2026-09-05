@@ -30,6 +30,14 @@ routing logic, and the same `/api/faborch/insight/chat` → FO `/api/chat` path
 underneath. The GET form is still there as the no-JavaScript fallback. Verified
 by `scripts/landing-ask-check.mjs`, 24/24 on the deployment.
 
+**The agent screens have a conversation sidebar, since 5 September**, and it
+lists the operator's **real FabOrchestrator conversations** — the same threads
+the FabOrchestrator website shows, because they are the same rows. A thread
+started on a phone appears on the website, and one started there opens here.
+This app stores none of it: no database, no cache, no copy. Below 768px the
+product renders its own sidebar as a slide-over, and this is that, at the same
+288px. Full write-up below: "The agent screens got a conversation sidebar".
+
 **One defect was reported and fixed on 4 September**, from the installed iPhone
 app: after signing out and force-quitting, reopening from the Home Screen showed
 the cockpit as though the session were still live. It was a presentation defect
@@ -896,6 +904,152 @@ platform.
 
 ---
 
+## The agent screens got a conversation sidebar
+
+Reported on 5 September: FabInsight and the Back-end Agent had no sidebar, and
+somebody arriving from FabOrchestrator found a screen missing navigation they
+had used minutes earlier. Shipped in two commits — the drawer, then the
+conversations inside it.
+
+### The drawer is FabOrchestrator's own mobile branch
+
+The product does **not** render its 16rem rail below 768px. It renders a left
+slide-over Sheet at 18rem, dismissed by backdrop, Escape or the trigger, and
+every agent chat there mounts that same component
+(`claudeai_athena/components/ui/sidebar.tsx:170-191`). So the desktop rail was
+never the thing to copy, and this is not an invention: 288px of slide-over is
+what FabOrchestrator itself shows on a phone.
+
+Backdrop, Escape and a close button all dismiss it; focus enters on open and
+returns to the trigger on close; a path change closes it. Closed, the panel is
+`visibility: hidden` rather than merely translated off-screen — otherwise a
+hundred conversation links stay in the tab order, one Tab away from the composer.
+
+### Pinned and Recents are real, or they are absent
+
+Every row is a conversation FabOrchestrator has, read live over the operator's
+own bearer token. **This app owns none of it and stores none of it** — no
+database, no cache, no `localStorage`. Four calls into what the product already
+keeps:
+
+| Purpose | FabOrchestrator endpoint |
+|---|---|
+| List | `GET /api/conversations?agent=chat` |
+| Load one | `GET /api/conversations/{id}` |
+| Create | `POST /api/conversations` |
+| Pin / unpin | `PATCH /api/conversations/{id}` `{ isPinned }` |
+
+Persisting a turn is not a fifth call. `/api/chat` writes both messages itself
+when the request carries a `conversationId`, gated on one line —
+`if (!conversationId) return` (`app/api/chat/route.ts:882`). That single line is
+why this app had no history for its whole life until now.
+
+FabInsight writes to the `agent = "chat"` bucket, **which is the bucket the
+FabOrchestrator website reads**. That is the whole point of the feature.
+
+Not proxied, deliberately: no delete (destructive, one tap from a thread list on
+a phone), no rename, no search, no projects, and no `isShared` — that flag's only
+consumer is `/share/<id>`, a page that exists in no upstream branch.
+
+Conversations are created **lazily, on the first send**, exactly as
+`full-chat-app.tsx:1425` does it. Creating one per New chat press would fill the
+website's own sidebar with identical empty "New Chat" rows.
+
+### A thread is stripped before it reaches the phone
+
+Measured against production: ten sampled threads carried
+`text ×274 · step-start ×211 · tool-* ×332 · file-download ×8`, and the largest
+single thread was **1,306 KB of JSON for 18 messages** — nearly all of it
+generated SQL and returned rows, none of which this app renders.
+
+`lib/faborch/history.ts` reduces a thread to its text, and it runs in the
+**proxy**, not the browser. Unknown part types are dropped by default, because
+FO's `toUIMessage` passes unrecognised parts through verbatim: a part type added
+to FabOrchestrator tomorrow must not reach a screen that has never heard of it.
+
+One limit is reported rather than hidden. `FabInsightRequestSchema` caps a
+message at 20,000 characters, so a stored answer longer than that can be read
+here but not continued — the composer is replaced by a line saying so and
+offering a new chat. Truncating what FabOrchestrator said to make a request fit
+would misrepresent the product.
+
+### An id from a browser is proved, never trusted
+
+**FabOrchestrator's `/api/chat` accepts a `conversationId` and never checks whose
+it is.** There is no `getConversation` and no `userId` comparison in that route;
+the value goes straight to `addMessage` (`:338`, `:947`) and to the S3-reference
+lookup (`:571`). Every *other* conversation route there checks ownership and
+refuses with 403. That one does not.
+
+So this app matches the id against the caller's own conversation list before
+forwarding (`lib/faborch/owns.ts`), and an id that fails becomes `null` — the
+question is still answered, it is simply not written down. Refusing outright
+would punish an operator for a stale tab.
+
+**The upstream gap is still open** and is FabOrchestrator's to close. This app
+declines to be a vehicle for it; anyone calling FO directly is unaffected by
+that. **It has not yet been written up for the FabOrchestrator team** — unlike
+the routing and nondeterminism findings, there is no document to send them yet,
+and there should be.
+
+### The drawer stopped being a second copy of the navigation
+
+It first shipped carrying Cockpit, Agents, Workflows, Sites and Reports — the
+top bar again, in a panel. Those came out the same day the conversations went
+in.
+
+FabOrchestrator's own sidebar is the argument. It lists twelve nav entries and
+**exactly one navigates**: Dashboard, to `/home`. The rest have no handler, and
+FO's source labels them itself — "Static workspace nav — non-functional links"
+(`full-chat-app.tsx:452`) and "Static enterprise nav — non-functional links"
+(`:484`). Strip the decoration and the product's real structure is *New chat ·
+one link home · Pinned · Recents · account*, which is now this drawer. This app
+cannot ship the decoration anyway: a control that looks pressable and does
+nothing is the defect it has been reported for once already.
+
+**Two changes had to happen in this order, and the order was the risk.** The
+cockpit's own nav was `hidden md:flex`, so at 360px it offered the agent cards
+and **no path to `/reports` at all** — measured before the change. The agent
+screens' pill strip was the only way there on a phone. So the cockpit's nav
+became visible at every width *first*, and only then did the strip come off the
+agent screens, where FabOrchestrator has none either. Reversed, there would have
+been a commit in which Reports was unreachable on a phone.
+
+### Verified
+
+- **361 tests** — `__tests__/faborch/history.test.ts` (17, the mapper) and
+  `__tests__/platform/nav-drawer.test.ts` (36 guards: no invented history, no
+  local store, no unproved id, the nav gone, 44px targets).
+- **`scripts/nav-drawer-check.mjs`, 59/59 on the deployment** at 360×640 and
+  390×844: opens and closes three ways, lists real threads, a question asked
+  here gets an id and survives a reload and appears in Recents, an existing
+  thread opens with no SQL in the transcript, Back to Cockpit reaches Reports,
+  no pill strip on the agent screens, no sideways scroll.
+- Regression on Fly: gate 32/32, landing ask 24/24, mobile audit 16/16,
+  journeys 13/13.
+
+Two things worth recording honestly:
+
+**A bug was introduced and the live check caught it.** Asking the first question
+tore down its own answer: the new id went into `?c=`, the loader saw a selection
+it had not loaded, swapped in a skeleton, and unmounting aborted the stream that
+was still arriving. The URL was right and the answer was gone. Fixed by
+recording locally-created ids and keying a new thread by a counter rather than by
+an id it does not have yet. No unit test would have found it; it needed a real
+answer arriving on a real screen.
+
+**The journeys check failed once on Fly and passed on re-run**, with
+FabOrchestrator answering "the materials search is coming back empty" and then
+"238 lots". That is the nondeterminism in
+`docs/FABORCHESTRATOR_NONDETERMINISTIC_MES_QUERY_RESULTS.md`, not a change here —
+the second time it has cost a green check.
+
+**The live drawer check writes one conversation per run** into the demo account,
+titled `PWA drawer check <timestamp>`. That is how it proves persistence, and it
+is the only test in this repo that leaves anything behind.
+
+---
+
 ## Known debt
 
 **The planning documents are stale as of 2 September 2026, and this is the one
@@ -933,7 +1087,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 308 tests, no network needed
+npm test                          # 361 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 
@@ -941,6 +1095,12 @@ npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 # matcher that decides whether the gate runs at all is invisible to `npm test`.
 APP_URL=https://faborch-demo.fly.dev node scripts/gate-live-check.mjs
 APP_URL=https://faborch-demo.fly.dev node scripts/cold-launch-check.mjs
+
+# The conversation drawer. Also deployment-only: it reads real
+# FabOrchestrator history, and it leaves one thread behind per run
+# (titled "PWA drawer check <timestamp>") because that is what proves
+# a question asked here is written down there.
+APP_URL=https://faborch-demo.fly.dev node scripts/nav-drawer-check.mjs
 ```
 
 ---
@@ -962,7 +1122,11 @@ APP_URL=https://faborch-demo.fly.dev node scripts/cold-launch-check.mjs
 | Path | What |
 |---|---|
 | `lib/faborch/` | The only code that knows FabOrchestrator's HTTP contract |
+| `lib/faborch/history.ts` | Reduces a stored FO thread to what a phone can show. 1.3 MB in, a few KB out |
+| `lib/faborch/owns.ts` | Proves a conversation id belongs to the caller, because FO's own `/api/chat` does not |
 | `app/api/faborch/[agent]/chat/` | The connector — holds the credential, streams the answer back |
+| `app/api/faborch/conversations/` | The history proxy. List, create, load, pin. No delete, rename, share or search |
+| `components/fab/nav-drawer.tsx` | The conversation sidebar — FO's own mobile Sheet, in this app's vocabulary |
 | `app/api/auth/` | Sign-in, sign-out, session |
 | `proxy.ts` | The session gate. Decides, before any document is rendered, whether this visitor gets a screen or `/login` |
 | `docs/planning/` | The four planning documents (see debt above) |

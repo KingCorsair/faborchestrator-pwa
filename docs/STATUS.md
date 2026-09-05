@@ -51,7 +51,7 @@ password. `OPEN_ISSUES.md` §1.
 check had missed — see "Sign-in could silently do nothing" below. WP10 is live
 and verified on the URL itself.
 
-**One thing is waiting on someone else, and it does not block WP9:**
+**Two things are waiting on someone else, and neither is a defect in this app:**
 
 - **The FabOrchestrator grounding fix is written, tested and unpushed.** Until
   it ships, a demonstration can still produce a dashboard full of invented
@@ -61,6 +61,21 @@ and verified on the URL itself.
   This one bears directly on WP9. That package renders artifacts, and the defect
   is an artifact full of made-up numbers — so the better WP9 gets, the more
   convincing a fabricated dashboard becomes.
+
+- **FabOrchestrator answers some MES questions differently each time.** "How
+  many lots are currently in WIP?" returned 424, 237, 237, 427 and 427 from five
+  *unchanged* requests, and 10,904 on an earlier pass. The model picks a database
+  view and writes SQL per request; the 237/427 split is one missing `WHERE`
+  predicate, over whether suspended lots count as WIP. **The PWA forwards
+  correctly — verified by recording its outbound traffic — and FabOrchestrator's
+  own website disagrees with itself by more than it disagrees with the PWA.**
+  Yield is stable on both because FO answers it from a fixed metric path that
+  never reaches the tool loop.
+
+  `docs/FABORCHESTRATOR_NONDETERMINISTIC_MES_QUERY_RESULTS.md` is the write-up to
+  send, and `OPEN_ISSUES.md` §6 is the summary. **Nothing to fix here**, and
+  specifically not by pinning a query in this app. It matters for a
+  demonstration: lead with the yield question, which is deterministic.
 
 ---
 
@@ -939,6 +954,7 @@ APP_URL=https://faborch-demo.fly.dev node scripts/cold-launch-check.mjs
 | `docs/STATUS.md` | This file. What was built and how it was proved |
 | `docs/PRD.html` | The requirements, as a published page |
 | `docs/FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md` | The write-up to send to the FabOrchestrator team |
+| `docs/FABORCHESTRATOR_NONDETERMINISTIC_MES_QUERY_RESULTS.md` | Also for the FabOrchestrator team: why the same MES question can return a different number each time, with the SQL and the rows |
 | `docs/probes/` | Dated evidence from individual investigations |
 | `docs/planning/` | The original plans. **Superseded in places** — see `OPEN_ISSUES.md` §4 |
 

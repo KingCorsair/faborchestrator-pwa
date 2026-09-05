@@ -1,6 +1,6 @@
 # Open issues
 
-**As of 3 September 2026.** Everything here is **external to this app**: none is
+**As of 5 September 2026.** Everything here is **external to this app**: none is
 a defect in the PWA, none blocks its use, and none can be closed by changing
 this repository alone. Each names who can actually close it.
 
@@ -136,3 +136,41 @@ refreshes it in FabOrchestrator.
 **Owner:** a FabOrchestrator administrator.
 **Severity:** none, given the timestamp is shown. Listed so nobody reports it as
 a bug.
+
+---
+
+## 6. FabOrchestrator answers some MES questions differently each time
+
+**What it is.** Questions with no fixed query behind them — "how many lots are
+currently in WIP?", "which equipment is running right now?" — are answered by
+the model choosing a database view and writing SQL on the spot. It does not
+choose the same one twice.
+
+**Proved on production, same account, same prompt, runs seconds apart.** One
+unchanged request body sent five times returned **424 · 237 · 237 · 427 · 427**;
+an earlier pass with the same body also returned **10,904**. The 237/427 split is
+a single missing `WHERE` predicate — whether 185 lots in `Queued` / `Suspended`
+count as WIP. Nobody has decided that, so the model decides it per request.
+
+**This is not a PWA defect.** The proxy was recorded on the wire and forwards the
+question correctly; the FabOrchestrator website disagrees with **itself** by more
+than it disagrees with the PWA. Yield is stable on both, because FabOrchestrator
+answers it from a fixed metric path that never reaches the tool loop — which is
+also the shape of the fix.
+
+**Full write-up, with the SQL, the returned rows and the reproduction:**
+`docs/FABORCHESTRATOR_NONDETERMINISTIC_MES_QUERY_RESULTS.md`. That file is what
+to send to the FabOrchestrator team.
+
+**What to do here.** Nothing, and specifically **not** pin a query in this app:
+that would put a manufacturing definition into a forwarding layer and make the
+PWA answer differently from the product it demonstrates.
+
+**For a demonstration.** The WIP figure may not survive being asked twice. Lead
+with "give me the yield by product", which is deterministic and returns a real
+table.
+
+**Owner:** the FabOrchestrator team, plus whoever owns the fab data and can rule
+on what WIP means.
+**Severity:** medium. Nothing is broken, but a supervisor could be shown two
+different numbers for the same question in one meeting.

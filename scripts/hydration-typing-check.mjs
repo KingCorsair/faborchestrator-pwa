@@ -1,7 +1,8 @@
 /** Does typing before hydration survive, and does sign-in then work? */
 import { chromium } from "playwright";
 import fs from "node:fs";
-const ROOT = "C:/Users/ATUL ANAND/OneDrive/Documentos/Desktop/AthenaTech/faborchestrator-pwa";
+import { fileURLToPath } from "node:url";
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const env = Object.fromEntries(fs.readFileSync(`${ROOT}/.env`,"utf8").split(/\r?\n/)
   .filter(l=>l&&!l.startsWith("#")&&l.includes("=")).map(l=>{const i=l.indexOf("=");return [l.slice(0,i),l.slice(i+1)];}));
 // The deployment by default: this bug is invisible on localhost, where

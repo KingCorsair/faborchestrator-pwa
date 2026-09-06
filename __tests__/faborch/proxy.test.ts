@@ -296,22 +296,23 @@ describe("a good answer streams through", () => {
     assert.equal(await res.text(), frames.join(""));
   });
 
-  test("FabOrchestrator's route header is forwarded, so a turn can be told apart", async () => {
-    // The platform decides, before it calls the model, whether a turn is served
-    // by a deterministic metric brief, a curated dashboard, or the ordinary
-    // tool-using path. The answer's prose never says which. This header does,
-    // and it is the only way to tell afterwards whether an answer was grounded.
-    const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "94.2%" })}
-
-`];
-    stubFo((url) =>
-      url.includes("/api/mcp/connections")
-        ? Response.json([{ id: "m1", status: "connected" }])
-        : sse(frames, { "X-FabOrch-Route": "metric" }),
-    );
-    const res = await call(request());
-    assert.equal(res.headers.get("X-FabOrch-Route"), "metric");
-  });
+  /*
+   * Two tests stood here until 5 September, both about an `X-FabOrch-Route`
+   * header this proxy forwarded.
+   *
+   * **FabOrchestrator does not send that header.** It appears nowhere in the
+   * product; it is specified in `docs/FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md`
+   * as something the unshipped grounding fix *would* add. The first test
+   * invented the header in a stub and asserted the proxy relayed it — green
+   * forever, against a platform behaviour that has never existed. The second
+   * asserted the header was absent when the stub omitted it, which is true of
+   * every header nobody sets.
+   *
+   * They are gone along with the relay. Recorded here rather than deleted in
+   * silence, because a test that passes against a fiction is worth remembering
+   * as a category: the stub had become the specification, and nothing ever
+   * checked the specification against the platform.
+   */
 
   test("the operator's data-connection count is reported to the screen", async () => {
     // WP8's line was "refuse to send a turn with an empty tool list". Measured
@@ -347,17 +348,6 @@ describe("a good answer streams through", () => {
     assert.equal(res.status, 200, "an empty list must not withhold the answer");
     assert.equal(res.headers.get("X-FabOrch-Data-Connections"), "0");
     assert.equal(await res.text(), frames.join(""));
-  });
-
-  test("its absence is not invented — an older platform simply omits it", async () => {
-    const frames = [`data: ${JSON.stringify({ type: "text-delta", delta: "hello" })}
-
-`];
-    stubFo((url) =>
-      url.includes("/api/mcp/connections") ? Response.json([]) : sse(frames),
-    );
-    const res = await call(request());
-    assert.equal(res.headers.get("X-FabOrch-Route"), null);
   });
 
   test("only connected data connections are forwarded", async () => {

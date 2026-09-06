@@ -491,7 +491,7 @@ export async function foChat(options: {
   path?: string;
   signal?: AbortSignal;
 }): Promise<Response> {
-  // The three agents take different bodies, and sending a field an endpoint
+  // Different agents take different bodies, and sending a field an endpoint
   // does not read is not free: `model` and `activeMcpIds` are `/api/chat`'s
   // levers over which model answers and which tools it may call, and putting
   // them on a request to an agent that ignores them would make this file claim

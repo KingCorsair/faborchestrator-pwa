@@ -16,10 +16,11 @@
  *   APP_URL=https://faborch-demo.fly.dev node scripts/landing-ask-check.mjs
  */
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const { chromium, devices } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 
-const ROOT = "C:/Users/ATUL ANAND/OneDrive/Documentos/Desktop/AthenaTech/faborchestrator-pwa";
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const env = Object.fromEntries(
   fs
     .readFileSync(`${ROOT}/.env`, "utf8")

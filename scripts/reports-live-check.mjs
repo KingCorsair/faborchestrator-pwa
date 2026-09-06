@@ -5,8 +5,9 @@
  *  2. no dashboard-management action is reachable through this app
  */
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
-const ROOT = "C:/Users/ATUL ANAND/OneDrive/Documentos/Desktop/AthenaTech/faborchestrator-pwa";
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const env = Object.fromEntries(
   fs.readFileSync(`${ROOT}/.env`, "utf8").split(/\r?\n/)
     .filter((l) => l && !l.startsWith("#") && l.includes("="))

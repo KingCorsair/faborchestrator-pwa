@@ -1,6 +1,6 @@
 /**
- * `POST /api/faborch/[agent]/chat` — **the whole integration, for all three
- * agents.**
+ * `POST /api/faborch/[agent]/chat` — **the whole integration, for every agent
+ * this app exposes.**
  *
  * ```
  * agent screen → this route → FabOrchestrator /api/chat → FO's agent
@@ -189,13 +189,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
       "Cache-Control": "no-cache, no-transform",
     };
 
-    // Which of FabOrchestrator's three paths served the turn — a deterministic
-    // metric brief, a curated dashboard, or the ordinary tool-using chat. The
-    // answer's prose does not say whether it was grounded in real data; this
-    // does, and it is the only way to tell after the fact. Forwarded rather
-    // than interpreted: the platform owns the meaning of the value.
-    const foRoute = upstream.headers.get("X-FabOrch-Route");
-    if (foRoute) headers["X-FabOrch-Route"] = foRoute;
+    // ── No `X-FabOrch-Route` is relayed, and there is nothing to relay ──────
+    //
+    // This route used to forward an `X-FabOrch-Route` header, described as
+    // FabOrchestrator saying which of its three paths served a turn — metric
+    // brief, curated dashboard, or the tool-using chat. **That header does not
+    // exist in FabOrchestrator.** It is specified in
+    // `docs/FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md` as something the
+    // grounding fix *would* add, and that fix has never been shipped; FO's
+    // `/api/chat` sends no `X-FabOrch-*` header of its own today.
+    //
+    // The relay was inert — the header was never present, so nothing was ever
+    // forwarded — but it read as an integration with a platform capability
+    // that is not there, and a test fabricated the header to assert it worked.
+    // Removed on 5 September along with that test. If the grounding fix ever
+    // ships, add it back against the real thing rather than against a mock.
 
     // How many data connections this operator's role actually carries. The
     // screen uses it to say so when there are none — see the note in

@@ -879,10 +879,18 @@ Adding one is real product work, not a routing tweak, and is **not** done here.
 
 ### Observability
 
-`X-FabOrch-Route` on every response, one of `metric` | `dashboard` |
+**Proposed, on the unpushed branch — not something FabOrchestrator does today.**
+An `X-FabOrch-Route` response header, one of `metric` | `dashboard` |
 `dashboard-denied` | `metric-unavailable` | `mcp` | `no-data`, plus a log line.
-The prose never said whether an answer was grounded; this does. The PWA proxy
-forwards it — one line, and the only PWA change in this work.
+The prose never says whether an answer was grounded; that header would.
+
+**Corrected 5 September.** This paragraph used to end "The PWA proxy forwards it
+— one line, and the only PWA change in this work", and the proxy did carry that
+line. It was inert: the header exists in no shipped FabOrchestrator, so nothing
+was ever forwarded, while the code and a test that fabricated the header in a
+stub both implied a working integration. Both are removed. If the grounding fix
+ships, the relay goes back — against the real header, with a check that reads
+the platform rather than a mock.
 
 ### Where this sits, and what is *not* verified
 

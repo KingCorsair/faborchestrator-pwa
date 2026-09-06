@@ -127,6 +127,30 @@ for (const [w, h, label] of [
   console.log(`── ${label} ───────────────────────────────────────────────`);
   const { context, page } = await signedIn(w, h);
 
+  /*
+    Answer the conversation-create call locally, so this check leaves nothing
+    behind in the shared FabOrchestrator account.
+
+    It used to let that POST through while stubbing only the chat stream, so
+    every run created a real FO conversation that then received no messages —
+    three per run, one per viewport. Measured on the demo account: 32 empty
+    threads, and "How do I investigate a yield drop on Line 4?" listed nine
+    times in the operator's own Recents. A check that pollutes the thing it
+    checks is a check with a bill attached.
+
+    A fixed id, because nothing here reads it back; the screen only needs the
+    create call to succeed so the send proceeds exactly as it does in life.
+  */
+  await page.route("**/api/faborch/conversations", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ id: "00000000-0000-4000-8000-00000000dead" }),
+        })
+      : route.continue(),
+  );
+
   await page.route("**/api/faborch/*/chat", (route) =>
     route.fulfill({
       status: 200,

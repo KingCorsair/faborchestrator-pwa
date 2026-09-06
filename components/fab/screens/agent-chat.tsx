@@ -253,10 +253,31 @@ export function AgentChat({
    * to reconcile one thread's answer with another's.
    */
   const hydrated = React.useRef(false);
+
+  /**
+   * Non-zero once a stored thread has been put on screen.
+   *
+   * It exists to tell the two scroll effects below apart, and they want
+   * opposite ends of the transcript. While an answer is arriving, the newest
+   * text is the thing to watch, and this app has followed it down since WP4. A
+   * conversation opened from Recents is a thing to *read*, and readers start at
+   * the beginning.
+   *
+   * That distinction was missing, and it is what made a long stored thread look
+   * truncated: the 42-message thread on the demo account opened at scrollTop
+   * 25,018 of 25,698 — the last exchange on screen, forty messages above it and
+   * nothing to say so. Every word was in the DOM; none of it was where anybody
+   * would look.
+   */
+  const [hydratedAt, setHydratedAt] = React.useState(0);
+
   React.useEffect(() => {
     if (hydrated.current || initialTurns.length === 0) return;
     hydrated.current = true;
     dispatch({ type: "hydrate", turns: initialTurns });
+    // Marks this screen as showing a thread that arrived complete, so the
+    // scroll effects below open it at the top rather than at its last message.
+    setHydratedAt(Date.now());
   }, [initialTurns]);
 
   const send = React.useCallback(
@@ -426,11 +447,23 @@ export function AgentChat({
    */
   React.useEffect(() => () => abortRef.current?.abort(), []);
 
-  /** Follow the answer down as it streams, the way the product's chat does. */
+  /** A loaded thread opens at its first message. See `hydratedAt`. */
   React.useEffect(() => {
+    if (hydratedAt === 0) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [hydratedAt]);
+
+  React.useEffect(() => {
+    // Nothing to follow before the first question, and nothing to follow in a
+    // thread that arrived complete — jumping to the bottom there would undo the
+    // effect above on the very next render.
+    if (state.turns.length === 0 || (hydratedAt !== 0 && !state.busy && state.streamingId === null)) {
+      return;
+    }
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [state.turns, state.activity]);
+  }, [state.turns, state.activity, state.busy, state.streamingId, hydratedAt]);
 
   const empty = state.turns.length === 0;
   const inline = variant === "inline";

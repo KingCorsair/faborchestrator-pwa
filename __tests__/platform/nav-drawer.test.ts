@@ -197,6 +197,78 @@ describe("Pinned and Recents are real, or they are absent", () => {
   });
 });
 
+describe("two threads with the same title stay two rows, and are distinguishable", () => {
+  /*
+   * Measured on the demo account: 187 conversations, **187 distinct ids**, and
+   * "Give me the yield by product." appearing 25 times. Those are genuinely
+   * different FabOrchestrator threads asked at different moments, not one
+   * thread listed repeatedly — so nothing may be merged or hidden, and the
+   * only honest fix is to show what already tells them apart.
+   */
+  test("rows are keyed by id, so identical titles cannot collapse", () => {
+    assert.match(code, /key=\{item\.id\}/);
+  });
+
+  test("nothing de-duplicates the list by title", () => {
+    for (const forbidden of ["new Set(", "dedupe", "uniqueBy", "filter((r, i, a)"]) {
+      assert.ok(!code.includes(forbidden), `the drawer must not collapse rows (${forbidden})`);
+    }
+  });
+
+  test("each row shows when it was last touched", () => {
+    assert.match(code, /whenLabel\(row\.updatedAt\)/);
+  });
+
+  test("that label is FO's own timestamp, not an invention", () => {
+    // `updatedAt` comes straight off the row `toSummaries` passed through.
+    const helper = code.slice(code.indexOf("function whenLabel"));
+    assert.match(helper, /new Date\(iso\)/);
+    assert.ok(!/Date\.now\(\)\s*-/.test(helper), "no invented relative arithmetic");
+  });
+
+  test("an unparseable date shows nothing rather than 1970", () => {
+    const helper = code.slice(code.indexOf("function whenLabel"));
+    assert.match(helper, /Number\.isNaN\(at\.getTime\(\)\)/);
+    assert.match(helper, /if \(!iso\) return "";/);
+  });
+});
+
+describe("one first send creates exactly one conversation", () => {
+  test("creation is guarded by the ref, not by render state", () => {
+    // A ref, so two renders in the same tick cannot both pass the check —
+    // React Strict Mode double-invokes effects in development.
+    assert.match(chat, /if \(agent\.keepsHistory && !conversationRef\.current\)/);
+    assert.match(chat, /conversationRef\.current = body\.id/);
+  });
+
+  test("it happens inside the send, which is itself guarded", () => {
+    // `inFlight` closes the two-Enters-in-one-frame window before any of this
+    // runs, so the create cannot be reached twice for one question.
+    assert.match(chat, /if \(!prompt \|\| inFlight\.current \|\| !hasFabOrchSession\) return;/);
+  });
+
+  test("nothing else in the app creates a conversation", () => {
+    // The drawer, the client and the shell must never POST one; only the send
+    // path may, and only on the first question.
+    for (const [name, src] of [
+      ["nav-drawer.tsx", drawer],
+      ["agent-chat-client.tsx", client],
+      ["app-shell.tsx", shell],
+    ] as const) {
+      const stripped = bare(src);
+      const creates =
+        stripped.includes("/api/faborch/conversations") && stripped.includes('method: "POST"');
+      assert.ok(!creates, `${name} must not create a conversation`);
+    }
+  });
+
+  test("New chat creates nothing by itself", () => {
+    // It only bumps the key and clears the URL; the next question creates.
+    assert.match(client, /setNewChats\(\(n\) => n \+ 1\)/);
+    assert.match(client, /setCreatedId\(null\)/);
+  });
+});
+
 describe("opening the drawer cannot disturb the conversation", () => {
   test("which thread is open lives in the URL, above the shell", () => {
     assert.match(client, /search\.get\("c"\)/);

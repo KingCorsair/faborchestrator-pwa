@@ -399,6 +399,36 @@ export function NavDrawer({
   );
 }
 
+/**
+ * When a thread was last touched, short enough to sit under its title.
+ *
+ * Today's threads get a clock, this year's a day and month, anything older the
+ * year as well — the shape a phone's own mail and message lists use, because
+ * "14:32" and "8 May" answer "which of these two" without spending a line on
+ * "last updated on". Returns an empty string rather than a guess when FO sent
+ * nothing parseable; a row with no date is better than a row claiming 1970.
+ */
+function whenLabel(iso: string): string {
+  if (!iso) return "";
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return "";
+
+  const now = new Date();
+  const sameDay =
+    at.getFullYear() === now.getFullYear() &&
+    at.getMonth() === now.getMonth() &&
+    at.getDate() === now.getDate();
+
+  if (sameDay) {
+    return at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  return at.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
 /** A section label. Module level so it is not a new component type per render. */
 function Heading({ children }: { children: React.ReactNode }) {
   return (
@@ -449,7 +479,25 @@ function ConversationRow({
         {/* Truncated, never wrapped: FO titles are the question's first fifty
             characters, so wrapping would give most rows three lines and turn a
             hundred conversations into a very long scroll. */}
-        <span className="truncate">{row.title}</span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate">{row.title}</span>
+          {/*
+            When the title is the question, asking the same question twice
+            makes two rows that read identically. Measured on the demo account:
+            187 conversations, 187 distinct ids, and "Give me the yield by
+            product." appearing 25 times — genuinely different threads, not one
+            thread listed repeatedly, so they must stay and must be told apart.
+
+            The time FabOrchestrator already records is what tells them apart.
+            Nothing is invented: `updatedAt` comes straight from the row.
+          */}
+          <span
+            className="truncate text-[11px] font-normal"
+            style={{ color: active ? "rgba(255,255,255,.72)" : "var(--text-subtle)" }}
+          >
+            {whenLabel(row.updatedAt)}
+          </span>
+        </span>
       </button>
       <button
         type="button"

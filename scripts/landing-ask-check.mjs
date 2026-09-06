@@ -73,6 +73,30 @@ const askOnLanding = async (page, text) => {
   await page.click('form[action="/fabinsight"] button[type="submit"]');
 };
 
+/**
+ * Answer the conversation-create call locally.
+ *
+ * Used by the canned-stream sections below, which stub the chat endpoint but
+ * used to let the create POST through — so every run left a real, empty
+ * FabOrchestrator conversation titled "anything at all" or "build me a WIP
+ * dashboard" in the shared demo account's Recents. Thirty-two such threads had
+ * accumulated before anyone noticed.
+ *
+ * The two sections that talk to the real FabOrchestrator are untouched: a
+ * question genuinely asked should genuinely be saved, and proving that is the
+ * point of those.
+ */
+const stubConversationCreate = (page) =>
+  page.route("**/api/faborch/conversations", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ id: "00000000-0000-4000-8000-00000000dead" }),
+        })
+      : route.continue(),
+  );
+
 /** Text of the whole cockpit, for "did an answer appear here" questions. */
 const bodyText = (page) => page.evaluate(() => document.body.innerText);
 
@@ -179,6 +203,7 @@ console.log("\n── 4. failures and artifacts still render inline ────
 
 {
   const { context, page } = await signedInPage();
+  await stubConversationCreate(page);
   await page.route(CHAT, (route) =>
     route.fulfill({
       status: 502,
@@ -217,6 +242,7 @@ console.log("\n── 4. failures and artifacts still render inline ────
   const body =
     frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join("") + "data: [DONE]\n\n";
 
+  await stubConversationCreate(page);
   await page.route(CHAT, (route) =>
     route.fulfill({
       status: 200,

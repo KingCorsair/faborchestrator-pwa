@@ -15,9 +15,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
-import { Button, Label } from "@/components/fab/primitives";
+import { Button } from "@/components/fab/primitives";
 import { submittedCredentials } from "@/lib/credentials";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 
@@ -202,11 +202,15 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
   }
 
   return (
-    <div className="fab grid min-h-full lg:grid-cols-[1fr_1.1fr]">
+    // `min-[881px]`, which is FabOrchestrator's own breakpoint for this split
+    // (`components/login-page.tsx`, `min-[881px]:grid-cols-…`). It was `lg`
+    // (1024px), so the two products changed shape at different widths on the
+    // same tablet.
+    <div className="fab grid min-h-full min-[881px]:grid-cols-[1fr_1.1fr]">
       {/* Brand panel — hidden on a handheld, where it would push the form
           below the fold for no benefit. */}
       <aside
-        className="hidden flex-col justify-between p-12 lg:flex"
+        className="hidden flex-col justify-between p-12 min-[881px]:flex"
         style={{
           background: "linear-gradient(160deg,var(--navy-1) 0%,var(--navy-2) 45%,var(--navy-3) 100%)",
         }}
@@ -267,18 +271,57 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
           className="fab-card flex w-full max-w-[440px] flex-col gap-[18px]"
           style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
         >
+          {/* The product's own badge, lock and all. It read SHOP FLOOR ACCESS,
+              which was this app's phrase rather than the platform's. */}
           <span
-            className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[12px] font-extrabold tracking-[0.05em]"
+            className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[11px] font-bold tracking-[0.05em]"
             style={{
               borderRadius: 20,
               color: "var(--cockpit-indigo)",
               background: "var(--brand-indigo-bg)",
             }}
           >
-            SHOP FLOOR ACCESS
+            <Lock size={13} strokeWidth={2.2} aria-hidden="true" />
+            SECURE SIGN-IN
           </span>
 
-          <h1 className="text-[26px]">Sign in to FabOrchestrator</h1>
+          {/*
+            FabOrchestrator sets this at a flat 31px. Stepped here, because its
+            card sits on a desktop and this one has to survive 360px: at 31px
+            "Sign in to FabOrchestrator" takes three lines inside a content box
+            284px wide, and the fields drop below the fold before anything has
+            been typed.
+
+            The wording stays this app's. FO says "Sign in to continue", which is
+            right once you are already inside FabOrchestrator; here the name is
+            the one thing on screen that says *whose* account the field wants.
+          */}
+          <h1 className="text-[27px] font-extrabold tracking-[-0.6px] sm:text-[31px]">
+            Sign in to FabOrchestrator
+          </h1>
+
+          {/*
+            One lead line, at FO's size, because FO has one.
+
+            This first shipped as *two* paragraphs — FO's "Welcome back…" on top
+            of the existing note about which account to use — and the screenshot
+            settled it: six lines of copy before the first field pushed the card
+            past the fold at 390x844 and put the footer under the install hint.
+            FO's card leads with a single sentence, and matching its hierarchy
+            matters more than carrying both sentences.
+
+            What survives from the old note is the part that does work: *whose*
+            account this wants. The tail it used to carry — that the agents
+            answer with your tools, your role and your data — is the brand
+            panel's copy, and repeating it inside the card was always
+            duplication.
+          */}
+          <p
+            className="m-0 -mt-[8px] text-[15px] leading-[1.5]"
+            style={{ color: "var(--text-muted-cool)" }}
+          >
+            Welcome back. Sign in with your FabOrchestrator account.
+          </p>
 
           {/*
             An existing session, surfaced rather than acted on. The two states
@@ -328,54 +371,88 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
           ) : null}
 
           {/*
-            Says which credential to use, on the screen where it is typed.
+            The paragraph that stood here — "Use your FabOrchestrator account.
+            It opens the agents and the production order workflow…" — moved up
+            into the lead line on 6 September, shortened.
 
-            There is only one now (WP2, 2026-09-01): a FabOrchestrator account,
-            which opens the agents and the production order workflow alike. The
-            line stays because the app is not FabOrchestrator and the field does
-            not say whose password it wants — and because the demo credential
-            that used to be accepted here produced a session that met a second
-            sign-in the moment an agent was opened. That credential is gone;
-            this sentence is what stops somebody looking for it.
+            Its job was to say which credential to use, on the screen where it
+            is typed: there is only one (WP2, 2026-09-01), the app is not
+            FabOrchestrator, the field does not say whose password it wants, and
+            the demo credential that used to be accepted produced a session that
+            met a second sign-in the moment an agent was opened. That job is
+            still done, by "Sign in with your FabOrchestrator account" above.
+            What was dropped is the tail about tools, role and data, which is
+            the brand panel's copy repeated inside the card.
           */}
-          <p
-            className="m-0 -mt-[6px] max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
-            style={{ color: "var(--text-muted-cool)" }}
-          >
-            Use your FabOrchestrator account. It opens the agents and the production
-            order workflow, and the agents answer with your tools, your role and your
-            data.
-          </p>
 
+          {/*
+            The field labels are FabOrchestrator's — 14px, bold, sentence case,
+            in the ink colour — rather than this app's `Label` primitive, which
+            is 12px uppercase in `--text-subtle` and reads as a form built by a
+            different hand. The primitive is untouched: it is used on six other
+            screens, and restyling it to fix one would be a change nobody asked
+            for on all of them.
+
+            The mail and lock glyphs are FO's too. They carry no meaning the
+            label does not already give, which is why they are `aria-hidden`;
+            they are here because their absence is most of what made this form
+            look like a different product.
+          */}
           <label className="flex flex-col gap-[7px]">
-            <Label>Email</Label>
+            <span className="text-[14px] font-bold" style={{ color: "var(--text-ink)" }}>
+              Work email
+            </span>
             <div
               className="flex items-center gap-[11px] px-[15px] py-[13px]"
               style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
             >
+              <Mail
+                size={18}
+                strokeWidth={2}
+                aria-hidden="true"
+                className="flex-none"
+                style={{ color: "var(--text-subtle)" }}
+              />
               <input
                 name="email"
                 type="email"
                 autoComplete="username"
                 required
-                className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
+                placeholder="name@company.com"
+                /*
+                  16px, not FabOrchestrator's 15.5px. iOS Safari zooms the page
+                  in on any focused input below 16px and does not zoom back out,
+                  which leaves the form wider than the screen mid-sign-in. The
+                  half-pixel is not worth that.
+                */
+                className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none placeholder:font-normal"
                 style={{ border: 0, color: "var(--text-ink)" }}
               />
             </div>
           </label>
 
           <label className="flex flex-col gap-[7px]">
-            <Label>Password</Label>
+            <span className="text-[14px] font-bold" style={{ color: "var(--text-ink)" }}>
+              Password
+            </span>
             <div
               className="flex items-center gap-[11px] px-[15px] py-[13px]"
               style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
             >
+              <Lock
+                size={18}
+                strokeWidth={2}
+                aria-hidden="true"
+                className="flex-none"
+                style={{ color: "var(--text-subtle)" }}
+              />
               <input
                 name="password"
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
                 required
-                className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
+                placeholder="••••••••••••"
+                className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none placeholder:font-normal"
                 style={{ border: 0, color: "var(--text-ink)" }}
               />
               <button
@@ -420,7 +497,25 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
             style={{ borderRadius: 13 }}
           >
             {busy ? "Signing in…" : "Sign in"}
+            {/* FO's arrow, and only when there is nothing else to say. A spinner
+                label plus a "go" arrow reads as two conflicting states. */}
+            {busy ? null : <ArrowRight size={17} strokeWidth={2.4} aria-hidden="true" />}
           </Button>
+
+          {/*
+            FabOrchestrator closes its card with this line. It is a statement,
+            not a control, so it carries none of the risk that kept the SSO
+            buttons, the reset link and "keep me signed in" off this form — and
+            it is true here for the same reason it is true there: the connection
+            is HTTPS-only, enforced in `foBaseUrl()`.
+          */}
+          <p
+            className="m-0 -mt-[4px] flex items-center justify-center gap-[7px] text-[12px] font-medium"
+            style={{ color: "var(--text-subtle)" }}
+          >
+            <Lock size={14} strokeWidth={2} aria-hidden="true" />
+            Protected with enterprise-grade encryption
+          </p>
         </form>
       </main>
     </div>

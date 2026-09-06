@@ -200,7 +200,17 @@ describe("Pinned and Recents are real, or they are absent", () => {
 describe("opening the drawer cannot disturb the conversation", () => {
   test("which thread is open lives in the URL, above the shell", () => {
     assert.match(client, /search\.get\("c"\)/);
-    assert.match(client, /key=\{thread\?\.id \?\? "new"\}/);
+    // A loaded thread is keyed by its FO id; a new one by the New-chat counter.
+    //
+    // **This assertion was stale and red on `main` from 5 September.** It still
+    // expected `?? "new"`, the literal the key used before a new conversation
+    // needed to be told apart from the next one — see `newChats`. The code was
+    // corrected during the live-check pass and this was not, and the commit went
+    // out on a typecheck, lint, build and browser run without the unit suite.
+    // That is the gap: a source-text guard is only as good as the discipline of
+    // running it, and it is the one kind of test a green browser check cannot
+    // stand in for.
+    assert.match(client, /key=\{thread\?\.id \?\? `new-\$\{newChats\}`\}/);
     assert.match(shell, /const \[drawerOpen, setDrawerOpen\] = React\.useState\(false\)/);
   });
 

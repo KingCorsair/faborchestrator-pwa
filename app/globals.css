@@ -239,9 +239,56 @@ body {
   margin: 18px 0 8px;
 }
 
+/*
+ * ── The markers, missing until 5 September ──────────────────────────────────
+ *
+ * Tailwind's preflight sets `list-style: none` on every `ul` and `ol`
+ * (`node_modules/tailwindcss/preflight.css:205`). This block restored the
+ * indent and never restored the marker, so **every numbered step in an answer
+ * lost its number** and every bullet lost its dot.
+ *
+ * The text was all there — measured on the deployment at 360x640, 390x844 and
+ * desktop, `scrollHeight === clientHeight`, nothing clipped or scrolled out of
+ * view. An ordered procedure simply rendered as an undifferentiated column of
+ * sentences, which is worst exactly where it matters most: asked for the steps
+ * to investigate a yield drop, FabOrchestrator returned six numbered steps with
+ * two sub-bullets each and the PWA showed the words and none of the 1..6. For a
+ * supervisor following a procedure on a phone, the numbers *are* the
+ * instructions.
+ *
+ * FabOrchestrator does not have this bug because its chat renders markdown
+ * inside `@tailwindcss/typography`'s `.prose`
+ * (`components/prompt-kit/markdown.tsx:103`), which sets `list-style-type`
+ * back. This app hand-writes `.fab-md` rather than pulling in the plugin — and
+ * hand-writing it meant inheriting responsibility for the marker along with the
+ * padding.
+ *
+ * `list-style-type` inherits, so without the nested rules a sub-bullet would
+ * take its parent's marker instead of the browser's usual alternation.
+ */
 .fab-md ul,
 .fab-md ol {
   padding-left: 20px;
+}
+
+.fab-md ul {
+  list-style: disc outside;
+}
+
+.fab-md ol {
+  list-style: decimal outside;
+}
+
+.fab-md ul ul {
+  list-style-type: circle;
+}
+
+.fab-md ol ol {
+  list-style-type: lower-alpha;
+}
+
+.fab-md li::marker {
+  color: var(--text-subtle);
 }
 
 .fab-md li {

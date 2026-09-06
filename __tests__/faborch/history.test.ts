@@ -97,6 +97,59 @@ describe("what reaches the phone", () => {
   });
 });
 
+describe("a multi-part answer keeps every word of its text", () => {
+  /*
+   * The mapper drops non-text parts on purpose. This is the case that proves it
+   * drops only those: a real FabOrchestrator answer is *interleaved* — prose,
+   * a tool call, more prose — and each run of prose is its own `text` part.
+   * Joining only the first, or stopping at the first non-text part, would lose
+   * the half of the answer that comes after the tool ran, and it would look
+   * exactly like a truncated reply rather than a mapping bug.
+   */
+  const interleaved = {
+    id: "m-2",
+    role: "assistant",
+    content: "…",
+    parts: [
+      { type: "step-start" },
+      { type: "text", text: "Here are the steps:\n\n1. Confirm the drop\n" },
+      { type: "tool-mcp_query", toolName: "mcp_query", input: { sql: "SELECT 1" }, output: {} },
+      { type: "step-start" },
+      { type: "text", text: "2. Localize it\n3. Check the tool\n\nThen escalate." },
+    ],
+  };
+
+  test("text from every part survives, in order", () => {
+    const [turn] = toTurns([interleaved]);
+    assert.equal(
+      turn.text,
+      "Here are the steps:\n\n1. Confirm the drop\n2. Localize it\n3. Check the tool\n\nThen escalate.",
+    );
+  });
+
+  test("no numbered step is lost across the tool boundary", () => {
+    const [turn] = toTurns([interleaved]);
+    for (const step of ["1.", "2.", "3."]) {
+      assert.ok(turn.text.includes(step), `step ${step} must survive the mapper`);
+    }
+  });
+
+  test("the tool call between them contributes nothing", () => {
+    const [turn] = toTurns([interleaved]);
+    assert.ok(!turn.text.includes("SELECT"));
+    assert.ok(!turn.text.includes("mcp_query"));
+  });
+
+  test("`content` does not override richer `parts`", () => {
+    // FO stores a flattened `content` alongside `parts`. If the mapper
+    // preferred it, an interleaved answer would collapse to whatever that
+    // field happened to hold — here, a single ellipsis.
+    const [turn] = toTurns([interleaved]);
+    assert.notEqual(turn.text, "…");
+    assert.ok(turn.text.length > 50);
+  });
+});
+
 describe("older and stranger rows", () => {
   test("a message with only `content` still renders", () => {
     const turns = toTurns([{ id: "x", role: "user", content: "How many lots?" }]);

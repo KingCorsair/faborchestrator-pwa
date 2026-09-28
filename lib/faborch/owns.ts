@@ -1,3 +1,5 @@
+import { foFingerprint } from "../auth";
+import { createTtlCache } from "../ttl-cache";
 import { foConversations } from "./client";
 import { toSummaries } from "./history";
 
@@ -28,18 +30,68 @@ import { toSummaries } from "./history";
  * belong to me" endpoint, and `GET /api/conversations/{id}` would fetch the
  * whole thread with every tool part — 1.3 MB, measured — to answer a yes/no.
  * The list is 28 KB for 104 rows and is the same call the drawer makes.
+ *
+ * ── A proof is remembered; a refusal is not (2026-09-28) ────────────────────
+ * That list used to be downloaded before *every* question, growing with every
+ * thread the operator starts, to answer the same yes/no it answered one
+ * question earlier. The answer cannot change: a conversation's owner is fixed
+ * when FabOrchestrator creates it. So a `true` is remembered, per session and
+ * per conversation, and the next question in the same thread skips the
+ * download.
+ *
+ * A `false` is never remembered, and that asymmetry is load-bearing. The screen
+ * creates a conversation and asks its first question a moment later; a
+ * remembered "not yours" from before it existed would send that question
+ * unpersisted. An unproved id is checked again every time, exactly as before.
+ *
+ * Remembered for five minutes rather than for good, because one thing can
+ * change: the operator can delete the thread in the FabOrchestrator website.
+ * FO's deletes are soft, so a question sent into a deleted thread inside that
+ * window is written somewhere nobody will look, rather than failing. Five
+ * minutes bounds how long that can happen.
  */
+export const OWNERSHIP_TTL_MS = 5 * 60_000;
+
+/** Small entries, one per session and thread actually being asked in. */
+const proved = createTtlCache<true>(OWNERSHIP_TTL_MS, 5_000);
+
+function proofKey(token: string, id: string, agent: string): string {
+  return `${foFingerprint(token)}:${agent}:${id}`;
+}
+
 export async function ownsConversation(
   token: string,
   id: string,
   agent = "chat",
 ): Promise<boolean> {
+  if (proved.get(proofKey(token, id, agent))) return true;
+
   try {
     const rows = toSummaries(await foConversations(token, agent));
-    return rows.some((row) => row.id === id);
+    const owned = rows.some((row) => row.id === id);
+    if (owned) proved.set(proofKey(token, id, agent), true);
+    return owned;
   } catch {
     // FO unreachable, or the session gone. Not a licence to proceed: an
     // unproved id is refused, and the turn is sent unpersisted instead.
     return false;
   }
+}
+
+/**
+ * Record that this session owns a conversation FabOrchestrator just created
+ * for it.
+ *
+ * FO made it for the token's own user, so the create call is itself the proof.
+ * Without this, the first question in every new conversation — which follows
+ * the create by a moment — would download the whole list to learn what the app
+ * had just been told.
+ */
+export function rememberOwnership(token: string, id: string, agent = "chat"): void {
+  proved.set(proofKey(token, id, agent), true);
+}
+
+/** Test seam. Nothing in the app calls this. */
+export function resetOwnershipCache(): void {
+  proved.clear();
 }

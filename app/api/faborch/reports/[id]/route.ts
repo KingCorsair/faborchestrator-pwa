@@ -23,6 +23,7 @@ import {
   foPinnedReport,
 } from "@/lib/faborch/client";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
+import { reportError } from "@/lib/report-error";
 
 export const runtime = "nodejs";
 
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         { status: error.status === 503 ? 503 : 502 },
       );
     }
-    console.error("[faborch/reports/[id]] unexpected failure:", error);
+    reportError("faborch/reports/[id]", error);
     return NextResponse.json(
       { code: "faborch_unavailable", error: "That report is unavailable right now." },
       { status: 502 },

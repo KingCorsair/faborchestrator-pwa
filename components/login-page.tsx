@@ -19,6 +19,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
 import { Button, Label } from "@/components/fab/primitives";
 import { submittedCredentials } from "@/lib/credentials";
+import { markFoActivity } from "@/lib/fo-activity";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 
 const AUTH_TOKEN_KEY = "llmatscale_auth_token";
@@ -96,7 +97,16 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
    * is surfaced as a notice offering to continue.
    */
   React.useEffect(() => {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    // Storage that throws (site data blocked) has no earlier session to offer.
+    // Unguarded, this read took the sign-in screen down with it — the one
+    // screen that has to work, and the one that can explain the problem when
+    // the operator signs in (see `onSubmit`).
+    let token: string | null;
+    try {
+      token = localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch {
+      return;
+    }
     if (!token) return;
 
     let cancelled = false;
@@ -191,8 +201,25 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
         return;
       }
 
-      localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ expiresAt: data.expiresAt }));
+      // Signed in at the server — and with nowhere to keep it, if this browser
+      // blocks site storage. That used to fall to the catch below and read
+      // "Could not reach the server", which sent people to check a network
+      // that was fine. It is said as what it is now, and the cookie the server
+      // just set is dropped again, so nothing is left half signed in.
+      try {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ expiresAt: data.expiresAt }));
+      } catch {
+        void fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+        setError(
+          "This browser is blocking the storage sign-in needs. Allow this site to store data " +
+            "(or leave private browsing) and try again.",
+        );
+        return;
+      }
+
+      // Signing in is FabOrchestrator activity: its idle clock starts here.
+      markFoActivity();
       router.replace(next);
     } catch {
       setError("Could not reach the server");

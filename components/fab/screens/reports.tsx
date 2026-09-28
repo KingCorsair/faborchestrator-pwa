@@ -35,6 +35,7 @@ import { AppShell } from "@/components/fab/app-shell";
 import { EmptyState, ErrorState, SkeletonBar } from "@/components/fab/primitives";
 import { useSession } from "@/components/fab/use-session";
 import { PageSkeleton } from "@/components/page-skeleton";
+import { markFoActivity } from "@/lib/fo-activity";
 
 interface ReportSummary {
   id: string;
@@ -115,6 +116,8 @@ function Reports() {
           });
           return;
         }
+        // FabOrchestrator answered, which resets its idle clock.
+        markFoActivity();
         setReports(body?.reports ?? []);
       } catch {
         if (!cancelled) {
@@ -147,6 +150,7 @@ function Reports() {
         });
         return;
       }
+      markFoActivity();
       if (body) setOpen(body);
     } catch {
       setFailure({

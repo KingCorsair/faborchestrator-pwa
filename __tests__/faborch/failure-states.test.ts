@@ -48,6 +48,7 @@ const ALL_CODES: PwaErrorCode[] = [
   "connection_lost",
   "stream_stalled",
   "bad_request",
+  "request_too_large",
 ];
 
 const run = (...actions: ConversationAction[]): ConversationState =>

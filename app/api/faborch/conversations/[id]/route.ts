@@ -32,7 +32,9 @@ import {
 import { MAX_TEXT } from "@/lib/faborch/conversation";
 import { isContinuable, toTurns } from "@/lib/faborch/history";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
-import { UpdateConversationSchema } from "@/lib/validation";
+import { reportError } from "@/lib/report-error";
+import { readJsonBody } from "@/lib/request-body";
+import { PIN_BODY_LIMIT, UpdateConversationSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -75,7 +77,7 @@ function failed(error: unknown, what: string): NextResponse {
       { status: error.status === 503 ? 503 : 502 },
     );
   }
-  console.error("[faborch/conversations/[id]] unexpected failure:", error);
+  reportError("faborch/conversations/[id]", error);
   return NextResponse.json({ code: "faborch_unavailable", error: what }, { status: 502 });
 }
 
@@ -130,7 +132,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!foToken) return noFoSession();
 
   const { id } = await params;
-  const parsed = UpdateConversationSchema.safeParse(await req.json().catch(() => null));
+  const body = await readJsonBody(req, PIN_BODY_LIMIT);
+  if (body.tooLarge) {
+    return NextResponse.json(
+      { code: "request_too_large", error: "That request is larger than this app accepts." },
+      { status: 413 },
+    );
+  }
+
+  const parsed = UpdateConversationSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
       { code: "invalid_request", error: "Only pinning can be changed from here." },

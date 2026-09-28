@@ -88,6 +88,24 @@ The exception is keyed on the *host*, not on `NODE_ENV`: `npm start` runs a
 production build locally, and a loopback address is unreachable from elsewhere
 by construction, which is the stronger guarantee.
 
+Two are optional, and move the sign-in lockout's count out of the process so
+that every copy of the app shares it — see "Sign-in is rate limited" below and
+the notes in `.env.example`:
+
+```dotenv
+UPSTASH_REDIS_REST_URL=https://<your-database>.upstash.io
+UPSTASH_REDIS_REST_TOKEN=...
+```
+
+One more is optional: a chat webhook that is told when something breaks —
+FabOrchestrator unreachable or too slow, a route that threw, a screen that
+crashed in a browser. At most one alert per kind of failure every five minutes.
+Every failure is in the server log as a JSON line either way.
+
+```dotenv
+ERROR_ALERT_WEBHOOK_URL=https://hooks.slack.com/services/...
+```
+
 Two more are used **only by the check scripts in `scripts/`**, never by the app:
 
 ```dotenv
@@ -104,7 +122,7 @@ FABORCH_PROBE_PASSWORD=...
 ```bash
 npm run dev                 # http://localhost:3002, hot reload
 npm run build && npm start  # production build, same port
-npm test                    # 272 tests, no network needed
+npm test                    # 509 tests, no network needed
 ```
 
 Sign in with a FabOrchestrator account. There is no demo credential — a local
@@ -249,7 +267,7 @@ node scripts/hydration-typing-check.mjs # sign-in under slow hydration
 |---|---|
 | `npm run dev` | Dev server on 3002 |
 | `npm run build` / `npm start` | Production build and server |
-| `npm test` | **272 tests** — auth, proxy, streaming, conversation, errors, artifacts, reports, platform |
+| `npm test` | **509 tests** — auth, proxy, streaming, conversation, errors, artifacts, reports, request limits, caching, timeouts, error reporting, platform |
 | `npm run lint` / `npm run typecheck` | ESLint / `tsc --noEmit` |
 | `npm run icons` | Regenerate the PWA icons |
 | `npm run qr -- <https url>` | QR code for a deployed URL, written to `qr/` |
@@ -303,6 +321,8 @@ Read before changing anything.
   quote them.**
 - **Sign-in is rate limited, and that is a mitigation rather than a fix.** Eight
   failed attempts from one address buys a ten-minute wait
-  (`lib/rate-limit.ts`). It is per-process and per-IP, so it stops a script
-  against one address and does nothing about a distributed attempt. A correct
-  password is never throttled.
+  (`lib/rate-limit.ts`). It is per-IP, so it stops a script against one
+  address and does nothing about a distributed attempt. The count is
+  per-process unless `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` are
+  set, in which case every copy of the app shares it. A correct password is
+  never throttled.

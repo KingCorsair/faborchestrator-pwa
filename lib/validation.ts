@@ -8,10 +8,40 @@
 
 import { z } from "zod";
 
-export const LoginSchema = z.object({
-  email: z.string().min(1, "Email is required").max(255),
-  password: z.string().min(1, "Password is required").max(128),
-});
+const EMAIL_MAX = 255;
+const PASSWORD_MAX = 128;
+
+/**
+ * How long a conversation posted to FabInsight may be, and each message in it.
+ *
+ * Mirrored — deliberately, see its header — as `MAX_MESSAGES` and `MAX_TEXT` in
+ * `lib/faborch/conversation.ts`, and the test suite asserts the two agree.
+ */
+const CHAT_MAX_MESSAGES = 100;
+const CHAT_MAX_TEXT = 20_000;
+
+/**
+ * Sign-in. **Every rule carries its own wording** (2026-09-28).
+ *
+ * The route shows the first failing rule's message on the sign-in screen, and a
+ * rule without one speaks in the validation library's voice — "Invalid input:
+ * expected object, received null", or "Too big: expected string to have <=255
+ * characters". Those reached the screen. Now a malformed body, a wrong type and
+ * an over-long field each say what to do in words a person would use.
+ */
+export const LoginSchema = z.object(
+  {
+    email: z
+      .string({ error: "Enter your email address." })
+      .min(1, "Email is required")
+      .max(EMAIL_MAX, "That email address is too long."),
+    password: z
+      .string({ error: "Enter your password." })
+      .min(1, "Password is required")
+      .max(PASSWORD_MAX, "That password is too long."),
+  },
+  { error: "Enter your email address and password." },
+);
 
 export const OrderStatusSchema = z.enum([
   "RELEASED",
@@ -142,7 +172,7 @@ export const FabInsightRequestSchema = z.object({
       z.object({
         role: z.enum(["user", "assistant"]),
         parts: z
-          .array(z.object({ type: z.literal("text"), text: z.string().max(20_000) }))
+          .array(z.object({ type: z.literal("text"), text: z.string().max(CHAT_MAX_TEXT) }))
           .min(1)
           .max(64),
       }),
@@ -150,8 +180,9 @@ export const FabInsightRequestSchema = z.object({
     .min(1)
     // A conversation long enough to hit this is one FO would trim anyway
     // (`fitMessagesToContextWindow`); the cap is here so an unbounded body
-    // cannot be posted at an authenticated route.
-    .max(100),
+    // cannot be posted at an authenticated route. It is checked after the body
+    // is parsed, so the bytes are capped separately — `CHAT_BODY_LIMIT` below.
+    .max(CHAT_MAX_MESSAGES),
 
   /**
    * Which FabOrchestrator conversation to write this turn into.
@@ -178,7 +209,7 @@ export const FabInsightRequestSchema = z.object({
  * history, which this app does not open and has no business creating.
  */
 export const CreateConversationSchema = z.object({
-  title: z.string().min(1).max(20_000),
+  title: z.string().min(1).max(CHAT_MAX_TEXT),
 });
 
 /**
@@ -192,3 +223,65 @@ export const CreateConversationSchema = z.object({
 export const UpdateConversationSchema = z.object({
   isPinned: z.boolean(),
 });
+
+/* ── How many bytes each route will read ─────────────────────────────────────
+ *
+ * The schemas above say what a body may contain; these say how large it may be
+ * before anything looks at it. `lib/request-body.ts` stops reading at the
+ * limit, so an oversized body is refused without ever being held in memory.
+ *
+ * Each is derived from its schema rather than picked, so that nothing the app's
+ * own screens can send is ever refused for its size. Six bytes per character is
+ * the worst case once JSON-encoded — a control character or a lone surrogate is
+ * written as `\u0001` — and real text is a fraction of it.
+ */
+const JSON_BYTES_PER_CHAR = 6;
+
+/** Room for the keys and brackets around one message's text, generously. */
+const MESSAGE_ENVELOPE_BYTES = 128;
+
+/** And around a whole body — the conversation id, the outer braces. */
+const BODY_ENVELOPE_BYTES = 1024;
+
+/** An email and a password at their longest: about 3 KB. */
+export const LOGIN_BODY_LIMIT =
+  (EMAIL_MAX + PASSWORD_MAX) * JSON_BYTES_PER_CHAR + BODY_ENVELOPE_BYTES;
+
+/**
+ * The largest conversation the chat screen can post: about 12 MB.
+ *
+ * `CHAT_MAX_MESSAGES` messages of one text part each — which is what
+ * `toFoMessages` builds — at `CHAT_MAX_TEXT` characters apiece. The schema
+ * allows more parts per message than the screen ever sends; a hand-built body
+ * that uses them all is refused here, which is the point.
+ */
+export const CHAT_BODY_LIMIT =
+  CHAT_MAX_MESSAGES * (CHAT_MAX_TEXT * JSON_BYTES_PER_CHAR + MESSAGE_ENVELOPE_BYTES) +
+  BODY_ENVELOPE_BYTES;
+
+/** A conversation's title is its first question: about 120 KB. */
+export const CREATE_CONVERSATION_BODY_LIMIT =
+  CHAT_MAX_TEXT * JSON_BYTES_PER_CHAR + BODY_ENVELOPE_BYTES;
+
+/** `{ "isPinned": true }`. */
+export const PIN_BODY_LIMIT = BODY_ENVELOPE_BYTES;
+
+/**
+ * A screen crashed in somebody's browser, and the crash screen is reporting it
+ * (`app/api/client-error/route.ts`).
+ *
+ * Narrow on purpose: this arrives unauthenticated from any browser, so every
+ * field is a shape the crash screen builds and nothing else. `path` is a path
+ * only — never a query string, where `?q=` would carry a question somebody
+ * typed. There is no stack field: a minified stack says little, and is exactly
+ * the kind of free text an unauthenticated endpoint should not be taking.
+ */
+export const ClientErrorSchema = z.object({
+  reference: z.string().regex(/^ref-[a-z0-9]{6,16}$/),
+  message: z.string().max(500),
+  digest: z.string().max(64).regex(/^[A-Za-z0-9_-]*$/).optional(),
+  path: z.string().max(200).regex(/^\/[A-Za-z0-9\-._~/%]*$/),
+});
+
+/** A crash report is a few hundred bytes. */
+export const CLIENT_ERROR_BODY_LIMIT = 4 * 1024;

@@ -34,8 +34,11 @@ import {
   foCreateConversation,
 } from "@/lib/faborch/client";
 import { toSummaries } from "@/lib/faborch/history";
+import { rememberOwnership } from "@/lib/faborch/owns";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
-import { CreateConversationSchema } from "@/lib/validation";
+import { reportError } from "@/lib/report-error";
+import { readJsonBody } from "@/lib/request-body";
+import { CREATE_CONVERSATION_BODY_LIMIT, CreateConversationSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -83,7 +86,7 @@ function failed(error: unknown, what: string): NextResponse {
       { status: error.status === 503 ? 503 : 502 },
     );
   }
-  console.error("[faborch/conversations] unexpected failure:", error);
+  reportError("faborch/conversations", error);
   return NextResponse.json({ code: "faborch_unavailable", error: what }, { status: 502 });
 }
 
@@ -112,7 +115,15 @@ export async function POST(req: NextRequest) {
   const foToken = foTokenFrom(req);
   if (!foToken) return noFoSession();
 
-  const parsed = CreateConversationSchema.safeParse(await req.json().catch(() => null));
+  const body = await readJsonBody(req, CREATE_CONVERSATION_BODY_LIMIT);
+  if (body.tooLarge) {
+    return NextResponse.json(
+      { code: "request_too_large", error: "That question is too long to start a conversation with." },
+      { status: 413 },
+    );
+  }
+
+  const parsed = CreateConversationSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
       { code: "invalid_request", error: "A conversation needs the question it starts with." },
@@ -122,6 +133,10 @@ export async function POST(req: NextRequest) {
 
   try {
     const id = await foCreateConversation(foToken, parsed.data.title, AGENT);
+    // FO created it for this token's own user, so the create is the proof of
+    // ownership — recorded, so the question about to be asked in it does not
+    // download the whole conversation list to establish the same thing.
+    if (id) rememberOwnership(foToken, id, AGENT);
     // Null means FO declined to create one. Answered as 200 with a null id
     // rather than as an error, because the caller's next move is the same
     // either way: send the turn unpersisted, so the operator still gets their

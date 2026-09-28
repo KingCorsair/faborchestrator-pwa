@@ -47,15 +47,26 @@ import {
   FabOrchNotConfiguredError,
   FabOrchRequestError,
   foChat,
-  foConnectedMcpIds,
   foErrorTextOf,
 } from "@/lib/faborch/client";
 import { codeForStatus, splitErrorId, statusForCode, type PwaErrorCode } from "@/lib/faborch/errors";
 import { ownsConversation } from "@/lib/faborch/owns";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
-import { FabInsightRequestSchema } from "@/lib/validation";
+import { connectedMcpIds } from "@/lib/faborch/tools";
+import { reportError } from "@/lib/report-error";
+import { readJsonBody } from "@/lib/request-body";
+import { CHAT_BODY_LIMIT, FabInsightRequestSchema } from "@/lib/validation";
 
-/** FO's own budget for one turn (`app/api/chat/route.ts:27`). */
+/**
+ * FO's own budget for one turn (`app/api/chat/route.ts:27`).
+ *
+ * **Read only by hosts that impose a limit of their own**, such as Vercel. On a
+ * long-lived server like Fly's, nothing reads it, and until 2026-09-28 a turn
+ * there had no limit at all. What bounds one now is `fetchFo`'s limit on how
+ * long FabOrchestrator may take to begin answering, and the stall watchdog on
+ * the answer itself (`lib/faborch/stream.ts`). Kept for the hosts that do
+ * read it.
+ */
 export const maxDuration = 300;
 
 /**
@@ -92,22 +103,37 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     );
   }
 
-  const parsed = FabInsightRequestSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
-      { status: 400 },
+  // The whole conversation travels with every turn, so this is the largest body
+  // the app accepts — and the limit still sits above anything the screen can
+  // send. Past it, reading stops; see `lib/request-body.ts`.
+  const body = await readJsonBody(req, CHAT_BODY_LIMIT);
+  if (body.tooLarge) {
+    return fail(
+      "request_too_large",
+      "That conversation is too large to send in one request.",
+      statusForCode("request_too_large"),
     );
   }
 
+  // The screen checks every limit this schema has before it sends (see
+  // `capacityIssue`), so a refusal here means the app itself built a bad
+  // request. Said as that, with the code the screen knows — never the
+  // validation library's own sentence, which is what reached the screen before.
+  const parsed = FabInsightRequestSchema.safeParse(body.value);
+  if (!parsed.success) {
+    return fail("bad_request", "This app could not send that question.", statusForCode("bad_request"));
+  }
+
   try {
-    // Which tools this operator may use is FO's answer, asked fresh each turn.
-    // The product's chat asks once on mount and keeps the list for the session;
-    // here there is no mount to hang it on, and one round trip is cheaper than a
-    // conversation that silently loses its tools when an admin connects one
-    // mid-demo. The other two agents build their tools from the authenticated
-    // user server-side, so there is nothing to ask.
-    const activeMcpIds = agent.sendMcpIds ? await foConnectedMcpIds(foToken) : null;
+    // Which tools this operator may use is FO's answer, remembered for five
+    // minutes per session. The product's chat asks once on mount and keeps the
+    // list for the session; asking before every turn, as this did until
+    // 2026-09-28, put a round trip in front of every answer to learn something
+    // that changes when an admin connects a server. Five minutes still picks
+    // that up mid-demo — see `lib/faborch/tools.ts`. The other two agents build
+    // their tools from the authenticated user server-side, so there is nothing
+    // to ask.
+    const activeMcpIds = agent.sendMcpIds ? await connectedMcpIds(foToken) : null;
 
     /**
      * The conversation this turn is written into — **proved, not accepted.**
@@ -122,7 +148,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
      * So the id is matched against this caller's own list first. One that fails
      * becomes `null` rather than a 403: the question is still answered, it
      * simply is not written down. Refusing to answer would punish an operator
-     * for a stale tab.
+     * for a stale tab. A proof is remembered for five minutes, so the list is
+     * downloaded once per thread rather than once per question (`owns.ts`).
      *
      * Only the agents that keep history are eligible. The Back-end Agent is
      * historyless here because it is historyless in the product —
@@ -225,7 +252,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     if (error instanceof FabOrchRequestError) {
       return fail("faborch_unavailable", error.message, error.status === 503 ? 503 : 502);
     }
-    console.error(`[faborch/${agent.id}/chat] unexpected failure:`, error);
+    reportError(`faborch/${agent.id}/chat`, error);
     return fail("faborch_unavailable", `${agent.name} is unavailable right now.`, 502);
   }
 }

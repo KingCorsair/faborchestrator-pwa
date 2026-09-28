@@ -84,7 +84,8 @@ import {
 import { ArtifactSheet } from "@/components/fab/artifact-sheet";
 import { ArtifactTile } from "@/components/fab/artifact-tile";
 import { segmentMessageText, type FoArtifact } from "@/lib/faborch/artifacts";
-import { readFoStream } from "@/lib/faborch/stream";
+import { readFoStream, STALL_MS } from "@/lib/faborch/stream";
+import { markFoActivity } from "@/lib/fo-activity";
 
 /**
  * Where this conversation is being drawn.
@@ -306,6 +307,20 @@ export function AgentChat({
       abortRef.current = controller;
 
       void (async () => {
+        /**
+         * The wait for the answer to *begin* gets the same warning as silence
+         * inside one (2026-09-28).
+         *
+         * `readFoStream`'s watchdog can only watch a stream that has started.
+         * Before this, the time between pressing send and the first byte —
+         * creating the conversation, the server's lookups, FabOrchestrator
+         * accepting the question — had no watch at all, and the screen said
+         * "waiting" for as long as it took. The server now gives up on
+         * FabOrchestrator after sixty seconds (`FO_ANSWER_START_TIMEOUT_MS`);
+         * this says so at forty-five, while there is still something to wait
+         * for, and the operator can Stop.
+         */
+        const beginWatch = setTimeout(() => dispatch({ type: "stalled" }), STALL_MS);
         try {
           const bearer = `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}`;
 
@@ -331,6 +346,8 @@ export function AgentChat({
                 signal: controller.signal,
               });
               const body = (await made.json().catch(() => null)) as { id?: string } | null;
+              // Any request FabOrchestrator accepted resets its idle clock.
+              if (made.ok) markFoActivity();
               if (made.ok && typeof body?.id === "string") {
                 conversationRef.current = body.id;
                 onCreatedRef.current?.(body.id);
@@ -356,6 +373,11 @@ export function AgentChat({
             }),
             signal: controller.signal,
           });
+
+          // The answer has begun, or been refused: either way the wait is over,
+          // and `readFoStream` watches whatever comes next.
+          clearTimeout(beginWatch);
+          if (res.ok) markFoActivity();
 
           const connectionHeader = res.headers.get("X-FabOrch-Data-Connections");
           if (connectionHeader !== null) {
@@ -415,6 +437,7 @@ export function AgentChat({
             },
           });
         } finally {
+          clearTimeout(beginWatch);
           inFlight.current = false;
           abortRef.current = null;
         }

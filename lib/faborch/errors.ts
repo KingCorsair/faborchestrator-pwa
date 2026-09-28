@@ -50,7 +50,13 @@ export type PwaErrorCode =
   /** No frame of any kind for 45 seconds — three missed keep-alives. */
   | "stream_stalled"
   /** This app sent something FO would not accept. Should never be user-visible. */
-  | "bad_request";
+  | "bad_request"
+  /**
+   * The request was larger than this app reads (`CHAT_BODY_LIMIT`). The limit
+   * sits above anything the screen can send, so this should never be
+   * user-visible either — but if it is, it has a next step.
+   */
+  | "request_too_large";
 
 /**
  * What the operator should do next, per code.
@@ -85,6 +91,9 @@ export const NEXT_STEP: Record<PwaErrorCode, string> = {
   bad_request:
     "This app sent something FabOrchestrator would not accept, which is a fault here " +
     "rather than in what you typed.",
+  request_too_large:
+    "This conversation is too large to send in one request. Start a new conversation " +
+    "to carry on.",
 };
 
 /**
@@ -142,6 +151,8 @@ export function statusForCode(code: PwaErrorCode): number {
       return 401;
     case "agent_forbidden":
       return 403;
+    case "request_too_large":
+      return 413;
     case "quota_exceeded":
       return 429;
     case "not_configured":

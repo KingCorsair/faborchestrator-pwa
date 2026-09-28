@@ -21,6 +21,8 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Menu, RefreshCw } from "lucide-react";
+import { foIdleState, lastFoActivity, stayActive, type FoIdle } from "@/lib/fo-activity";
+import { loginHref } from "@/lib/return-path";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
 import { NavDrawer, type DrawerHistory } from "./nav-drawer";
@@ -56,6 +58,7 @@ export function AppShell({
   const router = useRouter();
   const pathname = usePathname();
   const minutesLeft = useSessionMinutes(sessionExpiresAt ?? null);
+  const { idle, refresh: refreshIdle, endedByFo, markEnded } = useFoIdle();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const hasDrawer = typeof onNewChat === "function";
 
@@ -70,7 +73,20 @@ export function AppShell({
     // Safe because this shell wraps the agent conversation and nothing else:
     // the landing page and diagnostics carry their own layout.
     <div className="fab flex h-dvh flex-col">
-      {minutesLeft != null ? (
+      {/* One banner at a time, most urgent first. FabOrchestrator's idle limit
+          (30 minutes) almost always runs out long before this app's own
+          session (12 hours) does, and it was the one nothing warned about —
+          see `lib/fo-activity.ts`. */}
+      {endedByFo || idle.kind === "ended" ? (
+        <IdleEnded token={token} />
+      ) : idle.kind === "warning" ? (
+        <IdleWarning
+          minutesLeft={idle.minutesLeft}
+          token={token}
+          onStayed={refreshIdle}
+          onEnded={markEnded}
+        />
+      ) : minutesLeft != null ? (
         <div
           role="status"
           className="flex flex-none items-center justify-center gap-2 px-4 py-[7px] text-[12px]"
@@ -324,6 +340,138 @@ function useSessionMinutes(expiresAt: Date | null, thresholdMs = 5 * 60 * 1000) 
   }, [time, thresholdMs]);
 
   return minutes;
+}
+
+/**
+ * Where FabOrchestrator's idle clock stands, re-read every 15 seconds like the
+ * countdown above, and whenever another tab records activity.
+ *
+ * `endedByFo` is FabOrchestrator's own word, from a Stay signed in that came
+ * back "already ended" — firmer than the clock, and kept until sign-in.
+ */
+function useFoIdle(): {
+  idle: FoIdle;
+  refresh: () => void;
+  endedByFo: boolean;
+  markEnded: () => void;
+} {
+  const [idle, setIdle] = React.useState<FoIdle>({ kind: "active" });
+  const [endedByFo, setEndedByFo] = React.useState(false);
+
+  const refresh = React.useCallback(() => {
+    setIdle(foIdleState(lastFoActivity(), Date.now()));
+  }, []);
+
+  React.useEffect(() => {
+    refresh();
+    const id = window.setInterval(refresh, 15000);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [refresh]);
+
+  return { idle, refresh, endedByFo, markEnded: () => setEndedByFo(true) };
+}
+
+const bannerClass =
+  "flex flex-none flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-[7px] text-center text-[12px]";
+
+const bannerButtonClass =
+  "cursor-pointer border-0 bg-transparent p-0 text-[12px] font-bold underline decoration-1 underline-offset-2 disabled:cursor-wait disabled:opacity-60";
+
+/**
+ * The last five minutes before FabOrchestrator's idle sign-out.
+ *
+ * Stay signed in is one call to FabOrchestrator, made because the operator
+ * pressed it — never on a timer (`lib/fo-activity.ts` says why). Carrying on
+ * works just as well: any question, report or conversation resets the clock.
+ */
+function IdleWarning({
+  minutesLeft,
+  token,
+  onStayed,
+  onEnded,
+}: {
+  minutesLeft: number;
+  token: string | null;
+  onStayed: () => void;
+  onEnded: () => void;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+
+  return (
+    <div
+      role="status"
+      className={bannerClass}
+      style={{ background: "var(--status-amber-bg)", color: "var(--status-amber-ink)" }}
+    >
+      <span>
+        No activity for a while. FabOrchestrator signs you out in {minutesLeft}{" "}
+        {minutesLeft === 1 ? "minute" : "minutes"} unless you carry on.
+      </span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setFailed(false);
+          const outcome = await stayActive(token);
+          setBusy(false);
+          if (outcome === "ok") onStayed();
+          else if (outcome === "ended") onEnded();
+          else setFailed(true);
+        }}
+        className={bannerButtonClass}
+        style={{ color: "inherit" }}
+      >
+        {busy ? "Staying signed in…" : "Stay signed in"}
+      </button>
+      {failed ? <span>FabOrchestrator did not answer. Try again in a moment.</span> : null}
+    </div>
+  );
+}
+
+/**
+ * Past FabOrchestrator's idle limit.
+ *
+ * "Probably", because the only way to be sure is to ask FabOrchestrator — and
+ * asking is activity, which would keep alive the session being asked about. A
+ * question still goes through if the session happens to have survived; if it
+ * has not, the answer is the same sign-in card this offers now.
+ */
+function IdleEnded({ token }: { token: string | null }) {
+  const [busy, setBusy] = React.useState(false);
+
+  return (
+    <div
+      role="status"
+      className={bannerClass}
+      style={{ background: "var(--status-red-bg)", color: "var(--status-red-ink)" }}
+    >
+      <span>
+        FabOrchestrator has probably signed you out: it ends a session after 30 minutes without
+        activity.
+      </span>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          // Out of this session cleanly first, so sign-in starts from nothing
+          // and returns here afterwards.
+          await logout(token);
+          window.location.assign(loginHref());
+        }}
+        className={bannerButtonClass}
+        style={{ color: "inherit" }}
+      >
+        {busy ? "Signing out…" : "Sign in again"}
+      </button>
+    </div>
+  );
 }
 
 function initialsOf(name: string | null | undefined, email: string | undefined): string {

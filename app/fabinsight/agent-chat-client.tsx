@@ -33,6 +33,7 @@ import { PageSkeleton } from "@/components/page-skeleton";
 import type { FoAgentId } from "@/lib/faborch/agents";
 import { FO_AGENTS } from "@/lib/faborch/agents";
 import type { Turn } from "@/lib/faborch/conversation";
+import { markFoActivity } from "@/lib/fo-activity";
 
 /** What `GET /api/faborch/conversations/[id]` answers with. */
 interface LoadedThread {
@@ -128,6 +129,8 @@ export function AgentChatClient({
           setThread(null);
           return;
         }
+        // Loading a thread is a call FabOrchestrator counts as activity.
+        markFoActivity();
         const body = (await res.json()) as LoadedThread;
         if (!cancelled) setThread({ ...body, id: selected });
       } catch {

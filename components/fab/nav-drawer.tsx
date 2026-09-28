@@ -58,6 +58,7 @@
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, Loader2, Pin, PinOff, Plus, X } from "lucide-react";
+import { markFoActivity } from "@/lib/fo-activity";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
 import type { SessionUser } from "./use-session";
@@ -123,6 +124,8 @@ export function NavDrawer({
         setFailed(true);
         return;
       }
+      // FabOrchestrator answered, which resets its idle clock.
+      markFoActivity();
       const body = (await res.json()) as { conversations?: DrawerConversation[] };
       setRows(Array.isArray(body.conversations) ? body.conversations : []);
       setFailed(false);
@@ -183,11 +186,12 @@ export function NavDrawer({
   const togglePin = async (row: DrawerConversation) => {
     setBusyId(row.id);
     try {
-      await fetch(`/api/faborch/conversations/${encodeURIComponent(row.id)}`, {
+      const res = await fetch(`/api/faborch/conversations/${encodeURIComponent(row.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: bearer() },
         body: JSON.stringify({ isPinned: !row.isPinned }),
       });
+      if (res.ok) markFoActivity();
       await load();
     } catch {
       /* Leaves the list as it was; the next open reloads it. */

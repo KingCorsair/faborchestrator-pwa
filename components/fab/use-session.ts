@@ -15,10 +15,19 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { clearFoActivity } from "@/lib/fo-activity";
 import { loginHref } from "@/lib/return-path";
 
 const AUTH_SESSION_KEY = "llmatscale_auth_session";
 const AUTH_TOKEN_KEY = "llmatscale_auth_token";
+
+/**
+ * How long sign-out waits for the server before giving up on it.
+ *
+ * The server gives FabOrchestrator five seconds (`FO_SIGN_OUT_TIMEOUT_MS`);
+ * this allows for the network either side of that.
+ */
+const SIGN_OUT_WAIT_MS = 8_000;
 
 export interface SessionUser {
   id: string;
@@ -53,6 +62,7 @@ export function clearAuthStorage() {
   } catch {
     /* nothing useful to do if storage is unavailable */
   }
+  clearFoActivity();
 }
 
 export function useSession(): Session {
@@ -66,8 +76,20 @@ export function useSession(): Session {
   });
 
   React.useEffect(() => {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    const raw = localStorage.getItem(AUTH_SESSION_KEY);
+    // Storage that throws — site data blocked, or some private modes — holds no
+    // session this screen can use. It used to throw here, outside any guard,
+    // and take the screen down with nothing but "Application error" on it.
+    // Sign-in is the right place to land: it is the screen that can say why a
+    // session cannot be kept (`components/login-page.tsx`).
+    let token: string | null;
+    let raw: string | null;
+    try {
+      token = localStorage.getItem(AUTH_TOKEN_KEY);
+      raw = localStorage.getItem(AUTH_SESSION_KEY);
+    } catch {
+      router.replace(loginHref());
+      return;
+    }
     if (!token || !raw) {
       clearAuthStorage();
       // Carries where they were headed, so sign-in returns them to it rather
@@ -137,17 +159,39 @@ export function useSession(): Session {
   return session;
 }
 
-/** Clears the client session. The token is a stateless HMAC — see lib/auth.ts. */
+/**
+ * Sign out: this device first, then the server.
+ *
+ * ── The order was the other way round until 2026-09-28 ──────────────────────
+ * It waited for the server — which waits for FabOrchestrator — before clearing
+ * anything here. So a FabOrchestrator that had stopped answering kept the
+ * button on "Signing out…", and this device signed in, for as long as the call
+ * hung: up to five minutes.
+ *
+ * Now the device forgets its session first, which cannot fail. Then the server
+ * is asked to drop the FabOrchestrator cookie and end the FO session, and given
+ * `SIGN_OUT_WAIT_MS` to do it. The cookie is httpOnly, so only the server can
+ * remove it; if the network is down it stays until the next sign-in replaces it
+ * or it expires — and on its own it opens nothing, because every request needs
+ * the bearer token this has already deleted (`lib/auth-middleware.ts`).
+ *
+ * The server is asked even with no token in hand: the cookie may still be
+ * there, and the route reads only the cookie.
+ */
 export async function logout(token: string | null) {
-  if (token) {
-    try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      /* still clear locally */
-    }
-  }
   clearAuthStorage();
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SIGN_OUT_WAIT_MS);
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: controller.signal,
+    });
+  } catch {
+    /* Signed out here already; see above for what is left and why it is inert. */
+  } finally {
+    clearTimeout(timer);
+  }
 }

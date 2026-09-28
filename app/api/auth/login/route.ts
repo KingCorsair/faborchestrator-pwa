@@ -1,8 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sessionFor } from "@/lib/auth";
-import { foLogin, isFabOrchConfigured, FabOrchRequestError } from "@/lib/faborch/client";
+import { foLogin, foMe, isFabOrchConfigured, FabOrchRequestError } from "@/lib/faborch/client";
 import { setFoTokenCookie } from "@/lib/faborch/session";
-import { LoginSchema } from "@/lib/validation";
+import { reportError } from "@/lib/report-error";
+import { readJsonBody } from "@/lib/request-body";
+import { LOGIN_BODY_LIMIT, LoginSchema } from "@/lib/validation";
 import {
   checkLoginAllowed,
   clearLoginFailures,
@@ -11,14 +13,18 @@ import {
 } from "@/lib/rate-limit";
 
 /**
- * What this app calls its operators in the top bar.
+ * The label shown under the operator's name when FabOrchestrator could not say
+ * what their role is.
  *
- * FabOrchestrator's login response carries no role — that lives on its
- * `/api/auth/me` — and a second round trip to label a nav item is not worth
- * making a person wait for. Previously this read `DEMO_USER_ROLE`, which
- * outlived the demo credential it belonged to.
+ * ── The real role, since 2026-09-28 ─────────────────────────────────────────
+ * This used to be the only label: every operator was called "Supervisor",
+ * because FO's login response carries no role and a second round trip was
+ * judged not worth it. That put "Supervisor" under an administrator's name.
+ * The role is now read from FO's own `/api/auth/me` at sign-in (`foMe`), and
+ * this neutral label appears only if that read fails — a label is not worth
+ * failing a sign-in over, and it claims no role at all.
  */
-const DEFAULT_ROLE_LABEL = "Supervisor";
+const ROLE_WHEN_UNKNOWN = "Signed in";
 
 /**
  * Sign in — **FabOrchestrator is the only identity.**
@@ -52,10 +58,15 @@ const DEFAULT_ROLE_LABEL = "Supervisor";
  * guesses from one address buys a ten-minute wait — see `lib/rate-limit.ts`,
  * including what that does and does not protect against. A correct password is
  * never throttled: success clears the counter.
+ *
+ * ── The body is size-checked before it is read ─────────────────────────────
+ * This is the one route anybody on the internet can reach without a session,
+ * so it is the one where an unbounded `req.json()` did the most harm. See
+ * `lib/request-body.ts`.
  */
 export async function POST(req: NextRequest) {
   const address = clientAddress(req.headers);
-  const verdict = checkLoginAllowed(address);
+  const verdict = await checkLoginAllowed(address);
   if (!verdict.allowed) {
     return NextResponse.json(
       { error: "Too many sign-in attempts. Try again in a few minutes." },
@@ -63,11 +74,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await req.json().catch(() => null);
-  const parsed = LoginSchema.safeParse(body);
-  if (!parsed.success) {
+  const body = await readJsonBody(req, LOGIN_BODY_LIMIT);
+  if (body.tooLarge) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
+      { error: "That sign-in request is larger than this app accepts." },
+      { status: 413 },
+    );
+  }
+  const parsed = LoginSchema.safeParse(body.value);
+  if (!parsed.success) {
+    // Every rule in `LoginSchema` carries its own wording, so this is always a
+    // sentence written for a person — see that schema.
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Enter your email address and password." },
       { status: 400 },
     );
   }
@@ -79,7 +98,7 @@ export async function POST(req: NextRequest) {
   // did while a local demo credential still existed — would send an operator
   // to retype a password that was never going to be checked by anything.
   if (!isFabOrchConfigured()) {
-    console.error("[auth] FABORCH_BASE_URL is not set; sign-in cannot work");
+    reportError("auth/not-configured", new Error("FABORCH_BASE_URL is not set; sign-in cannot work"));
     return NextResponse.json(
       { error: "Sign-in is not configured on this server: FabOrchestrator is not reachable." },
       { status: 503 },
@@ -93,23 +112,30 @@ export async function POST(req: NextRequest) {
     // FO being down must not read as a wrong password. Somebody typing their
     // own credentials correctly and being told they are wrong will spend the
     // demo re-typing them.
+    //
+    // A `FabOrchRequestError` has been reported where it happened (`fetchFo`)
+    // or is FO's own refusal, which FO records itself. Anything else is this
+    // app's surprise, and is reported here.
+    if (!(error instanceof FabOrchRequestError)) reportError("auth/login", error);
     const message =
       error instanceof FabOrchRequestError
         ? error.message
         : "Could not reach FabOrchestrator to check those credentials.";
-    console.error("[auth] FabOrchestrator sign-in failed:", error);
     return NextResponse.json({ error: message }, { status: 503 });
   }
 
   if (!fo) {
-    recordLoginFailure(address);
+    await recordLoginFailure(address);
     return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 });
   }
 
-  // This app's own session, for an operator FO has vouched for. `roleName` is
-  // not read from FO: its `/api/auth/login` response carries no role (that is
-  // on `/api/auth/me`), and a second round trip to label the top nav is not
-  // worth it. The label is what this app calls its operators.
+  // The operator's real role, from FO's own `/api/auth/me` — its login
+  // response carries none. One more round trip, bounded like every call to FO,
+  // and never allowed to fail the sign-in: if it does not answer, the label is
+  // neutral rather than wrong.
+  const me = await foMe(fo.token).catch(() => null);
+
+  // This app's own session, for an operator FO has vouched for.
   //
   // `fo.expiresAt` caps this session at FabOrchestrator's own expiry, so the
   // PWA can never hold a session that outlives the token behind it — see
@@ -119,13 +145,13 @@ export async function POST(req: NextRequest) {
       id: fo.user.id,
       email: fo.user.email,
       name: fo.user.name || fo.user.email,
-      roleName: DEFAULT_ROLE_LABEL,
+      roleName: me?.roleName ?? ROLE_WHEN_UNKNOWN,
     },
     fo.expiresAt,
     fo.token,
   );
 
-  clearLoginFailures(address);
+  await clearLoginFailures(address);
   const res = NextResponse.json({ ...session, faborch: true });
   setFoTokenCookie(req, res, fo.token, fo.expiresAt);
   return res;

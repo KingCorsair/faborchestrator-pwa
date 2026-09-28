@@ -19,6 +19,7 @@ process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign"
 
 import { NextRequest } from "next/server";
 import { sessionFor, verifyToken } from "@/lib/auth";
+import { LOGIN_BODY_LIMIT } from "@/lib/validation";
 import { POST } from "@/app/api/auth/login/route";
 import { POST as LOGOUT } from "@/app/api/auth/logout/route";
 
@@ -56,6 +57,11 @@ const login = (email: string, password: string) => {
 beforeEach(() => {
   calls = [];
   process.env.FABORCH_BASE_URL = "https://fo.test";
+  // The sign-in limiter counts in this process unless a shared store is
+  // configured, and these tests are about the route, not the store — so a
+  // developer's shell that happens to carry Upstash credentials changes nothing.
+  delete process.env.UPSTASH_REDIS_REST_URL;
+  delete process.env.UPSTASH_REDIS_REST_TOKEN;
   // Deliberately present. The point of the suite is that they do nothing.
   process.env.DEMO_USER_EMAIL = "supervisor@athenatech.example";
   process.env.DEMO_USER_PASSWORD = "the-old-demo-password";
@@ -124,6 +130,51 @@ describe("without FabOrchestrator there is no way in", () => {
   test("FO rejecting the password is 401", async () => {
     stubFo(() => new Response("", { status: 401 }));
     assert.equal((await login("operator@plant.example", "wrong")).status, 401);
+  });
+});
+
+describe("an oversized sign-in is refused before it is read", () => {
+  // The one route reachable without a session. Before 2026-09-28 it parsed a
+  // body of any size before checking a single field, on a 512 MB machine.
+  const oversized = (body: string, extraHeaders: Record<string, string> = {}) => {
+    n += 1;
+    return POST(
+      new NextRequest("https://pwa.test/api/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "fly-client-ip": `10.0.1.${n}`,
+          ...extraHeaders,
+        },
+        body,
+      }),
+    );
+  };
+
+  test("a body over the limit is 413, and FabOrchestrator is never asked", async () => {
+    stubFo(() => FO_OK(new Date(Date.now() + 864e5).toISOString()));
+    const res = await oversized(
+      JSON.stringify({ email: "operator@plant.example", password: "x".repeat(LOGIN_BODY_LIMIT) }),
+    );
+    assert.equal(res.status, 413);
+    assert.equal(calls.length, 0, "no credential is forwarded from a body that was never read");
+  });
+
+  test("a declared length over the limit is refused without reading at all", async () => {
+    stubFo(() => FO_OK(new Date(Date.now() + 864e5).toISOString()));
+    const res = await oversized("{}", { "content-length": String(500 * 1024 * 1024) });
+    assert.equal(res.status, 413);
+    assert.equal(calls.length, 0);
+  });
+
+  test("the longest legal credentials still sign in", async () => {
+    // The limit is derived from the schema, so nothing the schema accepts is
+    // refused for its size. 255 and 128 characters are the schema's maxima.
+    stubFo(() => FO_OK(new Date(Date.now() + 864e5).toISOString()));
+    const email = `${"a".repeat(255 - "@plant.example".length)}@plant.example`;
+    assert.equal(email.length, 255);
+    const res = await login(email, "p".repeat(128));
+    assert.equal(res.status, 200);
   });
 });
 

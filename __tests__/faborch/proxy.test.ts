@@ -29,7 +29,9 @@ process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
 import { NextRequest } from "next/server";
 import { sessionFor } from "@/lib/auth";
+import { resetOwnershipCache } from "@/lib/faborch/owns";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
+import { resetToolCache } from "@/lib/faborch/tools";
 import { POST } from "@/app/api/faborch/[agent]/chat/route";
 
 const FO_TOKEN = "fo-token-not-real";
@@ -94,6 +96,11 @@ const call = (req: NextRequest, agent = "insight") =>
 
 beforeEach(() => {
   calls = [];
+  // Every test here signs in as the same FO token, and the route remembers
+  // that token's tool list for five minutes. Each test stubs its own list, so
+  // each starts with nothing remembered. `lookups.test.ts` covers the memory.
+  resetToolCache();
+  resetOwnershipCache();
 });
 afterEach(() => {
   globalThis.fetch = realFetch;
@@ -153,6 +160,40 @@ describe("the request never reaches FabOrchestrator unless it should", () => {
     const res = await call(request({ body: { messages: "not an array" } }));
     assert.equal(res.status, 400);
     assert.equal(calls.length, 0);
+  });
+
+  test("a malformed body is answered in the app's words, with a code the screen knows", async () => {
+    // It used to return the validation library's own sentence with no code, and
+    // the screen fell back to "unavailable — try again": wrong advice for a
+    // request that will fail the same way every time.
+    stubFo(() => sse([]));
+    const res = await call(request({ body: { messages: "not an array" } }));
+    const body = (await res.json()) as { code?: string; error: string };
+    assert.equal(body.code, "bad_request");
+    assert.ok(!/expected|received|Invalid input/i.test(body.error), body.error);
+  });
+
+  test("a body declaring more than the limit is refused before it is read", async () => {
+    // The whole conversation travels with every turn, so this route takes the
+    // largest bodies in the app. Its limit sits above anything the screen can
+    // send (`CHAT_BODY_LIMIT`), and past it nothing is buffered or forwarded.
+    stubFo(() => sse([]));
+    const req = new NextRequest("https://pwa.test/api/faborch/insight/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${PWA_TOKEN}`,
+        cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}`,
+        "content-length": String(64 * 1024 * 1024),
+      },
+      body: "{}",
+    });
+    const res = await call(req);
+    assert.equal(res.status, 413);
+    const body = (await res.json()) as { code: string; error: string };
+    assert.equal(body.code, "request_too_large");
+    assert.equal(typeof body.error, "string");
+    assert.equal(calls.length, 0, "FabOrchestrator is never contacted");
   });
 });
 

@@ -9,10 +9,10 @@
  *     window with no address bar, Chrome's dinosaur looks like the app crashed.
  *
  * ── What this deliberately does NOT cache ───────────────────────────────────
- * **Nothing under /api/.** Not orders, not issues, not analyses, not decisions.
- * A cached downtime figure is a wrong downtime figure, and this whole product
- * is an argument for not showing a supervisor a number you cannot stand behind.
- * Offline *data* is Tier 5 and needs a staleness story before it needs code.
+ * **Nothing under /api/.** Not answers, not reports, not conversations. A
+ * cached yield figure is a wrong yield figure, and this whole product is an
+ * argument for not showing a supervisor a number you cannot stand behind.
+ * Offline *data* would need a staleness story before it needs code.
  *
  * Only two things are precached: the offline page and the icons it draws with.
  * Both are static, both are versioned by CACHE, and neither can go stale in a

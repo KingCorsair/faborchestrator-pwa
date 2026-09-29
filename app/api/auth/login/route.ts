@@ -30,8 +30,8 @@ const ROLE_WHEN_UNKNOWN = "Signed in";
  * Sign in — **FabOrchestrator is the only identity.**
  *
  * One credential: a FabOrchestrator account, checked against FO's own
- * `/api/auth/login`. It opens everything this app offers — the agents, and the
- * production order workflow that runs on the local mock MES.
+ * `/api/auth/login`. It opens everything this app offers — the agents and the
+ * pinned reports, all of them FabOrchestrator's.
  *
  * ── Why the demo credential was removed (WP2, 2026-09-01) ───────────────────
  * This route used to try a local `DEMO_USER_*` pair first. It authenticated
@@ -49,8 +49,9 @@ const ROLE_WHEN_UNKNOWN = "Signed in";
  *
  * ── The FO token never reaches the browser ─────────────────────────────────
  * It is set as an httpOnly cookie (`lib/faborch/session.ts`) and read only by
- * `app/api/faborch/chat/route.ts`. The response body carries this app's own
- * session, exactly as it did before.
+ * route handlers — the agents, conversations, reports, keep-alive and sign-out
+ * routes. The response body carries this app's own session, exactly as it did
+ * before.
  *
  * ── Wrong guesses are throttled, and that is new ───────────────────────────
  * Because this route forwards to a **real** FabOrchestrator, it is the only

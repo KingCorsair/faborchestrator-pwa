@@ -3,8 +3,7 @@
 **Version 1.4 · 3 September 2026**
 
 This document says **what the product is and how it should behave**. It does not
-say how to build it — that is the engineering plan in `docs/planning/`, and
-progress against it is in `docs/STATUS.md`.
+say how to build it — that is `CLAUDE.md`, and progress is in `docs/STATUS.md`.
 
 It exists so that product decisions and open questions stop being settled by
 accident inside implementation work.
@@ -455,7 +454,7 @@ forgets them.
 ## 14. Out of scope
 
 - **OUT OF SCOPE — The production-order review workflow** and its mock MES data.
-  *Removed 1 September 2026; decision recorded in the delivery plan.*
+  *Removed 1 September 2026; recorded as the scope correction in `docs/STATUS.md`.*
 - **OUT OF SCOPE — Any AI, prompt, model or manufacturing logic in the app.**
 - **OUT OF SCOPE — Administration of any kind.**
 - **OUT OF SCOPE — Writing to MES, ERP or quality systems.**
@@ -584,25 +583,26 @@ or not?"*, and excluding the Master Data Load Agent would leave nothing to route
 between.
 
 **Jothi excluded it.** Every exposed agent now shares one service. The
-engineering plan's 2 days for a routing package buys nothing and should not be
-scheduled. This entry is the reason that estimate was held rather than spent.
+engineering plan's 2 days for a routing package would have bought nothing. This
+entry is the reason that estimate was held rather than spent.
 
-### 18.3 The plans still assume four agents — OPEN, AND NOW ACTIONABLE
+### 18.3 The plans still assume four agents — CLOSED 28 September
 
-*Stood 1 September; became actionable 2 September.*
+*Stood 1 September; became actionable 2 September; closed 28 September, when the
+planning documents were deleted (they remain in git history).*
 
-The four planning documents in `docs/planning/` describe exposing FabInsight, the
-Master Data Load Agent and the Back-end Agent, and budget WP7's availability
-check and WP13's routing package. All three assumptions are now wrong:
+The four planning documents described exposing FabInsight, the Master Data Load
+Agent and the Back-end Agent, and budgeted WP7's availability check and WP13's
+routing package. All three assumptions were wrong:
 
 - the Master Data Load Agent is not exposed;
 - **no exposed agent is permission-gated**, so WP7's availability query has
   nothing to check;
 - WP13's routing has nothing to choose between.
 
-They said they needed updating once §7 was answered, and not before. It is
-answered. **This is the one conflict here that is a live piece of work**, and it
-is documentation, not code.
+They said they needed updating once §7 was answered, and not before. Once it was
+answered, updating plans for work already finished served nobody, so they were
+removed rather than rewritten.
 
 ### 18.4 Placeholder metrics presented as real — OPEN
 
@@ -672,7 +672,6 @@ deliberately left. Recorded so it is not mistaken for an oversight.
 
 | Document | Answers |
 |---|---|
-| `docs/planning/` | How we build it, in what order, and what it costs |
 | `docs/STATUS.md` | Where we have got to, and what is proven |
-| `CLAUDE.md` | Why the code is the way it is |
+| `CLAUDE.md` | How it is built, and why the code is the way it is |
 | This file | What we are building and how it should behave |

@@ -7,10 +7,10 @@
  * Full-height without `overflow: hidden`.
  *
  * The parent product pins <html>/<body> to `h-full overflow-hidden` because its
- * chat app scrolls its own panes — and the root CLAUDE.md records the defect
- * that caused on an ordinary document-flow page, where everything below the
- * fold became unreachable. This is a handheld app read on a shop floor, so the
- * height is here for the app shell to fill and the scroll is left alone.
+ * chat app scrolls its own panes — and on an ordinary document-flow page that
+ * made everything below the fold unreachable. This is a handheld app read on a
+ * shop floor, so the height is here for the app shell to fill and the scroll
+ * is left alone.
  */
 html,
 body {
@@ -38,83 +38,6 @@ body {
   overscroll-behavior-y: none;
 }
 
-/*
- * Touch targets.
- *
- * The V2 control scale is a desktop scale: a button at 13.5px with 9px of
- * vertical padding is about 33px tall, which is fine for a mouse and too small
- * for a gloved thumb. WCAG 2.2 puts the floor at 44px, and a shop floor is
- * exactly the place that number was written for.
- *
- * Applied only under `pointer: coarse` so the desktop density — which is what
- * makes the screens read as FabOrchestrator — is untouched. `min-width` is safe
- * on every control here: the wide ones already exceed it, and it is what rescues
- * the 34px square icon buttons in the top nav.
- */
-/*
- * The review panel on /orders.
- *
- * It sits at the top of the screen at every width. From 1024px up it also
- * **pins** there, so the controls stay in view while the list scrolls past.
- *
- * It shared this rule with a decision dock on the order screen until
- * 2026-08-19, when that section was removed — the review panel is now the only
- * place a decision is taken.
- *
- * ── Why a class and not Tailwind utilities ──────────────────────────────────
- * Tailwind has no variant for "sticky under a header of variable height", and
- * this is the same shape the two panels share.
- *
- * ── Width only, as of 2026-08-19 ───────────────────────────────────────────
- * It used to require `hover: hover` and `pointer: fine` as well, because a
- * touch device got F-11's fixed bottom bar and the in-card button row was
- * hidden — so pinning an iPad would have docked a card whose buttons were
- * somewhere else. **The bar is gone**: the buttons are in the card at every
- * width, which is what was asked for. With a complete card to dock, a
- * landscape tablet should get the same treatment as a laptop.
- *
- * Phones stay unpinned. The panel is the first thing on the page there, and a
- * card with a field and three buttons would cost a third of the viewport for
- * the whole scroll.
- *
- * ── `--shell-h` ────────────────────────────────────────────────────────────
- * The header's exact height, so the card's top edge meets the nav's bottom edge
- * with no gap for content to show through. It is a token because touch grows
- * the nav's controls to the 44px minimum and the header with them — the number
- * differs by device, and getting it wrong tucks the card under the nav.
- */
-@media (min-width: 1024px) {
-  /*
-   * The review panel at the top of /orders pins on the same terms and for the
-   * same reason: it is the page's primary control, and the list it acts on is
-   * long enough to scroll past it. On touch it stays in flow at the top of the
-   * page, where it is the first thing rendered — a pinned form with a select, a
-   * note field and three buttons would cost most of a phone viewport for the
-   * whole scroll.
-   */
-  .fab .fab-review-panel {
-    position: sticky;
-    top: var(--shell-h);
-    /* Under the nav's z-10, so the nav always wins the overlap; above the
-       page's own content, so the evidence scrolls beneath the card. */
-    z-index: 5;
-    /* The section's "Your decision" label sits on the page surface, not on the
-       card, so without a background the text scrolling underneath would show
-       through beside it. */
-    background: var(--page-surface);
-    padding-bottom: 10px;
-    /* A tall sticky element pins its top and carries its own bottom off-screen
-       where page scrolling cannot reach it — the failure F-09 capped the right
-       column for. The card is short, but an order with a long decision history
-       is not, so the cap is here rather than left to chance. */
-    max-height: calc(100vh - var(--shell-h));
-    overflow-y: auto;
-  }
-}
-
-/* `pointer: coarse` on its own misses a touchscreen laptop or a Surface: those
-   report a *fine* pointer because a trackpad is attached, while still being
-   poked with a gloved thumb on the shop floor. `hover: none` catches them. */
 /* The section nav scrolls rather than widening the page (see `app-shell.tsx`).
    A scrollbar across a 38px-tall pill row reads as damage rather than as an
    affordance, and the row is short enough that the cut-off pill is its own
@@ -128,13 +51,25 @@ body {
   display: none;
 }
 
-@media (pointer: coarse), (hover: none) {
-  /* The 44px minimum below grows the nav's control row from 34px, and with it
-     the header that the decision dock and the review panel sit beneath. */
-  .fab {
-    --shell-h: 65px;
-  }
+/*
+ * Touch targets.
+ *
+ * The V2 control scale is a desktop scale: a button at 13.5px with 9px of
+ * vertical padding is about 33px tall, which is fine for a mouse and too small
+ * for a gloved thumb. WCAG 2.2 puts the floor at 44px, and a shop floor is
+ * exactly the place that number was written for.
+ *
+ * Applied only under `pointer: coarse` so the desktop density — which is what
+ * makes the screens read as FabOrchestrator — is untouched. `min-width` is safe
+ * on every control here: the wide ones already exceed it, and it is what rescues
+ * the 34px square icon buttons in the top nav.
+ */
 
+/* `pointer: coarse` on its own misses a touchscreen laptop or a Surface: those
+   report a *fine* pointer because a trackpad is attached, while still being
+   poked with a gloved thumb on the shop floor. `hover: none` catches them. */
+
+@media (pointer: coarse), (hover: none) {
   .fab button,
   .fab [role="button"],
   .fab nav a,
@@ -327,7 +262,6 @@ body {
 /* A table is the shape a question about yield or OEE comes back in, and it is
    the one element here that can exceed its column. It scrolls inside its own
    wrapper rather than widening the page — the rule the whole app follows. */
-.fab-md .fab-md-table,
 .fab-md table {
   border-collapse: collapse;
   display: block;

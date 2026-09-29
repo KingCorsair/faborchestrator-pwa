@@ -1,6 +1,6 @@
 # Handover
 
-**FabOrchestrator PWA — 3 September 2026.** Live at
+**FabOrchestrator PWA — 3 September 2026, updated 28 September.** Live at
 **https://faborch-demo.fly.dev**.
 
 This is the operating note: what the thing is, how to run it, what to do when
@@ -20,7 +20,7 @@ That boundary is the design, and `scripts/security-review.mjs` asserts it.
 
 **What it is not:** it does not calculate yield, query the MES, pick a model,
 or create dashboards. If you find yourself adding any of those, the boundary
-has been crossed and the plan's own rule broken — see "What NOT to build" in
+has been crossed and the app's first rule broken — see "What NOT to build" in
 `CLAUDE.md`.
 
 ---
@@ -32,7 +32,7 @@ npm install                 # playwright is a devDependency, for the checks
 npx playwright install chromium   # once, for the browser-driven checks
 cp .env.example .env        # then fill in the values below
 npm run dev                 # http://localhost:3002
-npm test                    # 272 tests, no network needed
+npm test                    # 509 tests, no network needed
 npm run build && npm start  # production build, same port
 ```
 
@@ -42,6 +42,8 @@ npm run build && npm start  # production build, same port
 |---|---|---|
 | `FABORCH_BASE_URL` | The FabOrchestrator deployment. **Must be https** for anything but localhost — the app refuses to start a request otherwise | yes |
 | `SESSION_SIGNING_SECRET` | Signs this app's own session token. Any long random string; changing it signs everyone out | yes |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | An Upstash Redis database that every copy of the app shares the sign-in lockout count through. Unset, each process counts on its own | no |
+| `ERROR_ALERT_WEBHOOK_URL` | A Slack, Google Chat or Mattermost incoming webhook, told when something breaks — at most once per kind of failure every five minutes | no |
 | `FABORCH_PROBE_EMAIL` / `FABORCH_PROBE_PASSWORD` | A FabOrchestrator account the check scripts sign in as. **Not used by the app itself** | checks only |
 
 There is deliberately no `DATABASE_URL` and no model API key. If you are about
@@ -87,8 +89,15 @@ FabOrchestrator or the network between, and the app is written to say which.
 | "Your role does not have that permission" | FO refused this account | An administrator grants it in FabOrchestrator, not here |
 | "Could not reach FabOrchestrator at …" | The platform is down or unreachable | Check FO itself. The address tried is in the message |
 | "No data connections are enabled for your account" | The account has no MCP connections | An administrator assigns them in FO. **Yield, scrap and OEE still answer** — they use FO's metric path, which never touches MCP |
-| "Nothing has arrived for 45 seconds" | Three missed keep-alives | Usually a long tool call. It may still complete; the turn is not cancelled |
+| "Nothing has arrived for 45 seconds" | Three missed keep-alives, or no answer has begun yet | Usually a long tool call. It may still complete; the turn is not cancelled |
+| "FabOrchestrator did not answer within 15 seconds" (or 60) | FO is reachable but too slow: 15 s for lookups and sign-in, 60 s for an answer to begin | Try again. If it persists, FO needs attention — the log has an incident id |
 | The answer stops mid-sentence with a warning | The connection dropped | What arrived is kept and marked incomplete. Ask again |
+| "No activity for a while. FabOrchestrator signs you out in N minutes" | FO's 30-minute idle rule is five minutes away | Press **Stay signed in**, or just carry on — any question or report resets it |
+| "FabOrchestrator has probably signed you out" | 30 minutes without activity | **Sign in again**. A question may still go through if the session survived |
+| "Too many sign-in attempts" | Eight wrong passwords from one address | Wait ten minutes. A correct password is never throttled |
+| "This browser is blocking the storage sign-in needs" | Site data is blocked, or a private mode refuses storage | Allow the site to store data, or leave private browsing |
+| "Something went wrong on this screen", with a reference | A bug in this app, caught by the crash screen | Ask for the reference: it is the `"where":"client"` line in the log. Try again, or Reset and reload |
+| "That conversation is too large to send in one request" | A request over the size ceiling. The screen's own limits sit below it, so this should not happen | Start a new conversation, and report it — it means a limit has drifted |
 
 **Every failure carries a code** (`docs/STATUS.md` has the table, the source is
 `lib/faborch/errors.ts`). If an error ever appears without one, that is a bug in
@@ -105,11 +114,24 @@ flyctl logs --app faborch-demo
 flyctl status --app faborch-demo
 ```
 
+**Every unexpected failure is one JSON line** with `"level":"error"`, a
+`where` naming the kind of failure (`faborch/timeout`, `faborch/unreachable`,
+`client` for a browser crash…) and an `incident` id. Search for the incident id,
+or for a crash screen's reference, to find the exact entry. If
+`ERROR_ALERT_WEBHOOK_URL` is set, the same failures reach the chat channel —
+without tokens, passwords, questions or answers, which stay out of both.
+
 ---
 
 ## 4. The decisions worth knowing before you change anything
 
-Four choices look odd until you know why. Each is load-bearing.
+Five choices look odd until you know why. Each is load-bearing.
+
+**Stay signed in only happens when somebody presses it.** It would be easy to
+keep FabOrchestrator sessions alive with a timer, and it would be wrong: FO's
+session audit measures idleness, and a call nobody asked for would defeat its
+30-minute eviction and falsify its records. The top bar warns instead, and the
+operator decides.
 
 **The iframe sandbox is `allow-scripts` with no `allow-same-origin`.** Those two
 together *cancel* the sandbox: the frame takes the embedder's origin and can

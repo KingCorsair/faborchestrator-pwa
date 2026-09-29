@@ -1,6 +1,9 @@
 # Where this project stands
 
-**As of 5 September 2026.** Working tree clean, all commits pushed to `KingCorsair/faborchestrator-pwa` (private).
+**As of 29 September 2026.** The work of 28 and 29 September is on branch
+`chetan` of `KingCorsair/faborchestrator-pwa` (private), not yet merged to
+`main` or deployed. Everything before it is on `main`, and `main` is what
+https://faborch-demo.fly.dev runs.
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
@@ -10,6 +13,36 @@ file is wrong and should be corrected.
 ---
 
 ## Where this stands
+
+**28 September: scalability, reliability and a cleanup**, reviewed and scored
+out of 10, deployment excluded. All on branch `chetan`.
+
+| Area | Before | After | What changed |
+|---|---|---|---|
+| Scalability | 7 | 8.5 | The sign-in lockout can be shared through Upstash; a question's two FabOrchestrator lookups are remembered for five minutes per session; every request body has a size ceiling |
+| Timeouts | 4 | 8 | Every call to FabOrchestrator has a limit (15 s lookups, 60 s for an answer to begin, 5 s sign-out); sign-out clears the device first; a warning before the first word |
+| Exception handling | 6 | 8 | A crash screen and a not-found screen; crashes reported to the server; storage reads guarded |
+| Session handling | 8 | 9 | A warning before FabOrchestrator's 30-minute idle sign-out, with Stay signed in (on press only); the real role at sign-in |
+| Error handling | 8 | 9 | One reporter — a JSON log line with an incident id, and optional webhook alerts; plain wording where the validation library's used to show |
+| Architecture | 7 | 8 | `CLAUDE.md` rewritten as a guide to the app as it is; the August design record and the superseded planning documents deleted (the last copies are at commit `585aa00`); stale comments and on-screen text about the removed order workflow corrected; dead code, stray screenshots and stale `.gitignore` / `.dockerignore` entries removed |
+
+Proved by: **509 unit tests** (120 new), type check, lint and a production
+build; the time limits measured live against a stand-in FabOrchestrator that
+never answers (sign-in gave up at 15.2 s, sign-out finished in 5.1 s); and the
+new screens checked in Microsoft Edge at phone size, including a real crash
+caught and its report found in the server log. **Not yet proved** against the
+live FabOrchestrator (the role lookup, the 30-minute idle rule), a real Upstash
+database, a real webhook, or iPhone Safari — see `OPEN_ISSUES.md` §7.
+
+**29 September: Next.js 16.1.4 → 16.3.6, for security.** `npm audit` listed 33
+published advisories against 16.1.4 — 2 critical and 13 high, among them ways
+around a `proxy.ts` gate and ways for anyone to crash the server — and more in
+two libraries it ships (PostCSS, sharp). After the upgrade it lists none in
+anything the app ships. Checked the way the 28 September work was: 509 tests,
+type check, lint and build; the gate, the API guards and the size limits by
+hand; and the Edge run against a silent stand-in FabOrchestrator. One new lint
+rule asked for `router.push` in the sign-out link; the whole-document
+navigation there is deliberate, so the rule is off on that line, with the reason.
 
 **Phases 0 to 5 are complete.** Every build package is done, and the handover
 pass is finished: the whole suite re-run against the deployed app, a security
@@ -163,8 +196,6 @@ is expanded, with evidence, further down.
 **Pending**
 
 - Nothing. The build and the handover pass are both finished.
-- The four planning documents still describe four agents and budget work that
-  no longer exists.
 
 **Waiting on someone else** — the full list is `docs/OPEN_ISSUES.md`
 
@@ -1060,22 +1091,12 @@ is the only test in this repo that leaves anything behind.
 
 ## Known debt
 
-**The planning documents are stale as of 2 September 2026, and this is the one
-piece of documentation work outstanding.** They describe exposing the Master Data
-Load Agent, budget WP7's availability check, and budget 2 days for WP13's
-routing. All three are now wrong — PRD §18.3. They said they needed updating
-once the agent question was answered, and not before; it is answered.
-
-Earlier decisions they asked for *are* recorded as taken — the production-order
-workflow removed, the demo running against the live deployment, the manifest-`id`
-call.
-
-One earlier entry here was wrong and is corrected: WP8 and component C7 were
-never stale. They describe FabOrchestrator's own MES data reached over MCP, not
-the removed mock workflow, and needed no change.
-
-Still not reflected in the plans, because they are plans rather than status:
-progress against each work package lives in this file, not in them.
+**The planning documents were deleted on 28 September 2026**, closing the one
+piece of documentation work that had been outstanding since 2 September. They
+still described exposing the Master Data Load Agent, budgeted WP7's availability
+check and 2 days for WP13's routing — all wrong since the scope decisions of 1
+and 3 September (PRD §18.3). The work-package history they held is recorded in
+this file; the plans themselves are at commit `585aa00`, under `docs/planning/`.
 
 **Not verified by a person.** Everything above was checked by tests, probe
 scripts and a headless browser. The app has not yet been confirmed working in a
@@ -1095,7 +1116,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 361 tests, no network needed
+npm test                          # 509 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 
@@ -1124,7 +1145,7 @@ APP_URL=https://faborch-demo.fly.dev node scripts/nav-drawer-check.mjs
 | `docs/FABORCHESTRATOR_ROUTING_GROUNDING_BUGS.md` | The write-up to send to the FabOrchestrator team |
 | `docs/FABORCHESTRATOR_NONDETERMINISTIC_MES_QUERY_RESULTS.md` | Also for the FabOrchestrator team: why the same MES question can return a different number each time, with the SQL and the rows |
 | `docs/probes/` | Dated evidence from individual investigations |
-| `docs/planning/` | The original plans. **Superseded in places** — see `OPEN_ISSUES.md` §4 |
+| `CLAUDE.md` | How it is built, the rules it follows, and a map of every module |
 
 
 | Path | What |
@@ -1137,6 +1158,6 @@ APP_URL=https://faborch-demo.fly.dev node scripts/nav-drawer-check.mjs
 | `components/fab/nav-drawer.tsx` | The conversation sidebar — FO's own mobile Sheet, in this app's vocabulary |
 | `app/api/auth/` | Sign-in, sign-out, session |
 | `proxy.ts` | The session gate. Decides, before any document is rendered, whether this visitor gets a screen or `/login` |
-| `docs/planning/` | The four planning documents (see debt above) |
+| `lib/faborch/client.ts` | Every call to FabOrchestrator, with its time limit |
+| `lib/report-error.ts` | Where unexpected failures go: a JSON log line, and optional alerts |
 | `docs/probes/` | Evidence: the environment probes and the E1 report |
-| `CLAUDE.md` | The design record — why things are the way they are |

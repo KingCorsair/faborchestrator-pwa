@@ -14,9 +14,9 @@
                                           console redesign deleted it)
 
    Every hex below is copied from there, not re-picked. This is what the login
-   page, the cockpit and the chat shell actually ship with. The full mapping of
-   source file → what was taken → where it landed is in CLAUDE.md under
-   "Where the FabOrchestrator look comes from".
+   page, the cockpit and the chat shell actually ship with. How to use them —
+   the type scale, the radii, status never carried by colour alone — is in
+   CLAUDE.md under "Visual rules".
 
    This replaced app/console-theme.css on 2026-08-10. The console theme is the
    *Board* redesign proposal — flat grey, square corners, hairline borders,
@@ -155,14 +155,6 @@
      the product it copies. Running prose is capped separately: a 1180px line
      of 14px text is roughly 140 characters, about twice a comfortable measure,
      so text blocks inside cards carry `--measure` instead of filling. */
-  /* — the shell header's height —
-     The sticky top nav is `py-[10px]` around a 34px control row plus a 1px
-     border. Anything that docks beneath it needs this exact number, or content
-     shows through the seam. It is a token because it is not one component's
-     business: `app/globals.css` uses it for the decision dock and the review
-     panel, and a fourth thing will want it eventually. */
-  --shell-h: 55px;
-
   --page-width: 1180px;
   /* 52ch, not 72ch — design review F-04, 2026-08-12. `ch` is the advance of
      "0", which is 11.7px in Plus Jakarta at 16px, well above the face's average

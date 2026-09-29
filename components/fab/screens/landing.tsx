@@ -34,19 +34,12 @@
  * CLAUDE.md forbids. The prohibition is on *inventing* content — a metric this
  * demo made up about a factory it cannot see. These are quoted, from the
  * product's own front door, and both `AGENTS` and `KPIS` say so where they are
- * declared. Nothing on `/orders`, `/decisions` or `/activity` is affected:
- * every number on those screens still comes from the adapter and the rules.
+ * declared. Nothing else in the app is affected: every other figure on every
+ * other screen is FabOrchestrator's own answer.
  *
  * If that trade is judged wrong, the fix is to delete `<FooterStats />` and the
  * `metric`/`delta` fields on `AGENTS` — one component and two fields, no other
  * caller. Everything else on this page traces to something.
- *
- * ── Where the demo's own workflow went ──────────────────────────────────────
- * Below the cockpit, under its own heading. The production order workflow is
- * not on the product's cockpit — it is this demo's, built here — so putting it
- * inside the Nucleus would be inventing a fifth agent. It keeps the accent
- * border, the live icon tile and the arrow it had before, which are this app's
- * three signals for *pressable*.
  *
  * ── The cockpit answers where it is asked (2026-09-05) ──────────────────────
  * `Ask` used to be a plain GET form that navigated to `/fabinsight?q=…`. It now

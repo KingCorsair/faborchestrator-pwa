@@ -134,7 +134,7 @@ export const FO_AGENTS: Record<FoAgentId, FoAgent> = {
  *
  * The proxy forwards to a URL built from `foPath`, so an unrecognised segment
  * must never reach it — same rule as `lib/return-path.ts` and
- * `lib/selected-order.ts`: a value from the URL selects from a fixed set, it
+ * `lib/faborch/owns.ts`: a value from the URL selects from a fixed set, it
  * never *becomes* the destination.
  */
 export function foAgent(id: string): FoAgent | null {

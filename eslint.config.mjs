@@ -8,15 +8,16 @@ import nextTs from "eslint-config-next/typescript";
  *
  * `react-hooks/set-state-in-effect` is a React Compiler advisory that Next 16's
  * core-web-vitals promotes to an error. It fires on two patterns here and both
- * are deliberate:
+ * are deliberate (checked 2026-09-28 by running the rule — eight files):
  *
- *  - The copied console kit (`console-shell`, `session-banner`,
- *    `use-console-prefs`) reads localStorage and starts countdown timers in
- *    effects, because doing either during render is what causes a hydration
- *    mismatch. Those files are verbatim copies and must not be edited locally.
- *  - The two order pages set a load state at the top of a fetch effect. Without
- *    a query library — and the product deliberately has none — there is nowhere
- *    else for it to go.
+ *  - Reading what only the browser knows — `localStorage`, the user agent, the
+ *    idle clock — and starting timers, in effects: the sign-in page, the
+ *    sign-out link, the iOS install hint, `/diagnostics`, the top bar's
+ *    countdowns, the crash screen's reference. Doing any of it during render is
+ *    what causes a hydration mismatch.
+ *  - Setting a loading state at the top of a fetch effect — the conversation
+ *    screen and the drawer. Without a query library — and the product
+ *    deliberately has none — there is nowhere else for it to go.
  *
  * The other four rules the product disables are left ON: nothing here trips
  * them, and turning off a rule that is not firing only hides the next mistake.

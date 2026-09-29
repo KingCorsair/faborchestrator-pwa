@@ -103,19 +103,13 @@ export function AppShell({
           borderBottom: "1px solid var(--border-light)",
         }}
       >
-        {/* Brand lockup. **Points at `/`, and did not until 2026-08-21.**
-            It pointed at `/orders` on the reasoning that inside the app the
-            mark is a "home" affordance and home for somebody signed in is
-            their work, not the front door they came through. That held while
-            `/` was the Production Order Assistant's own front door, where the
-            mark would have led you out of a workflow and back to its lobby.
-
-            `/` is now FabOrchestrator's landing page, and the production order
-            screens are one workflow inside it — so the mark leads to the
-            product, which is both the universal convention and the only
-            obvious way back to the other capabilities. `aria-label` because
-            the lockup's visible text is the wordmark, which does not say where
-            the link goes. */}
+        {/* Brand lockup. **Points at `/`**, FabOrchestrator's cockpit — the
+            universal convention for a mark, and the obvious way back from an
+            agent or a report to everything else. (Until 2026-08-21 it pointed
+            at the production order list, while `/` was that workflow's own
+            lobby; the workflow went on 1 September.) `aria-label` because the
+            lockup's visible text is the wordmark, which does not say where the
+            link goes. */}
         {/* The drawer's trigger, where FO's `SidebarTrigger` sits: top-left,
             before the mark. Only on agent screens — see `hasDrawer`. */}
         {hasDrawer ? (

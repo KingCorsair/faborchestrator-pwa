@@ -21,12 +21,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# The barcode scanner's wasm was copied and verified here. Both the scanner and
-# the production-order workflow it belonged to were removed on 1 September, and
-# `scripts/copy-zxing-wasm.mjs` went with them — so this step referenced a file
-# that no longer exists and would have failed the first deploy after that
-# change. Removed rather than guarded: there is no scanner left to degrade.
-
 RUN npm run build
 
 FROM node:22-alpine AS runner

@@ -5,10 +5,11 @@
  * which in a standalone window with no address bar looks like the app itself
  * has broken. This is a FabOrchestrator screen that says what is true.
  *
- * **It states plainly that order data is not available offline**, because the
- * one thing this app must never do is show a supervisor a figure it cannot
- * stand behind. Cached MES data is not a feature this tier has, and a page that
- * implied otherwise would be worse than the dinosaur.
+ * **It states plainly that nothing is available offline**, because the one
+ * thing this app must never do is show a supervisor a figure it cannot stand
+ * behind. Answers and reports are read live from FabOrchestrator and never
+ * stored on the device, and a page that implied otherwise would be worse than
+ * the dinosaur.
  *
  * Static, self-contained and precached by `public/sw.js` — it cannot fetch
  * anything, by definition of when it is shown.
@@ -75,7 +76,7 @@ const RECOVERY_SCRIPT = `
     /* Private mode can throw on read. Recovering twice beats never. */
   }
 
-  // Served in place of /orders, the address bar still says /orders — so reload
+  // Served in place of /reports, the address bar still says /reports — so reload
   // where we are. Only a bookmark that literally points here needs sending on.
   var target = location.pathname === "/offline" ? "/" : location.href;
 
@@ -134,14 +135,14 @@ export default function OfflinePage() {
         <h1 className="m-0 text-[20px]">No connection</h1>
 
         <p className="m-0 text-[14px] leading-[1.6]" style={{ color: "var(--text-muted-cool)" }}>
-          The app is installed and running, but it cannot reach the MES. Production order data is
-          read live and is not stored on this device — so there is nothing to show rather than
-          something out of date.
+          The app is installed and running, but it cannot reach FabOrchestrator. Answers and
+          reports are read live and are not stored on this device — so there is nothing to show
+          rather than something out of date.
         </p>
 
         <p className="m-0 text-[12px] leading-[1.6]" style={{ color: "var(--text-subtle)" }}>
-          Reconnect to the site network and try again. Anything you already approved, rejected or
-          escalated was recorded when you did it.
+          Reconnect to the site network and try again. FabInsight conversations are saved in
+          FabOrchestrator, so they will be waiting when you are back online.
         </p>
 
         {/* Deliberately a plain <a>, not next/link. This page is served from the

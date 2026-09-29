@@ -50,32 +50,22 @@ const TONE: Record<Tone, { fg: string; ink: string; bg: string }> = {
 };
 
 /**
- * `surface` is which ground the pill is sitting on, not a second palette.
+ * A status, always as a word beside a dot — never colour alone, because a
+ * supervisor reading through safety glasses on a lit shop floor is exactly who
+ * a colour-only signal fails. The dot is `aria-hidden`; the word carries it.
  *
- * `tint` — the default and every existing caller — is the status tint from
- * `TONE`, which only works on a white card or the page surface. The landing
- * page's featured-order card is an indigo gradient, and a pale amber tint on
- * indigo is neither readable nor recognisably a status. `white` swaps the
- * ground for `--pure-white` and changes nothing else: the ink token and the
- * dot hue are the same values, so the pill still reads as the same pill and
- * F-02's contrast floor still holds — `--status-red-ink` measures 6.9:1 on
- * white and `--status-amber-ink` 5.4:1, both above the 4.5:1 F-02 was fixing.
- *
- * A prop rather than a second component: duplicating the markup would
- * duplicate the dot-and-word structure that "status is never carried by colour
- * alone" depends on, and that is the one part of this primitive that must not
- * exist in two places.
+ * (It took a `surface` prop until 2026-09-28, for a white pill on the landing
+ * page's indigo featured-order card. That card went with the order workflow,
+ * and nothing passed the prop any more.)
  */
 export function Pill({
   tone = "idle",
   dot = true,
-  surface = "tint",
   children,
   className,
 }: {
   tone?: Tone;
   dot?: boolean;
-  surface?: "tint" | "white";
   children: React.ReactNode;
   className?: string;
 }) {
@@ -91,7 +81,7 @@ export function Pill({
       )}
       style={{
         borderRadius: "var(--r-chip)",
-        background: surface === "white" ? "var(--pure-white)" : TONE[tone].bg,
+        background: TONE[tone].bg,
         color: TONE[tone].ink,
       }}
     >
@@ -217,64 +207,6 @@ export function Button({
       style={{ borderRadius: "var(--r-control)", ...tone, ...style }}
       {...props}
     />
-  );
-}
-
-/**
- * Props that make a non-<button> element a real click target: role, tab stop,
- * and Enter/Space activation. A card with an onClick and no keyboard path is
- * not a control.
- */
-export function activatable(onActivate: () => void, label: string) {
-  return {
-    role: "button" as const,
-    tabIndex: 0,
-    "aria-label": label,
-    onClick: onActivate,
-    onKeyDown: (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        onActivate();
-      }
-    },
-  };
-}
-
-/* ── Progress ─────────────────────────────────────────────────────────────── */
-
-export function Progress({
-  value,
-  max,
-  tone = "info",
-  className,
-}: {
-  value: number;
-  max: number;
-  tone?: Tone;
-  className?: string;
-}) {
-  const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
-  return (
-    <span
-      className={cn("block w-full overflow-hidden", className)}
-      style={{ height: 8, borderRadius: 999, background: "var(--field-bg)" }}
-      role="progressbar"
-      aria-valuenow={value}
-      aria-valuemin={0}
-      aria-valuemax={max}
-    >
-      <span
-        className="block h-full"
-        style={{
-          width: `${ratio * 100}%`,
-          borderRadius: 999,
-          background:
-            tone === "info"
-              ? "linear-gradient(90deg,var(--brand-indigo-light),var(--cockpit-indigo))"
-              : TONE[tone].fg,
-        }}
-      />
-    </span>
   );
 }
 

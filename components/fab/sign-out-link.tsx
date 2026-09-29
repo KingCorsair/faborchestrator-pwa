@@ -97,19 +97,19 @@ export function SignOutLink() {
         // 2026-08-23 for two reasons that point the same way.
         //
         // **It is the more correct sign-out.** A client-side replace keeps the
-        // React tree, so any component still holding a decision list, an order
+        // React tree, so any component still holding a conversation, a report
         // or a user object keeps holding it. Signing out should leave nothing
         // behind, and a document navigation is the only thing that guarantees
         // that.
         //
         // **And `useRouter` made this component unrenderable outside Next.**
-        // `design-review/render.tsx` draws every screen through
-        // `renderToStaticMarkup` with no router mounted, and this leaf is on
-        // the landing page — so the harness threw *"invariant expected app
-        // router to be mounted"* and produced no landing export at all. That
-        // harness is the only way any screen in this app has ever been looked
-        // at (CLAUDE.md, thin-ice item 3), and the front door is the screen it
-        // matters most for.
+        // Rendered with no router mounted — as the August design-review
+        // harness did — it threw *"invariant expected app router to be
+        // mounted"*, and took the whole landing page with it.
+        //
+        // Next 16.3's lint asks for `router.push` here (2026-09-29, with the
+        // upgrade from 16.1.4). Both reasons above are why not.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.assign("/login");
       }}
       className="inline-flex cursor-pointer items-center gap-[6px] border-0 bg-transparent p-0 text-[12px] font-bold underline decoration-1 underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"

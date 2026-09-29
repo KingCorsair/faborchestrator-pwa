@@ -2,10 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Next 16's Turbopack infers its workspace root from the nearest lockfiles.
-  // This tree sits under several ancestor lockfiles (see the root CLAUDE.md
-  // entry for 2026-07-29), and without pinning the root it can pick a
-  // directory with no `node_modules`, at which point `@import "tailwindcss"`
-  // in app/globals.css cannot resolve.
+  // A checkout can sit under ancestor folders that have lockfiles of their own
+  // (this one did, inside a larger workspace), and without pinning the root it
+  // can pick a directory with no `node_modules`, at which point
+  // `@import "tailwindcss"` in app/globals.css cannot resolve.
   turbopack: { root: __dirname },
 
   /**
@@ -82,7 +82,7 @@ const nextConfig: NextConfig = {
    * Everything under `/_next/static` is excluded because it is content-hashed
    * and genuinely immutable — that is the half of the caching story which was
    * always correct. `/_next/image` likewise. Unversioned assets in `public/`
-   * (the icons, the zxing wasm, the demo labels) fall under the rule and are
+   * (the icons, the manifest, the service worker) fall under the rule and are
    * better for it: they have no hash to bust, so revalidation is the only thing
    * that keeps them current, and a 304 costs nothing.
    */

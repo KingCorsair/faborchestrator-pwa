@@ -1,10 +1,13 @@
 # Fly.io configuration.
 #
-# Chosen over Vercel because `lib/decisions.ts` is a module-level Map: on
-# serverless each invocation may be a fresh instance, so you approve an order
-# and Activity shows nothing. One long-lived machine keeps that Map. Chosen
-# over Render because Render's free tier sleeps after ~15 minutes idle, and a
-# 50-second cold start on a link someone opened unprompted reads as broken.
+# Chosen in August over Vercel because the production-order workflow kept its
+# decision log in a module-level Map (`lib/decisions.ts`), which serverless
+# would have lost between invocations. That workflow and its log were removed
+# on 1 September; what the app keeps in memory now is only the sign-in lockout
+# count (shared through Upstash when UPSTASH_REDIS_REST_* are set) and
+# short-lived caches that are safe to lose. Chosen over Render because Render's
+# free tier sleeps after ~15 minutes idle, and a 50-second cold start on a link
+# someone opened unprompted reads as broken.
 #
 # Deployed from this directory with `flyctl deploy` — no GitHub connection,
 # so the host is never granted read access to anything but what the Docker
@@ -43,8 +46,8 @@ primary_region = "sin"
 # and session tokens in cleartext across the public internet. CloudFront
 # terminates TLS.
 #
-# Unset, `/fabinsight` says it is not connected to a FabOrchestrator and the
-# production order workflow is unaffected.
+# Unset, sign-in answers 503 and says FabOrchestrator is not configured — there
+# is no other way into the app.
 [env]
   FABORCH_BASE_URL = "https://d7y8a8whrch88.cloudfront.net"
 
@@ -53,18 +56,18 @@ primary_region = "sin"
 [http_service]
   internal_port = 3000
   # Redirects http → https. Not cosmetic here: outside a secure context the
-  # service worker will not register and the camera is unavailable, so the
-  # scanner degrades silently rather than erroring.
+  # service worker will not register, so the installed app silently loses its
+  # offline page — and sign-in would send a password in clear text.
   force_https = true
 
   # The two settings that make this "openable whenever" rather than
   # "openable while it happens to be warm".
   #
-  # A stopped machine costs a cold start AND empties the in-memory decision
-  # store, so a decision recorded yesterday is gone today. Keeping one machine
-  # running is what buys both. It is also the line to change if this becomes
-  # too expensive to leave up — at which point read the note above about what
-  # stopping actually costs.
+  # A stopped machine costs a cold start on the next visit, which on a link
+  # somebody opened unprompted reads as broken. Keeping one machine running is
+  # what avoids it, and this is the line to change if that becomes too
+  # expensive to leave up. (Until 1 September a stop also emptied the in-memory
+  # decision log; that log no longer exists.)
   auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
@@ -76,27 +79,22 @@ primary_region = "sin"
   # because `auto_start_machines` woke it. So treat this block as a request,
   # not a guarantee, and check `flyctl machine list` after every deploy;
   # `flyctl machine start <id>` puts it back.
-  #
-  # It matters more here than the cold start suggests. A *stopped* machine
-  # loses its memory, and `lib/decisions.ts` is an in-memory Map — so an idle
-  # period silently empties the decision log. The Activity screen already
-  # reports `durable: false`, which keeps it honest, but the real fix is Tier 3
-  # persistence rather than a scheduler flag anyone can outvote.
 
-  # ⚠ **Deploy with `--ha=false`.** `min_machines_running` sets a floor, not a
-  # ceiling: Fly's default is to create *two* machines for high availability,
-  # and the first deploy here announced exactly that. Two machines round-robin
-  # requests, and `lib/decisions.ts` is a per-process in-memory Map — so a
-  # decision recorded on one machine is invisible on the other, and the Activity
-  # feed shows roughly half of what you did. That is the same defect that rules
-  # out Vercel, arriving by a different route.
+  # **Deployed with `--ha=false`**, so there is one machine. `min_machines_running`
+  # sets a floor, not a ceiling: without the flag Fly creates *two* machines for
+  # high availability. There is no fly.toml key for this; it is a deploy-time
+  # flag, which is why it is a comment rather than a setting.
   #
-  # There is no fly.toml key for this; it is a deploy-time flag, which is why it
-  # is a comment rather than a setting. When Tier 3 gives decisions real
-  # persistence, drop the flag and let it run HA properly.
+  # The flag was load-bearing until 1 September, when the decision log lived in
+  # one process's memory and a second machine would have seen only half of it.
+  # Nothing in the code needs a single machine any more: sessions are stateless,
+  # the caches are safe to lose, and the sign-in lockout is shared once
+  # UPSTASH_REDIS_REST_* are set (without them, each machine counts wrong
+  # passwords on its own). Keeping one machine is now a cost decision — see
+  # README, "Deploying".
 
 [[vm]]
   size = "shared-cpu-1x"
-  # 256 MB is enough until an analysis is in flight. An OOM mid-demo restarts
-  # the machine, which loses every recorded decision along with it.
+  # 256 MB is tight once a few long answers are streaming at once. An OOM
+  # mid-demo restarts the machine and cuts off every answer in flight.
   memory = "512mb"

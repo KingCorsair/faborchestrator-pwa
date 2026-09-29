@@ -2,23 +2,21 @@
  * Where sign-in sends you afterwards.
  *
  * ── Why this exists (2026-08-19) ────────────────────────────────────────────
- * Sign-in always landed on `/orders`, from wherever you had been bounced. With
- * a landing page carrying **one** door that was invisible — the door pointed at
- * `/orders` anyway. The landing page now offers three, so "Read the audit
- * trail" that silently deposits you on the order list is a promise the front
- * door makes and does not keep. `/login?next=/activity` keeps it.
+ * Sign-in used to land on one fixed screen, from wherever you had been
+ * bounced. Once the app had more than one screen worth arriving at, that broke
+ * a promise: somebody sent to sign in from a report would be returned somewhere
+ * else. `/login?next=/reports` returns them to it.
  *
  * ── Why a validator and not `next` straight into `router.replace` ───────────
  * A redirect target taken from the URL is the textbook open redirect: anyone
  * can hand out `…/login?next=https://evil.example` and the sign-in page, which
  * is the one screen a stranger is expected to trust, sends them there after
- * they type a password. This app is deployed on a public URL (see CLAUDE.md,
- * "Hosted deployment"), so that link is postable to anyone.
+ * they type a password. This app is deployed on a public URL, so that link is
+ * postable to anyone.
  *
  * The rule is narrow on purpose: an absolute path on this origin and nothing
- * else. Everything rejected falls back to `/orders`, which is exactly the
- * behaviour that shipped before, so a bad value degrades to the old default
- * rather than to an error.
+ * else. Everything rejected falls back to the cockpit (`DEFAULT_RETURN_PATH`),
+ * so a bad value degrades to the default rather than to an error.
  */
 
 /** Where sign-in goes when nothing better is asked for. */

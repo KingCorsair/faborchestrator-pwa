@@ -22,13 +22,11 @@ build/
 qr/
 
 # Build artefacts and working files that have no business in an image.
-design-review/
-faborchestrator-design-review/
-faborchestrator-design-review.zip
-faborchestrator-pwa-demo-plan-v2.pdf
 *.tsbuildinfo
-pwd_demo_notes.txt
 __tests__/
+
+# Screenshots the live checks in scripts/ leave in the root (see .gitignore).
+/wp*.png
 
 .DS_Store
 npm-debug.log*

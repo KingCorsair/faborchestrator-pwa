@@ -62,15 +62,6 @@ export interface FoConversationSummary {
   updatedAt: string;
 }
 
-/** A stored thread, as this app will show it. */
-export interface FoStoredConversation {
-  id: string;
-  title: string;
-  isPinned: boolean;
-  updatedAt: string;
-  turns: Turn[];
-}
-
 /** Part types that survive the trip to the phone. Everything else is dropped. */
 const KEPT = new Set(["text"]);
 

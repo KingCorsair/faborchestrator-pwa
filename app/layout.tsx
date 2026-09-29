@@ -18,16 +18,14 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 /**
- * The app-wide title and description name **the platform**, not the production
- * order workflow — changed 2026-08-21, when `/` stopped being that workflow's
- * front door and became FabOrchestrator's. Pages that are about orders still
- * title themselves so (`/orders` is "Production orders — FabOrchestrator");
- * this is the fallback for the ones that are not.
+ * The app-wide title and description name **the platform**, the same words as
+ * `public/manifest.webmanifest`. Screens that are about one thing title
+ * themselves (`/fabinsight` is "FabInsight — FabOrchestrator"); this is the
+ * fallback for the rest.
  */
 export const metadata: Metadata = {
   title: "FabOrchestrator",
-  description:
-    "An enterprise AI platform for manufacturing operations, with AI-assisted production order review.",
+  description: "An enterprise AI platform for manufacturing operations, reached from a phone.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [

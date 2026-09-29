@@ -5,8 +5,9 @@
  * This app's session is a stateless HMAC in `localStorage`
  * (`lib/auth.ts`, `components/fab/use-session.ts`) — the same convention the
  * product uses for its own token, and the reason both are readable by any
- * script on the page. That is a considered trade for a demo credential that
- * unlocks mock MES data.
+ * script on the page. That is a considered trade because the pass opens
+ * nothing on its own: every request must also carry the cookie below, whose
+ * fingerprint the pass is bound to (`lib/auth-middleware.ts`).
  *
  * **The FO token is not that.** It is a real session against a real
  * FabOrchestrator, carrying that operator's role, their MCP connections, their
@@ -19,9 +20,10 @@
  *
  * ── Why a cookie rather than a server-side session store ────────────────────
  * There isn't one. `lib/auth.ts` is deliberately stateless so this app needs no
- * database, and `lib/decisions/` shows what a module-level `Map` costs the
- * moment a process restarts. A cookie keeps the token with the browser that
- * earned it and keeps this app's "no session store" property intact.
+ * database, and a store kept in one process's memory would be lost on every
+ * restart and invisible to a second copy of the app. A cookie keeps the token
+ * with the browser that earned it and keeps this app's "no session store"
+ * property intact.
  */
 
 import type { NextRequest, NextResponse } from "next/server";

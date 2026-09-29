@@ -242,31 +242,29 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
 
         <div className="flex max-w-[420px] flex-col gap-4">
           {/*
-            Widened on 2026-08-24, for the same reason as the sign-in copy
-            opposite: this screen described the production order workflow alone,
-            so it read as a production-order demo and people signed in with the
-            credential that opens only that. The PWA is FabOrchestrator's
-            cockpit — four agents and the order workflow — and the door should
-            say so.
+            Says what the PWA is *now*: FabOrchestrator's agents and its pinned
+            reports, nothing of its own. Until 2026-09-28 the sentence below
+            still offered the production order workflow, which was removed on
+            1 September with its mock MES — the one screen a visitor reads
+            before signing in was describing a feature they could not reach.
           */}
           <h2 className="text-[30px] leading-[1.15] text-white">
             Ask your agents. Decide on the floor.
           </h2>
           <p className="m-0 text-[16px]" style={{ color: "var(--on-navy-body)" }}>
-            Put a question to FabOrchestrator, or find a production order, see what the
-            MES actually recorded against it, and decide what happens next.
+            Put a question to FabOrchestrator&apos;s agents, or read the dashboards your
+            administrator pinned. Every answer comes from your own tools, role and data.
           </p>
         </div>
 
         {/*
-          Was "Demo environment · mock MES data", which stopped being true when
-          the agents started answering from the running FabOrchestrator. The
-          order workflow is mock; the agents are not, and a visitor is entitled
-          to know which half of the screen is real before they read an answer
-          off it.
+          A visitor is entitled to know what is real before they read an answer
+          off it. Everything behind this sign-in is the running FabOrchestrator;
+          the "mock order data" this line used to warn about went with the order
+          workflow on 1 September.
         */}
         <p className="m-0 text-[12px]" style={{ color: "var(--on-navy-label)" }}>
-          Demo environment · mock order data · live FabOrchestrator agents
+          Demo environment · live FabOrchestrator agents
         </p>
       </aside>
 
@@ -362,7 +360,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
             Says which credential to use, on the screen where it is typed.
 
             There is only one now (WP2, 2026-09-01): a FabOrchestrator account,
-            which opens the agents and the production order workflow alike. The
+            which opens everything here. The
             line stays because the app is not FabOrchestrator and the field does
             not say whose password it wants — and because the demo credential
             that used to be accepted here produced a session that met a second
@@ -374,8 +372,8 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
             style={{ color: "var(--text-muted-cool)" }}
           >
             Use your FabOrchestrator account to access the PWA. It opens the agents
-            and the production order workflow, and the agents answer with your tools,
-            your role and your data.
+            and the pinned reports, and the agents answer with your tools, your role
+            and your data.
           </p>
 
           <label className="flex flex-col gap-[7px]">

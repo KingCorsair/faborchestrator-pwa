@@ -197,8 +197,8 @@ footer b{color:var(--ink-2)}
   not guessed at here.</p>
 
   <p class="lede">This document exists so that product decisions stop being settled by
-  accident inside implementation work. The engineering plan lives separately, and
-  progress against it lives in <code>docs/STATUS.md</code>.</p>
+  accident inside implementation work. How the app is built is in <code>CLAUDE.md</code>,
+  and progress lives in <code>docs/STATUS.md</code>.</p>
 
   <div class="rule"></div>
 
@@ -714,7 +714,8 @@ footer b{color:var(--ink-2)}
     <div class="stmt out"><span class="lab">Out of scope</span>
       <ul>
         <li><b>The production-order review workflow</b> and its mock MES data.
-            <em>Removed 1 September 2026; decision recorded in the delivery plan.</em></li>
+            <em>Removed 1 September 2026; recorded as the scope correction in
+            <code>docs/STATUS.md</code>.</em></li>
         <li><b>Any AI, prompt, model or manufacturing logic in the app.</b></li>
         <li><b>Administration of any kind.</b></li>
         <li><b>Writing to MES, ERP or quality systems.</b></li>
@@ -848,25 +849,25 @@ footer b{color:var(--ink-2)}
       so the routing decision is in practice <em>"is this a master-data request or not?"</em>,
       and excluding the Master Data Load Agent would leave nothing to route between.</p>
       <p><b>Jothi excluded it.</b> Every exposed agent now shares one service. The engineering
-      plan's 2 days for a routing package buys nothing and should not be scheduled.
+      plan's 2 days for a routing package would have bought nothing.
       <b>This entry is the reason that estimate was held rather than spent.</b></p>
     </div>
 
     <div class="conflict" id="c3">
       <h3><span class="n">18.3</span>The plans still assume four agents
-        <span class="tag live">Now actionable</span></h3>
-      <p>The four planning documents describe exposing FabInsight, the Master Data Load Agent
-      and the Back-end Agent, and budget WP7's availability check and WP13's routing package.
-      All three assumptions are now wrong:</p>
+        <span class="tag done">Closed 28 September</span></h3>
+      <p>The four planning documents described exposing FabInsight, the Master Data Load Agent
+      and the Back-end Agent, and budgeted WP7's availability check and WP13's routing package.
+      All three assumptions were wrong:</p>
       <ul>
         <li>the Master Data Load Agent is not exposed;</li>
         <li><b>no exposed agent is permission-gated</b>, so WP7's availability query has
             nothing to check;</li>
         <li>WP13's routing has nothing to choose between.</li>
       </ul>
-      <p>They said they needed updating once §7 was answered, and not before. It is answered.
-      <b>This is the one conflict here that is a live piece of work</b>, and it is
-      documentation, not code.</p>
+      <p>They said they needed updating once §7 was answered, and not before. Once it was
+      answered, updating plans for work already finished served nobody, so on 28 September
+      they were <b>removed rather than rewritten</b>. They remain in git history.</p>
     </div>
 
     <div class="conflict" id="c4">
@@ -932,8 +933,8 @@ footer b{color:var(--ink-2)}
 
   <footer>
     <b>FabOrchestrator PWA — Product Requirements, version 1.4.</b> This document says what
-    the product is and how it should behave. It does not say how to build it — that is the
-    engineering plan, and progress against it is in <code>docs/STATUS.md</code>. The
+    the product is and how it should behave. It does not say how to build it — that is
+    <code>CLAUDE.md</code>, and progress is in <code>docs/STATUS.md</code>. The
     canonical copy is <code>docs/PRD.md</code> in the repository; this page is published from
     it.
   </footer>

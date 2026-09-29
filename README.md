@@ -18,7 +18,7 @@ the design, and `scripts/security-review.mjs` asserts it on every run.
 | **`docs/HANDOVER.md`** | Operating it — every failure message, what to do, who owns what |
 | **`docs/OPEN_ISSUES.md`** | What is still open. All of it external to this app |
 | **`docs/STATUS.md`** | What was built and how each part was proved |
-| **`CLAUDE.md`** | The design document and the record of every decision |
+| **`CLAUDE.md`** | How it is built, and the rules it follows |
 
 This file is how to run it.
 
@@ -280,17 +280,24 @@ a running app, so they need `npx playwright install chromium` once.
 ## Layout
 
 ```
-lib/faborch/      The whole integration. Its HTTP contract in one file, where
-                  the FO token lives, the reader for its streamed reply, the
-                  conversation reducer, the error table, and the artifact
-                  parser ported from FabOrchestrator. No manufacturing logic.
-lib/              Session signing, auth middleware, rate limiting, validation.
-app/api/          Authenticated routes, Zod on every input. `faborch/[agent]/chat`
-                  forwards a question and streams the answer back untouched;
-                  `faborch/reports` reads pinned dashboards, GET only.
+lib/faborch/      The whole integration. Its HTTP contract and time limits in
+                  one file, where the FO token lives, the reader for its
+                  streamed reply, the conversation reducer, the error table,
+                  the remembered lookups, and the artifact parser ported from
+                  FabOrchestrator. No manufacturing logic.
+lib/              Session signing, auth middleware, the sign-in lockout,
+                  request size limits and validation, error reporting, and the
+                  idle clock for FabOrchestrator's 30-minute sign-out.
+app/api/          Routes, Zod on every input. `faborch/[agent]/chat` forwards a
+                  question and streams the answer back untouched;
+                  `faborch/reports` reads pinned dashboards, GET only;
+                  `auth/keep-alive` is Stay signed in; `client-error` takes
+                  crash reports from browsers.
 app/              The cockpit at /, the two agent screens, reports, login, and
                   /diagnostics and /offline, which are tools rather than
-                  sections of the product and are not in the nav.
+                  sections of the product and are not in the nav. The crash
+                  and not-found screens are `error.tsx`, `global-error.tsx` and
+                  `not-found.tsx`.
 components/fab/   The whole presentation layer, in FabOrchestrator's V2
                   design language.
 scripts/          Browser-driven checks that run against a deployed URL.

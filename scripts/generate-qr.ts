@@ -1,22 +1,19 @@
 /**
  * Generates the QR code you send to whoever is opening the demo on a phone.
  *
- * ── Why a dependency here, when the Code 39 labels are hand-rolled ───────────
- * `generate-demo-labels.ts` encodes Code 39 in about forty lines because each
- * character is nine elements with no error correction and no matrix. QR is
- * Reed–Solomon over GF(256), a version table and eight mask patterns scored
- * against four penalty rules — several hundred lines to get right, and a
+ * ── Why a dependency here ──────────────────────────────────────────────────
+ * QR is Reed–Solomon over GF(256), a version table and eight mask patterns
+ * scored against four penalty rules — several hundred lines to get right, and a
  * subtly wrong one produces an image that scans on your phone and not on
  * theirs. `qrcode` is a **devDependency**: it runs here, never in the browser
  * bundle, so this is not the trade CLAUDE.md's "reuse before adding" rule is
- * about.
+ * about. Neither is `zxing-wasm`, which reads the image back (see `verify`).
  *
  * ── Two guards, both learned the hard way ────────────────────────────────────
  * The URL must be **https**. Over plain http the service worker will not
- * register and `getUserMedia` is unavailable, so the scanner is silently dead
- * and there is no offline page — an installed app missing both features the
- * install was meant to demonstrate. A QR is exactly the wrong place to
- * discover that, because nobody reads a URL they scanned.
+ * register, so there is no offline page and no proper install — an installed
+ * app missing what the install was meant to demonstrate. A QR is exactly the
+ * wrong place to discover that, because nobody reads a URL they scanned.
  *
  * And it refuses a `trycloudflare.com` or `ngrok` host. Those URLs are
  * ephemeral: the QR outlives the tunnel by days, and a code that resolves to
@@ -28,14 +25,14 @@
  * redundancy actually fixes. The URL is short enough that the extra bytes cost
  * a version bump and nothing else.
  *
- * Run: npm run qr -- https://your-app.fly.dev/orders
+ * Run: npm run qr -- https://your-app.fly.dev/
  */
 
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import QRCode from "qrcode";
 
-/** --navy-3, so the code matches the demo labels and the product's ink. */
+/** --navy-3, the product's ink. */
 const INK = "#10153a";
 const PAPER = "#ffffff";
 
@@ -61,8 +58,8 @@ try {
 if (url.protocol !== "https:") {
   fail(
     `${url.protocol}// will not work on a phone.\n` +
-      "    The service worker cannot register and the camera is unavailable\n" +
-      "    outside a secure context, so the scanner would be silently dead.",
+      "    The service worker cannot register outside a secure context, so the\n" +
+      "    installed app would have no offline page.",
   );
 }
 
@@ -88,22 +85,19 @@ const outFile = join(outDir, `${url.hostname.replace(/[^a-z0-9]+/gi, "-")}.png`)
 // is a syntax error. The sibling generators are all synchronous and never met
 // this.
 /**
- * Reads the PNG back with the decoder the app itself ships.
+ * Reads the PNG back with a real QR decoder.
  *
- * The same argument `__tests__/scan/labels.test.ts` makes about Code 39: an
- * image that is subtly wrong still *looks* exactly like a QR code, and the
- * moment you find out is the moment somebody points a phone at it. Here the
- * cost of being wrong is higher than for a label, because the code is sent to
- * somebody else and scanned somewhere you are not.
+ * An image that is subtly wrong still *looks* exactly like a QR code, and the
+ * moment you find out is the moment somebody points a phone at it — and the
+ * code is sent to somebody else, to be scanned somewhere you are not.
  *
  * This proves the bytes on disk decode to the intended URL. It cannot prove a
- * phone camera can see it on a screen — that is the next section of the README.
+ * phone camera can see it on a screen — scan it once yourself before sending.
  */
 async function verify(): Promise<string | null> {
   const { prepareZXingModule, readBarcodes } = await import("zxing-wasm/reader");
 
-  // Handed over as bytes, not located by URL: Node's fetch cannot load file://,
-  // and the browser path (/zxing/…, served by Next) does not exist here.
+  // Handed over as bytes, not located by URL: Node's fetch cannot load file://.
   const wasm = readFileSync(
     join(import.meta.dirname, "..", "node_modules", "zxing-wasm", "dist", "reader", "zxing_reader.wasm"),
   );
@@ -148,7 +142,7 @@ async function main() {
   ✓ ${outFile}
 
     Encodes:  ${url.toString()}
-    Verified: read back with zxing-wasm — the same decoder the app scans with
+    Verified: read back with zxing-wasm, a real QR decoder
 
     Send the recipient all three of:
       • this image          (to scan from a laptop screen)

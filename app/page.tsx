@@ -28,15 +28,12 @@ import { Landing } from "@/components/fab/screens/landing";
  * this app does not open, which read as a feature list for a product the
  * visitor cannot reach from here.
  *
- * ── Synchronous again, as of 2026-08-23 ────────────────────────────────────
- * It was `async` from 2026-08-20 so the front door could open on a real order
- * with its real detected problems, resolved through `featuredOrder()`. The
- * indigo card that displayed them was removed at the reviewer's request, so
- * there is nothing left to await. `lib/featured-order.ts` is untouched and
- * still tested — kept because the target design may want the derived count
- * ("orders awaiting review"), and its provenance is expensive to rebuild.
+ * ── Synchronous ───────────────────────────────────────────────────────────
+ * It was `async` for a few days in August, when the front door opened on a
+ * real production order read through the mock MES. That card, and the whole
+ * workflow behind it, are gone, and there is nothing left to await.
  *
- * `/` still prerenders as `○` in the build output either way, and that still
+ * `/` prerenders as `○` in the build output, and that still
  * matters even now the page is behind a session: the gate runs in middleware,
  * so a request that gets this far is one that has already been decided, and
  * what it should meet is finished HTML rather than a skeleton waiting on a
@@ -49,7 +46,7 @@ import { Landing } from "@/components/fab/screens/landing";
 export const metadata: Metadata = {
   title: "FabOrchestrator",
   description:
-    "An enterprise AI platform for manufacturing operations. Review and approve production orders using MES evidence and AI-assisted analysis.",
+    "FabOrchestrator on your phone: ask its agents about your operations, and read the dashboards your administrator pinned.",
 };
 
 export default function Page() {

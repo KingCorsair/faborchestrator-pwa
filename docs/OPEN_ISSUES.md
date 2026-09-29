@@ -1,8 +1,9 @@
 # Open issues
 
-**As of 5 September 2026.** Everything here is **external to this app**: none is
-a defect in the PWA, none blocks its use, and none can be closed by changing
-this repository alone. Each names who can actually close it.
+**As of 29 September 2026.** Items 1–6 are **external to this app**: none is a
+defect in the PWA, none blocks its use, and none can be closed by changing this
+repository alone. Each names who can actually close it. Item 7 is the checking
+left after the 28 and 29 September work.
 
 Defects *in* the app are not listed here — there are none outstanding. What was
 found and fixed is recorded in `docs/STATUS.md`.
@@ -88,7 +89,7 @@ invented plant figures in front of a customer.
 ## 3. Two of ten MCP servers were failing upstream
 
 **What it is.** The Genealogy and Scrap Pareto MCP servers returned HTTP 500 on
-2026-07-24, per the engineering plan's own risk note. Whether they still do has
+2026-07-24, per a risk note in the old delivery plans. Whether they still do has
 not been re-checked.
 
 **Effect here.** A question needing one of those tools gets a degraded answer
@@ -103,21 +104,14 @@ any demonstration that depends on genealogy or scrap-Pareto questions.
 
 ---
 
-## 4. The planning documents describe an app that no longer exists
+## 4. ~~The planning documents describe an app that no longer exists~~ — closed 28 September
 
-**What it is.** The four planning HTML documents in `docs/planning/` still
-describe four agents, a production-order workflow and budget work that were
-removed by scope decisions on 1 and 3 September. `docs/STATUS.md`,
-`docs/PRD.html` and `docs/HANDOVER.md` are current; the plans are not.
-
-**Effect.** A reader who starts from the plans gets a wrong picture. Anyone
-reading `STATUS.md` first does not.
-
-**What to do.** Either bring them into line or mark them superseded. This is
-documentation debt, not a defect.
-
-**Owner:** this project.
-**Severity:** low, but it will mislead somebody eventually.
+The four planning documents that described four agents, a production-order
+workflow and budget work — all removed on 1 and 3 September — **were deleted on
+28 September**, along with their archived predecessor. The same day,
+`CLAUDE.md`, which had become the August record of that same removed workflow,
+was replaced by a guide to the app as it is. Everything removed is in git
+history.
 
 ---
 
@@ -174,3 +168,31 @@ table.
 on what WIP means.
 **Severity:** medium. Nothing is broken, but a supervisor could be shown two
 different numbers for the same question in one meeting.
+
+---
+
+## 7. What the 28 September work still needs checked, and switched on
+
+The scalability and reliability changes on branch `chetan`, and the Next.js
+security upgrade of 29 September, pass 509 tests and were checked live against
+a stand-in FabOrchestrator and in Microsoft Edge. Four things could not be
+checked from a development machine:
+
+1. **The live FabOrchestrator.** The operator's role is read from FO's
+   `/api/auth/me` at sign-in, and the idle warning assumes FO's 30-minute rule —
+   both taken from this project's notes on FO's source, neither exercised
+   against the deployment. After
+   deploying, sign in once and confirm the right role appears under the name.
+2. **iPhone Safari.** The idle banners, the crash screen and the not-found page
+   were checked in Edge only.
+3. **The two optional settings.** The shared sign-in lockout needs
+   `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; alerts need
+   `ERROR_ALERT_WEBHOOK_URL`. Both were tested against stand-ins. Once set, one
+   wrong-password sign-in should appear in the Upstash dashboard, and one
+   forced failure should reach the channel.
+4. **Merging and deploying** the branch. Until then the live app runs `main`,
+   which still has Next.js 16.1.4 and its 33 published advisories. Deploying
+   needs `flyctl` and access to the Fly.io app `faborch-demo`.
+
+**Owner:** whoever deploys this app.
+**Severity:** low. Every one of these degrades to how the app behaved before.

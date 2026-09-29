@@ -93,7 +93,7 @@ export function useSession(): Session {
     if (!token || !raw) {
       clearAuthStorage();
       // Carries where they were headed, so sign-in returns them to it rather
-      // than to `/orders` — see lib/return-path.ts.
+      // than to the cockpit — see lib/return-path.ts.
       router.replace(loginHref());
       return;
     }

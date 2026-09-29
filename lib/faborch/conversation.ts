@@ -59,9 +59,11 @@ export interface Failure {
  *  - `working`   FO is running a tool, and says which one
  *  - `answering` text is arriving
  *  - `stalled`   45 seconds of complete silence — a warning, not a verdict
+ *  - `recovering` the connection dropped, and the answer is being fetched from
+ *                where FO saved it (`lib/faborch/recover.ts`)
  *  - `idle`      no turn in flight
  */
-export type ConversationPhase = "idle" | "waiting" | "working" | "answering" | "stalled";
+export type ConversationPhase = "idle" | "waiting" | "working" | "answering" | "stalled" | "recovering";
 
 export interface ConversationState {
   turns: Turn[];
@@ -100,6 +102,10 @@ export type ConversationAction =
   | { type: "stopped" }
   /** 45 seconds of silence. The turn is still open — this is a warning. */
   | { type: "stalled" }
+  /** The connection dropped; the answer is being fetched from FO's saved copy. */
+  | { type: "recovering" }
+  /** FO's saved copy of the answer, whole. It replaces whatever had arrived. */
+  | { type: "recovered"; text: string }
   /** Start again with an empty thread. */
   | { type: "reset" }
   /**
@@ -204,6 +210,22 @@ export function conversationReducer(
     case "stalled":
       return state.busy ? { ...state, phase: "stalled" } : state;
 
+    // Still busy: the composer keeps Stop, so an operator who would rather ask
+    // again than wait can say so.
+    case "recovering":
+      return state.busy ? { ...state, phase: "recovering", activity: null } : state;
+
+    // The whole answer, so nothing is marked incomplete: the part that arrived
+    // is replaced, not added to, because the saved copy already contains it.
+    case "recovered":
+      if (!state.streamingId || !action.text.trim()) return state;
+      return settle({
+        ...state,
+        turns: state.turns.map((turn) =>
+          turn.id === state.streamingId ? { ...turn, text: action.text } : turn,
+        ),
+      });
+
     case "failed":
       // Text already on screen plus a failure means the answer was cut off
       // part-way. Anything else failed before it began, so there is nothing to
@@ -266,19 +288,41 @@ export function toFoMessages(turns: Turn[]): { role: string; parts: { type: "tex
  * **These must match `lib/validation.ts`.** They are duplicated deliberately
  * rather than imported: `lib/validation.ts` pulls in zod, and this module is
  * imported by a client component, so importing it would ship a schema library
- * to the phone to read two numbers off it. The test suite asserts the two agree,
- * which is the part that actually keeps them honest.
+ * to the phone to read four numbers off it. The test suite asserts the two
+ * agree, which is the part that actually keeps them honest.
+ *
+ * A conversation is bounded by its size in bytes, not by the length of each
+ * answer — see `lib/validation.ts` for why that changed on 2026-09-29.
  */
 export const MAX_MESSAGES = 100;
-export const MAX_TEXT = 20_000;
+/** The longest question, in characters. */
+export const MAX_QUESTION = 20_000;
+/** The longest single answer that can be sent back as context, in characters. */
+export const MAX_ANSWER = 1_000_000;
+/** The largest request the route reads: `CHAT_BODY_LIMIT`. */
+export const MAX_BODY_BYTES = 4_000_000;
 
 export type CapacityIssue =
   /** The thread has reached the number of messages the route accepts. */
   | { kind: "thread-full" }
   /** This one question is longer than a single message may be. */
   | { kind: "question-too-long" }
-  /** An answer already in the thread is too long to send back as context. */
-  | { kind: "answer-too-long" };
+  /** A message already in the thread is too long to send back as context. */
+  | { kind: "answer-too-long" }
+  /** The whole thread, sent back with this question, is larger than the route reads. */
+  | { kind: "thread-too-large" };
+
+/**
+ * The size of the request that would carry this question, in bytes — exactly
+ * what `send` posts, with a conversation id's worth of room.
+ */
+export function requestBytes(turns: Turn[], prompt: string): number {
+  const body = JSON.stringify({
+    messages: toFoMessages([...turns, { id: "", role: "user", text: prompt }]),
+    conversationId: "00000000-0000-0000-0000-000000000000",
+  });
+  return new TextEncoder().encode(body).length;
+}
 
 /**
  * Can this question be asked at all?
@@ -298,10 +342,13 @@ export type CapacityIssue =
  * walks into it.
  */
 export function capacityIssue(turns: Turn[], prompt: string): CapacityIssue | null {
-  if (prompt.length > MAX_TEXT) return { kind: "question-too-long" };
+  if (prompt.length > MAX_QUESTION) return { kind: "question-too-long" };
   // `historyFor` adds one message; the placeholder answer is not posted.
   if (turns.length + 1 > MAX_MESSAGES) return { kind: "thread-full" };
-  if (turns.some((turn) => turn.text.length > MAX_TEXT)) return { kind: "answer-too-long" };
+  if (turns.some((turn) => turn.text.length > (turn.role === "user" ? MAX_QUESTION : MAX_ANSWER))) {
+    return { kind: "answer-too-long" };
+  }
+  if (requestBytes(turns, prompt) > MAX_BODY_BYTES) return { kind: "thread-too-large" };
   return null;
 }
 
@@ -326,15 +373,22 @@ export function capacityFailure(issue: CapacityIssue): Failure {
       return {
         code: "question_too_long",
         message:
-          `That question is longer than ${MAX_TEXT.toLocaleString("en-GB")} characters, ` +
-          "which is the most FabOrchestrator accepts in one message. Shorten it and ask again.",
+          `That question is longer than ${MAX_QUESTION.toLocaleString("en-GB")} characters, ` +
+          "which is the most this app sends in one question. Shorten it and ask again.",
       };
     case "answer-too-long":
       return {
         code: "conversation_too_long",
         message:
-          "One of the answers above is too long to send back as context for a follow-up. " +
+          "One of the messages above is too long to send back as context for a follow-up. " +
           "Start a new conversation to keep asking.",
+      };
+    case "thread-too-large":
+      return {
+        code: "conversation_too_large",
+        message:
+          "This conversation has grown too large to send back with another question. " +
+          "Start a new one to keep asking — the answers above stay on screen until you do.",
       };
   }
 }

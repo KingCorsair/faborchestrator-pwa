@@ -12,13 +12,34 @@ const EMAIL_MAX = 255;
 const PASSWORD_MAX = 128;
 
 /**
- * How long a conversation posted to FabInsight may be, and each message in it.
+ * How long a conversation posted to FabInsight may be.
  *
- * Mirrored — deliberately, see its header — as `MAX_MESSAGES` and `MAX_TEXT` in
- * `lib/faborch/conversation.ts`, and the test suite asserts the two agree.
+ * ── Bounded by its size, not by the length of each answer (2026-09-29) ─────
+ * Until 2026-09-29 every message was capped at 20,000 characters, answers
+ * included. An answer carrying a dashboard is longer than that, so a thread was
+ * "full" after its first dashboard — often by the fourth question. The cap was
+ * this app's own: FabOrchestrator's `ChatRequestSchema` sets no length on a
+ * message, its nginx accepts bodies up to 50 MB (`client_max_body_size`), and it
+ * trims a long conversation to the model's context window itself
+ * (`fitMessagesToContextWindow`).
+ *
+ * So an answer may now be as long as FabOrchestrator wrote it, and what bounds a
+ * conversation is `CHAT_BODY_LIMIT`, its size in bytes. A question keeps a cap
+ * of its own; nobody types 20,000 characters into a phone.
+ *
+ * Mirrored — deliberately, see its header — as `MAX_MESSAGES`, `MAX_QUESTION`,
+ * `MAX_ANSWER` and `MAX_BODY_BYTES` in `lib/faborch/conversation.ts`, and the
+ * test suite asserts the two agree.
  */
 const CHAT_MAX_MESSAGES = 100;
-const CHAT_MAX_TEXT = 20_000;
+const CHAT_MAX_QUESTION = 20_000;
+const CHAT_MAX_ANSWER = 1_000_000;
+
+const textParts = (max: number) =>
+  z
+    .array(z.object({ type: z.literal("text"), text: z.string().max(max) }))
+    .min(1)
+    .max(64);
 
 /**
  * Sign-in. **Every rule carries its own wording** (2026-09-28).
@@ -65,13 +86,10 @@ export const LoginSchema = z.object(
 export const FabInsightRequestSchema = z.object({
   messages: z
     .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        parts: z
-          .array(z.object({ type: z.literal("text"), text: z.string().max(CHAT_MAX_TEXT) }))
-          .min(1)
-          .max(64),
-      }),
+      z.discriminatedUnion("role", [
+        z.object({ role: z.literal("user"), parts: textParts(CHAT_MAX_QUESTION) }),
+        z.object({ role: z.literal("assistant"), parts: textParts(CHAT_MAX_ANSWER) }),
+      ]),
     )
     .min(1)
     // A conversation long enough to hit this is one FO would trim anyway
@@ -105,7 +123,7 @@ export const FabInsightRequestSchema = z.object({
  * history, which this app does not open and has no business creating.
  */
 export const CreateConversationSchema = z.object({
-  title: z.string().min(1).max(CHAT_MAX_TEXT),
+  title: z.string().min(1).max(CHAT_MAX_QUESTION),
 });
 
 /**
@@ -133,10 +151,7 @@ export const UpdateConversationSchema = z.object({
  */
 const JSON_BYTES_PER_CHAR = 6;
 
-/** Room for the keys and brackets around one message's text, generously. */
-const MESSAGE_ENVELOPE_BYTES = 128;
-
-/** And around a whole body — the conversation id, the outer braces. */
+/** Room for the keys and brackets around a body, generously. */
 const BODY_ENVELOPE_BYTES = 1024;
 
 /** An email and a password at their longest: about 3 KB. */
@@ -144,20 +159,25 @@ export const LOGIN_BODY_LIMIT =
   (EMAIL_MAX + PASSWORD_MAX) * JSON_BYTES_PER_CHAR + BODY_ENVELOPE_BYTES;
 
 /**
- * The largest conversation the chat screen can post: about 12 MB.
+ * The largest conversation the chat screen may post: 4 MB.
  *
- * `CHAT_MAX_MESSAGES` messages of one text part each — which is what
- * `toFoMessages` builds — at `CHAT_MAX_TEXT` characters apiece. The schema
- * allows more parts per message than the screen ever sends; a hand-built body
- * that uses them all is refused here, which is the point.
+ * **Chosen, not derived**, unlike the others here (2026-09-29): with answers as
+ * long as FabOrchestrator writes them, the schema no longer implies a size. It
+ * sits under the 4.5 MB a request to a Vercel function may carry — past that,
+ * Vercel answers 413 itself, in words that are not this app's — and far under
+ * FabOrchestrator's 50 MB. Four megabytes of text is dozens of dashboards; a
+ * conversation that large has long since been trimmed to the model's context
+ * window by FO anyway.
+ *
+ * The screen measures its own request against this before sending
+ * (`capacityIssue`), so the operator sees "this conversation is full" with a way
+ * out rather than a refusal from here.
  */
-export const CHAT_BODY_LIMIT =
-  CHAT_MAX_MESSAGES * (CHAT_MAX_TEXT * JSON_BYTES_PER_CHAR + MESSAGE_ENVELOPE_BYTES) +
-  BODY_ENVELOPE_BYTES;
+export const CHAT_BODY_LIMIT = 4_000_000;
 
 /** A conversation's title is its first question: about 120 KB. */
 export const CREATE_CONVERSATION_BODY_LIMIT =
-  CHAT_MAX_TEXT * JSON_BYTES_PER_CHAR + BODY_ENVELOPE_BYTES;
+  CHAT_MAX_QUESTION * JSON_BYTES_PER_CHAR + BODY_ENVELOPE_BYTES;
 
 /** `{ "isPinned": true }`. */
 export const PIN_BODY_LIMIT = BODY_ENVELOPE_BYTES;

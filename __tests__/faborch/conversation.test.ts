@@ -14,18 +14,21 @@ import assert from "node:assert/strict";
 
 import {
   EMPTY_CONVERSATION,
+  MAX_ANSWER,
+  MAX_BODY_BYTES,
   MAX_MESSAGES,
-  MAX_TEXT,
+  MAX_QUESTION,
   capacityFailure,
   capacityIssue,
   conversationReducer as reduce,
   historyFor,
+  requestBytes,
   toFoMessages,
   type ConversationAction,
   type ConversationState,
   type Turn,
 } from "../../lib/faborch/conversation";
-import { FabInsightRequestSchema } from "../../lib/validation";
+import { CHAT_BODY_LIMIT, FabInsightRequestSchema } from "../../lib/validation";
 
 /** Run a script of actions from empty, the way a turn actually arrives. */
 function run(...actions: ConversationAction[]): ConversationState {
@@ -192,8 +195,22 @@ test("the limits stated here are the limits the route enforces", () => {
   assert.equal(FabInsightRequestSchema.safeParse(body(MAX_MESSAGES)).success, true);
   assert.equal(FabInsightRequestSchema.safeParse(body(MAX_MESSAGES + 1)).success, false);
 
-  assert.equal(FabInsightRequestSchema.safeParse(body(1, "x".repeat(MAX_TEXT))).success, true);
-  assert.equal(FabInsightRequestSchema.safeParse(body(1, "x".repeat(MAX_TEXT + 1))).success, false);
+  // A question and an answer have different caps.
+  const question = (text: string) => ({ messages: [{ role: "user", parts: [{ type: "text", text }] }] });
+  assert.equal(FabInsightRequestSchema.safeParse(question("x".repeat(MAX_QUESTION))).success, true);
+  assert.equal(FabInsightRequestSchema.safeParse(question("x".repeat(MAX_QUESTION + 1))).success, false);
+
+  const answer = (text: string) => ({
+    messages: [
+      { role: "user", parts: [{ type: "text", text: "dashboard please" }] },
+      { role: "assistant", parts: [{ type: "text", text }] },
+      { role: "user", parts: [{ type: "text", text: "and now?" }] },
+    ],
+  });
+  assert.equal(FabInsightRequestSchema.safeParse(answer("x".repeat(MAX_ANSWER))).success, true);
+  assert.equal(FabInsightRequestSchema.safeParse(answer("x".repeat(MAX_ANSWER + 1))).success, false);
+
+  assert.equal(MAX_BODY_BYTES, CHAT_BODY_LIMIT, "the screen measures against the route's own ceiling");
 });
 
 test("a thread with room takes another question", () => {
@@ -213,23 +230,66 @@ test("the refusal is what a supervisor reads, not a schema library's words", () 
 });
 
 test("an over-long question is caught before it costs a round trip", () => {
-  assert.deepEqual(capacityIssue([], "x".repeat(MAX_TEXT + 1)), { kind: "question-too-long" });
-  assert.equal(capacityIssue([], "x".repeat(MAX_TEXT)), null);
+  assert.deepEqual(capacityIssue([], "x".repeat(MAX_QUESTION + 1)), { kind: "question-too-long" });
+  assert.equal(capacityIssue([], "x".repeat(MAX_QUESTION)), null);
+});
+
+test("an answer with a dashboard in it no longer fills the thread (2026-09-29)", () => {
+  // Reported: "This conversation is full" by the fourth question. Each answer
+  // with a dashboard is tens of thousands of characters of HTML, and every
+  // message used to be capped at 20,000.
+  const dashboard = `<antArtifact type="text/html" title="Analytics Dashboard">${"<td>42</td>".repeat(6_000)}</antArtifact>`;
+  const thread: Turn[] = [];
+  for (let i = 0; i < 4; i++) {
+    thread.push({ id: `u${i}`, role: "user", text: `question ${i}` });
+    thread.push({ id: `a${i}`, role: "assistant", text: `Here it is.\n\n${dashboard}` });
+  }
+  assert.ok(dashboard.length > 20_000);
+  assert.equal(capacityIssue(thread, "the last product with WIP"), null);
 });
 
 test("an over-long answer already in the thread blocks the follow-up, not the answer", () => {
   const long: Turn[] = [
     { id: "u1", role: "user", text: "table please" },
-    { id: "a1", role: "assistant", text: "x".repeat(MAX_TEXT + 1) },
+    { id: "a1", role: "assistant", text: "x".repeat(MAX_ANSWER + 1) },
   ];
   assert.deepEqual(capacityIssue(long, "and now?"), { kind: "answer-too-long" });
   assert.match(capacityFailure({ kind: "answer-too-long" }).message, /new conversation/);
 });
 
+test("a thread too large to send back is refused before the request is made", () => {
+  const big = "x".repeat(900_000);
+  const thread: Turn[] = [];
+  for (let i = 0; i < 5; i++) {
+    thread.push({ id: `u${i}`, role: "user", text: `q${i}` });
+    thread.push({ id: `a${i}`, role: "assistant", text: big });
+  }
+  assert.ok(requestBytes(thread, "one more") > MAX_BODY_BYTES);
+  assert.deepEqual(capacityIssue(thread, "one more"), { kind: "thread-too-large" });
+  assert.equal(capacityFailure({ kind: "thread-too-large" }).code, "conversation_too_large");
+});
+
+test("the size checked is the size of the request actually sent", () => {
+  const thread: Turn[] = [
+    { id: "u1", role: "user", text: "Renée's yield — 94%?" },
+    { id: "a1", role: "assistant", text: "Yes: \"94.2%\"\n\n| line | yield |" },
+  ];
+  const sent = JSON.stringify({
+    messages: toFoMessages(historyFor(thread, "and scrap?", "u2")),
+    conversationId: "7b0f6a52-3c55-4a4e-9a51-5d1f2d6c9e10",
+  });
+  assert.equal(requestBytes(thread, "and scrap?"), Buffer.byteLength(sent));
+});
+
 test("every capacity refusal names a next step", () => {
-  for (const kind of ["thread-full", "question-too-long", "answer-too-long"] as const) {
+  for (const kind of ["thread-full", "question-too-long", "answer-too-long", "thread-too-large"] as const) {
     const { code, message } = capacityFailure({ kind });
     assert.ok(code.length > 0, kind);
     assert.match(message, /Start a new|Shorten it/, kind);
   }
+});
+
+test("a question over the cap is not blamed on FabOrchestrator", () => {
+  // FabOrchestrator sets no length on a message; the cap is this app's.
+  assert.doesNotMatch(capacityFailure({ kind: "question-too-long" }).message, /FabOrchestrator accepts/);
 });

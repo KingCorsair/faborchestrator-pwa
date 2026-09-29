@@ -72,6 +72,7 @@ phone ── POST /api/faborch/<agent>/chat ────────────
   connectedMcpIds     the operator's data tools — remembered 5 min per session
   ownsConversation    the chat is theirs? — a proof remembered 5 min, never a refusal
   foChat              FabOrchestrator POST /api/chat — 60 s to begin, then unlimited
+  keepReading         a turn FO is saving is read to the end even if the phone goes
 ◄── the stream, piped back untouched; parsed on the phone by lib/faborch/stream.ts
 ```
 
@@ -94,6 +95,7 @@ FO writes the turn down.
 | `lib/faborch/errors.ts` | Every failure code, and the next step the screen shows for each |
 | `lib/faborch/agents.ts` | The agent registry: FabInsight and the Back-end Agent |
 | `lib/faborch/owns.ts`, `tools.ts` | The two lookups a question needs, remembered briefly |
+| `lib/faborch/keep-reading.ts`, `recover.ts` | An answer the phone lost part-way (app minimised, screen locked): read to the end on the server so FO saves it, then fetched back on the phone |
 | `lib/faborch/session.ts` | The FabOrchestrator token's httpOnly cookie |
 | `lib/faborch/artifacts.ts` | The artifact parser, ported from FabOrchestrator |
 | `lib/auth.ts`, `lib/auth-middleware.ts` | This app's signed pass, and `requireAuth` |
@@ -160,8 +162,18 @@ FabOrchestrator is the only identity. Sign-in sends the password to FO's
 - **Crashes land on the crash screen** (`app/error.tsx`, `app/global-error.tsx`)
   with Try again, Go to the cockpit, and Reset and reload. It reports itself to
   `/api/client-error`; the reference on screen is the one in the log.
-- **Request bodies have ceilings** (`lib/validation.ts`), derived from the
-  schemas so nothing the screens can send is ever refused.
+- **A dropped connection does not lose a saved answer.** A phone suspends a
+  minimised app and closes its sockets. FabOrchestrator saves an answer only
+  once its stream is read to the end, so the chat route reads it to the end
+  regardless, and the screen fetches it back. Don't make a saved turn's
+  FabOrchestrator request follow `req.signal` again — that is what lost them.
+- **Request bodies have ceilings** (`lib/validation.ts`). A question's is 4 MB —
+  the whole conversation travels with it — and the screen measures its own
+  request against that before sending (`capacityIssue`), so it says "this
+  conversation is full" with a way out rather than hitting a refusal. Answers
+  are not capped one by one: FabOrchestrator's are long, and a per-answer cap of
+  20,000 characters made a thread "full" after its first dashboard. The other
+  ceilings are derived from their schemas.
 - **Storage can throw** (site data blocked, some private modes). Every
   `localStorage` access is guarded.
 
@@ -250,7 +262,7 @@ it are the product's login page, `components/cockpit/cockpit-nav.tsx` and
 ## Testing
 
 ```bash
-npm test           # 509 tests, no network
+npm test           # 545 tests, no network
 npm run typecheck
 npm run lint
 npm run build

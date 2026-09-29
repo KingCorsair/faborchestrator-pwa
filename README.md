@@ -122,7 +122,7 @@ FABORCH_PROBE_PASSWORD=...
 ```bash
 npm run dev                 # http://localhost:3002, hot reload
 npm run build && npm start  # production build, same port
-npm test                    # 509 tests, no network needed
+npm test                    # 545 tests, no network needed
 ```
 
 Sign in with a FabOrchestrator account. There is no demo credential — a local
@@ -267,7 +267,7 @@ node scripts/hydration-typing-check.mjs # sign-in under slow hydration
 |---|---|
 | `npm run dev` | Dev server on 3002 |
 | `npm run build` / `npm start` | Production build and server |
-| `npm test` | **509 tests** — auth, proxy, streaming, conversation, errors, artifacts, reports, request limits, caching, timeouts, error reporting, platform |
+| `npm test` | **545 tests** — auth, proxy, streaming, conversation, errors, artifacts, reports, request limits, caching, timeouts, error reporting, answers fetched back after a dropped connection, platform |
 | `npm run lint` / `npm run typecheck` | ESLint / `tsc --noEmit` |
 | `npm run icons` | Regenerate the PWA icons |
 | `npm run qr -- <https url>` | QR code for a deployed URL, written to `qr/` |

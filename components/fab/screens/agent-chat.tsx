@@ -84,6 +84,7 @@ import {
 import { ArtifactSheet } from "@/components/fab/artifact-sheet";
 import { ArtifactTile } from "@/components/fab/artifact-tile";
 import { segmentMessageText, type FoArtifact } from "@/lib/faborch/artifacts";
+import { recoverAnswer } from "@/lib/faborch/recover";
 import { readFoStream, STALL_MS } from "@/lib/faborch/stream";
 import { markFoActivity } from "@/lib/fo-activity";
 
@@ -148,10 +149,10 @@ export function AgentChat({
   /**
    * Whether this thread can be added to.
    *
-   * False when a stored answer is longer than `MAX_TEXT`, which the route
-   * reports. Such a thread can be read but not continued: posting it back as
-   * context would be rejected, and truncating what FabOrchestrator said to make
-   * it fit would misrepresent the product.
+   * False when a stored thread is too large to post back with a question
+   * (`isContinuable`), which the route reports. Such a thread can be read but
+   * not continued: posting it back as context would be rejected, and truncating
+   * what FabOrchestrator said to make it fit would misrepresent the product.
    */
   continuable?: boolean;
   /** Called once, with the id FO assigned, when the first question creates one. */
@@ -294,9 +295,11 @@ export function AgentChat({
         return;
       }
 
-      const userId = `u-${Date.now()}`;
-      const assistantId = `a-${Date.now()}`;
+      const askedAt = Date.now();
+      const userId = `u-${askedAt}`;
+      const assistantId = `a-${askedAt}`;
       const history = historyFor(live.current.turns, prompt, userId);
+      const questionsAsked = history.filter((turn) => turn.role === "user").length;
 
       setInput("");
       setLastPrompt(prompt);
@@ -305,6 +308,15 @@ export function AgentChat({
 
       const controller = new AbortController();
       abortRef.current = controller;
+
+      // Whether the app left the screen at any point during this turn — which
+      // is what explains a dropped connection, when there is nothing to fetch
+      // the answer back from. Watched for the turn only.
+      let leftScreen = document.visibilityState === "hidden";
+      const noteLeaving = () => {
+        if (document.visibilityState === "hidden") leftScreen = true;
+      };
+      document.addEventListener("visibilitychange", noteLeaving);
 
       void (async () => {
         /**
@@ -426,18 +438,50 @@ export function AgentChat({
             dispatch({ type: "stopped" });
             return;
           }
-          // The reader threw: the connection went away part-way through. Its own
-          // code, because "retry" is the right offer here and is not the right
-          // offer for a quota or a permission.
+          clearTimeout(beginWatch);
+
+          // The connection went away part-way through — most often because the
+          // app was minimised or the phone locked (2026-09-29). If FO is saving
+          // this conversation it finishes the answer anyway (the route reads it
+          // to the end), so fetch it from there rather than calling it lost.
+          // Stop still works while this runs: the composer stays busy.
+          const savedIn = conversationRef.current;
+          if (savedIn) {
+            dispatch({ type: "recovering" });
+            const text = await recoverAnswer({
+              conversationId: savedIn,
+              prompt,
+              questionsAsked,
+              askedAt,
+              signal: controller.signal,
+              load: loadSavedTurns,
+            });
+            if (text) {
+              dispatch({ type: "recovered", text });
+              return;
+            }
+            if (controller.signal.aborted) {
+              dispatch({ type: "stopped" });
+              return;
+            }
+          }
+
+          // Its own code, because "retry" is the right offer here and is not the
+          // right offer for a quota or a permission.
           dispatch({
             type: "failed",
             failure: {
               code: "connection_lost",
-              message: "The connection to FabOrchestrator dropped part-way through the answer.",
+              message: savedIn
+                ? "The connection to FabOrchestrator dropped part-way through the answer, and the rest could not be fetched back."
+                : leftScreen
+                  ? "The answer was cut off when the app left the screen. This agent's answers are not saved, so it cannot be fetched back."
+                  : "The connection to FabOrchestrator dropped part-way through the answer.",
             },
           });
         } finally {
           clearTimeout(beginWatch);
+          document.removeEventListener("visibilitychange", noteLeaving);
           inFlight.current = false;
           abortRef.current = null;
         }
@@ -599,6 +643,29 @@ export function AgentChat({
   );
 }
 
+/**
+ * FabOrchestrator's saved copy of a thread, for `recoverAnswer`.
+ *
+ * The same request `agent-chat-client.tsx` makes to open a thread. A 401 or 404
+ * means it can never be had — signed out, or the thread deleted — so there is
+ * no point asking again; anything else may be the network still coming back.
+ */
+async function loadSavedTurns(
+  conversationId: string,
+  signal: AbortSignal,
+): Promise<Turn[] | "gone" | null> {
+  const res = await fetch(`/api/faborch/conversations/${encodeURIComponent(conversationId)}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}` },
+    signal,
+  });
+  if (res.status === 401 || res.status === 404) return "gone";
+  if (!res.ok) return null;
+  // Reading a thread is a call FabOrchestrator counts as activity.
+  markFoActivity();
+  const body = (await res.json().catch(() => null)) as { turns?: unknown } | null;
+  return Array.isArray(body?.turns) ? (body.turns as Turn[]) : null;
+}
+
 /* ── Turns ───────────────────────────────────────────────────────────────── */
 
 function UserTurn({ text }: { text: string }) {
@@ -721,6 +788,8 @@ function AssistantTurn({
  *  - **working**   — is it doing something? (and what: FO's own tool name)
  *  - **answering** — is it nearly there?
  *  - **stalled**   — should I still be waiting?
+ *  - **recovering** — the connection dropped: is the answer lost? (It is being
+ *    fetched from where FabOrchestrator saved it.)
  *
  * The tool name is FO's, shown unprettified. A name this app invented for
  * somebody else's tool would be a name nobody could search for.
@@ -789,9 +858,11 @@ function Working({ phase, activity }: { phase: ConversationPhase; activity: stri
           />
         ))}
       </span>
-      {phase === "working" && activity
-        ? `FabOrchestrator is running ${activity}…`
-        : "Sent to FabOrchestrator…"}
+      {phase === "recovering"
+        ? "The connection dropped. Fetching the full answer from FabOrchestrator…"
+        : phase === "working" && activity
+          ? `FabOrchestrator is running ${activity}…`
+          : "Sent to FabOrchestrator…"}
     </div>
   );
 }
@@ -983,12 +1054,16 @@ function FailureNotice({
     );
   }
 
-  // The two this app raises before calling FO at all. They are not platform
+  // The ones this app raises before calling FO at all. They are not platform
   // failures and nothing is wrong with the answers above, so the way out is a
   // fresh thread rather than a retry — offered here, because a notice that
   // names a dead end without one is the notice that sends somebody looking for
   // whoever set the demo up.
-  if (failure.code === "conversation_full" || failure.code === "conversation_too_long") {
+  if (
+    failure.code === "conversation_full" ||
+    failure.code === "conversation_too_long" ||
+    failure.code === "conversation_too_large"
+  ) {
     return (
       <div className="fab-card flex flex-col gap-[10px] px-[20px] py-[18px]">
         <h2 className="text-[16px]" style={{ color: "var(--text-ink)" }}>

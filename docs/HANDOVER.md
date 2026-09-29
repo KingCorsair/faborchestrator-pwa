@@ -32,7 +32,7 @@ npm install                 # playwright is a devDependency, for the checks
 npx playwright install chromium   # once, for the browser-driven checks
 cp .env.example .env        # then fill in the values below
 npm run dev                 # http://localhost:3002
-npm test                    # 509 tests, no network needed
+npm test                    # 545 tests, no network needed
 npm run build && npm start  # production build, same port
 ```
 
@@ -91,12 +91,14 @@ FabOrchestrator or the network between, and the app is written to say which.
 | "No data connections are enabled for your account" | The account has no MCP connections | An administrator assigns them in FO. **Yield, scrap and OEE still answer** — they use FO's metric path, which never touches MCP |
 | "Nothing has arrived for 45 seconds" | Three missed keep-alives, or no answer has begun yet | Usually a long tool call. It may still complete; the turn is not cancelled |
 | "FabOrchestrator did not answer within 15 seconds" (or 60) | FO is reachable but too slow: 15 s for lookups and sign-in, 60 s for an answer to begin | Try again. If it persists, FO needs attention — the log has an incident id |
-| The answer stops mid-sentence with a warning | The connection dropped | What arrived is kept and marked incomplete. Ask again |
+| "The connection dropped. Fetching the full answer from FabOrchestrator…" | The phone lost its connection mid-answer: the app was minimised, the screen locked, or the signal went | Nothing. FabOrchestrator finished and saved the answer, and it appears in full once the phone is back — within seconds if FO had already finished |
+| The answer stops mid-sentence with a warning | The connection dropped and the rest could not be fetched back: the Back-end Agent keeps no history, or FO had not saved the answer within six minutes | What arrived is kept and marked incomplete. Ask again |
 | "No activity for a while. FabOrchestrator signs you out in N minutes" | FO's 30-minute idle rule is five minutes away | Press **Stay signed in**, or just carry on — any question or report resets it |
 | "FabOrchestrator has probably signed you out" | 30 minutes without activity | **Sign in again**. A question may still go through if the session survived |
 | "Too many sign-in attempts" | Eight wrong passwords from one address | Wait ten minutes. A correct password is never throttled |
 | "This browser is blocking the storage sign-in needs" | Site data is blocked, or a private mode refuses storage | Allow the site to store data, or leave private browsing |
 | "Something went wrong on this screen", with a reference | A bug in this app, caught by the crash screen | Ask for the reference: it is the `"where":"client"` line in the log. Try again, or Reset and reload |
+| "This conversation is full" | The conversation has reached 100 messages, or 4 MB in all — every question carries the whole conversation back as context | Start a new conversation; the answers above stay on screen until you do. A single long answer, such as a dashboard, does not cause this any more |
 | "That conversation is too large to send in one request" | A request over the size ceiling. The screen's own limits sit below it, so this should not happen | Start a new conversation, and report it — it means a limit has drifted |
 
 **Every failure carries a code** (`docs/STATUS.md` has the table, the source is

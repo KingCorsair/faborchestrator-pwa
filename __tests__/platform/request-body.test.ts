@@ -22,7 +22,13 @@ import {
   LOGIN_BODY_LIMIT,
   LoginSchema,
 } from "../../lib/validation";
-import { MAX_MESSAGES, MAX_TEXT, toFoMessages, type Turn } from "../../lib/faborch/conversation";
+import {
+  MAX_QUESTION,
+  capacityIssue,
+  requestBytes,
+  toFoMessages,
+  type Turn,
+} from "../../lib/faborch/conversation";
 
 const post = (body: BodyInit | null, headers: Record<string, string> = {}) =>
   new Request("https://pwa.test/api/x", {
@@ -127,30 +133,36 @@ describe("the limits sit above everything the app's own screens send", () => {
   /** The worst character to JSON-encode: a control character, written as `\u0001`. */
   const WORST = "\u0001";
 
-  test("the largest conversation the chat screen can post fits under CHAT_BODY_LIMIT", () => {
-    // MAX_MESSAGES turns of MAX_TEXT characters each, every one of them the most
-    // expensive to encode, plus a conversation id — built by the same function
-    // the screen uses. Anything the capacity checks let through must fit.
-    const text = WORST.repeat(MAX_TEXT);
-    const turns: Turn[] = Array.from({ length: MAX_MESSAGES }, (_, i) => ({
-      id: `t${i}`,
-      role: i % 2 === 0 ? "user" : "assistant",
-      text,
-    }));
+  test("the largest conversation the chat screen will post fits under CHAT_BODY_LIMIT", () => {
+    // The screen measures its own request (`capacityIssue`), so the largest body
+    // it sends is one that measures just under the limit — built here from the
+    // most expensive characters to encode, with the same function the screen
+    // uses, and posted with a real conversation id.
+    const question = "and the last product with WIP?";
+    const answer = (chars: number): Turn[] => [
+      { id: "u1", role: "user", text: "the dashboard, please" },
+      { id: "a1", role: "assistant", text: WORST.repeat(chars) },
+    ];
+    // Each of these characters costs exactly six bytes once encoded, so this is
+    // the most that measures within the limit…
+    const chars = Math.floor((CHAT_BODY_LIMIT - requestBytes(answer(0), question)) / 6);
+    assert.equal(capacityIssue(answer(chars), question), null, "the screen sends this one");
+    // …and one more character is refused by the screen, before it is sent.
+    assert.deepEqual(capacityIssue(answer(chars + 1), question), { kind: "thread-too-large" });
+
     const body = JSON.stringify({
-      messages: toFoMessages(turns),
+      messages: toFoMessages([...answer(chars), { id: "u2", role: "user", text: question }]),
       conversationId: "7b0f6a52-3c55-4a4e-9a51-5d1f2d6c9e10",
     });
-
     assert.ok(FabInsightRequestSchema.safeParse(JSON.parse(body)).success, "the schema accepts it");
     const bytes = Buffer.byteLength(body);
     assert.ok(bytes <= CHAT_BODY_LIMIT, `${bytes} bytes exceeds the ${CHAT_BODY_LIMIT}-byte limit`);
   });
 
-  test("and it is still a limit", () => {
-    // About 12 MB. Pinned so it cannot grow unnoticed into something that
-    // protects nothing on a 512 MB machine.
-    assert.ok(CHAT_BODY_LIMIT < 16 * 1024 * 1024, `CHAT_BODY_LIMIT is ${CHAT_BODY_LIMIT}`);
+  test("and it is still a limit, under what Vercel lets a request carry", () => {
+    // Vercel answers 413 itself above 4.5 MB, in words that are not this app's.
+    // Pinned so the limit cannot grow past it unnoticed.
+    assert.ok(CHAT_BODY_LIMIT < 4_500_000, `CHAT_BODY_LIMIT is ${CHAT_BODY_LIMIT}`);
   });
 
   test("the longest legal credentials fit under LOGIN_BODY_LIMIT", () => {
@@ -161,7 +173,7 @@ describe("the limits sit above everything the app's own screens send", () => {
   });
 
   test("the longest legal title fits under CREATE_CONVERSATION_BODY_LIMIT", () => {
-    const body = JSON.stringify({ title: WORST.repeat(MAX_TEXT) });
+    const body = JSON.stringify({ title: WORST.repeat(MAX_QUESTION) });
     assert.ok(CreateConversationSchema.safeParse(JSON.parse(body)).success);
     assert.ok(Buffer.byteLength(body) <= CREATE_CONVERSATION_BODY_LIMIT);
   });

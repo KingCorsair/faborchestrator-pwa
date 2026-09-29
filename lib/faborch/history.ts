@@ -36,15 +36,16 @@
  * once the tool parts are gone is dropped rather than shown as a blank bubble.
  *
  * ── The one thing this cannot fix ───────────────────────────────────────────
- * `MAX_TEXT` caps a single message at 20,000 characters, because that is what
- * `FabInsightRequestSchema` accepts. A stored FO answer longer than that can be
- * *read* here but cannot be posted back as context, so the thread cannot be
- * continued. That is a real limit, and `capacityIssue` in `conversation.ts`
- * already names it — this module reports the fact and lets the screen say so,
- * rather than silently truncating an answer and making FO look wrong.
+ * A thread is posted back whole with every question, and the route reads at
+ * most `MAX_BODY_BYTES` (4 MB). A stored thread larger than that can be *read*
+ * here but not continued. That is a real limit, and `capacityIssue` in
+ * `conversation.ts` already names it — this module reports the fact and lets
+ * the screen say so, rather than silently truncating an answer and making FO
+ * look wrong. (Until 2026-09-29 the limit was 20,000 characters per answer, so
+ * any thread with a dashboard in it could not be continued.)
  */
 
-import type { Turn } from "./conversation";
+import { capacityIssue, type Turn } from "./conversation";
 
 /** One stored message, in the shape `toUIMessage` produces. */
 export interface FoStoredMessage {
@@ -177,12 +178,12 @@ export function toSummaries(rows: unknown): FoConversationSummary[] {
 }
 
 /**
- * Is every turn short enough to be posted back to FabOrchestrator?
+ * Can a thread being *loaded* take another question at all?
  *
- * Read separately from `capacityIssue` because the two answer different
- * questions at different moments: this one asks whether a thread being *loaded*
- * can be continued at all, before the operator types anything into it.
+ * Asked before the operator types anything, so it is `capacityIssue` with the
+ * shortest possible question: the same rules the screen checks at send time,
+ * so a thread offered for continuing is never refused on the first question.
  */
-export function isContinuable(turns: Turn[], maxText: number): boolean {
-  return turns.every((turn) => turn.text.length <= maxText);
+export function isContinuable(turns: Turn[]): boolean {
+  return capacityIssue(turns, "") === null;
 }

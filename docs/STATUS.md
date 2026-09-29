@@ -44,6 +44,36 @@ hand; and the Edge run against a silent stand-in FabOrchestrator. One new lint
 rule asked for `router.push` in the sign-out link; the whole-document
 navigation there is deliberate, so the rule is off on that line, with the reason.
 
+**29 September: an answer interrupted by minimising the app is fetched back
+whole.** Reported: minimise the app mid-answer, come back, and the screen says
+"This answer stopped part-way and is incomplete". The phone loses its
+connection when it suspends the page, and the chat route passed that on to
+FabOrchestrator — which keeps generating (`consumeStream`) but saves the answer
+only once its stream is read to the end, so the answer was lost for good. Now,
+for a conversation FO is saving, the route reads FO's answer to the end even
+after the phone has gone (`lib/faborch/keep-reading.ts`), and the screen fetches
+the saved answer when the phone is back (`lib/faborch/recover.ts`). The Back-end
+Agent keeps no history, so there it says plainly that the answer was cut off
+when the app left the screen. Proved by 30 new tests and in Edge, against a
+stand-in FabOrchestrator that saves the way FO does, with the phone's
+connections cut mid-answer: minimised and back → the full answer, no badge; the
+signal dropped with the app open → the same; Stop and follow-ups unchanged.
+**Not yet proved** on an iPhone, or against the live FabOrchestrator.
+
+**29 September: a conversation is no longer "full" after its first dashboard.**
+Reported: "This conversation is full" after about four questions. Every message
+was capped at 20,000 characters, answers included, and an answer with a
+dashboard is longer than that — so the next question could not carry it back as
+context. The cap was this app's own: FabOrchestrator sets no limit on a message,
+accepts 50 MB, and trims long conversations to the model's context window
+itself. Now a question is capped at 20,000 characters, an answer at a million,
+and the conversation as a whole at 4 MB (`CHAT_BODY_LIMIT`), under the 4.5 MB a
+Vercel function accepts; the screen measures its own request before sending and
+says so, with a way out, if it is over. Proved by 6 more tests (545 in all) and
+in Edge: eight questions in one conversation, each answered with a
+60,000-character dashboard — the eighth carried all eight answers back (413 KB)
+and nothing said "full".
+
 **Phases 0 to 5 are complete.** Every build package is done, and the handover
 pass is finished: the whole suite re-run against the deployed app, a security
 review of the running deployment, the five user journeys walked end to end, and
@@ -401,6 +431,11 @@ the request is made, and the screen says the conversation is full and offers a
 new one. **It still does not truncate** — whether it should is PRD §9, an open
 question, and quietly dropping the start of somebody's thread is not a choice to
 make by accident inside a work package.
+
+*Superseded 29 September: the 20,000-character cap was this app's, not
+FabOrchestrator's, and it made a thread full after its first dashboard. An
+answer is no longer capped; a thread is bounded at 4 MB. See the top of this
+file.*
 
 ### Phase 3 — complete
 
@@ -1006,11 +1041,12 @@ generated SQL and returned rows, none of which this app renders.
 FO's `toUIMessage` passes unrecognised parts through verbatim: a part type added
 to FabOrchestrator tomorrow must not reach a screen that has never heard of it.
 
-One limit is reported rather than hidden. `FabInsightRequestSchema` caps a
-message at 20,000 characters, so a stored answer longer than that can be read
-here but not continued — the composer is replaced by a line saying so and
-offering a new chat. Truncating what FabOrchestrator said to make a request fit
-would misrepresent the product.
+One limit is reported rather than hidden. A thread is posted back whole with
+each question and the route reads at most 4 MB, so a stored thread larger than
+that can be read here but not continued — the composer is replaced by a line
+saying so and offering a new chat. Truncating what FabOrchestrator said to make
+a request fit would misrepresent the product. (Until 29 September the limit was
+20,000 characters per message, which caught every thread with a dashboard.)
 
 ### An id from a browser is proved, never trusted
 
@@ -1116,7 +1152,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 509 tests, no network needed
+npm test                          # 545 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 

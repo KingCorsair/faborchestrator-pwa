@@ -21,3 +21,7 @@ qr/
 .DS_Store
 *.pem
 npm-debug.log*
+
+# The Vercel CLI's link to the project (`vercel link`), local to one machine.
+# Its `.env.local` is covered by the `.env*.local` line above.
+.vercel

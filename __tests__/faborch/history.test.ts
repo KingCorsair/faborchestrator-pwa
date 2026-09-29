@@ -12,7 +12,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { toTurns, toSummaries, isContinuable } from "../../lib/faborch/history";
-import { MAX_TEXT } from "../../lib/faborch/conversation";
+import { MAX_ANSWER, MAX_BODY_BYTES } from "../../lib/faborch/conversation";
 
 /** A real assistant message from FO: text, split by tool work, with markers. */
 const realAssistantMessage = {
@@ -352,18 +352,31 @@ describe("the list rows the drawer shows", () => {
 
 describe("whether a loaded thread can be continued", () => {
   test("an ordinary thread can", () => {
-    assert.ok(isContinuable(toTurns([realAssistantMessage]), MAX_TEXT));
+    assert.ok(isContinuable(toTurns([realAssistantMessage])));
+  });
+
+  test("a thread with a dashboard in it can (2026-09-29)", () => {
+    // Every message used to be capped at 20,000 characters, so any stored
+    // thread holding a dashboard opened read-only.
+    const dashboard = { role: "assistant", content: "x".repeat(60_000) };
+    assert.ok(isContinuable(toTurns([{ role: "user", content: "dashboard?" }, dashboard])));
   });
 
   test("a thread with an answer over the cap cannot", () => {
     // The composer is disabled and the screen says why, rather than letting the
     // route reject it with "Too big: expected array to have <=100 items".
-    const huge = { role: "assistant", content: "x".repeat(MAX_TEXT + 1) };
-    assert.equal(isContinuable(toTurns([huge]), MAX_TEXT), false);
+    const huge = { role: "assistant", content: "x".repeat(MAX_ANSWER + 1) };
+    assert.equal(isContinuable(toTurns([huge])), false);
   });
 
   test("exactly at the cap is still continuable", () => {
-    const atCap = { role: "assistant", content: "x".repeat(MAX_TEXT) };
-    assert.ok(isContinuable(toTurns([atCap]), MAX_TEXT));
+    const atCap = { role: "assistant", content: "x".repeat(MAX_ANSWER) };
+    assert.ok(isContinuable(toTurns([atCap])));
+  });
+
+  test("a thread too large to post back cannot", () => {
+    const answers = Array.from({ length: 5 }, () => ({ role: "assistant", content: "x".repeat(900_000) }));
+    assert.ok(5 * 900_000 > MAX_BODY_BYTES);
+    assert.equal(isContinuable(toTurns(answers)), false);
   });
 });

@@ -173,10 +173,11 @@ different numbers for the same question in one meeting.
 
 ## 7. What the 28 September work still needs checked, and switched on
 
-The scalability and reliability changes on branch `chetan`, and the Next.js
-security upgrade of 29 September, pass 509 tests and were checked live against
-a stand-in FabOrchestrator and in Microsoft Edge. Four things could not be
-checked from a development machine:
+The scalability and reliability changes on branch `chetan`, and the 29 September
+work (the Next.js security upgrade, the fetched-back answer, the conversation
+size limit), pass 545 tests and were checked live against a stand-in
+FabOrchestrator and in Microsoft Edge. Four things could not be checked from a
+development machine:
 
 1. **The live FabOrchestrator.** The operator's role is read from FO's
    `/api/auth/me` at sign-in, and the idle warning assumes FO's 30-minute rule —
@@ -184,7 +185,9 @@ checked from a development machine:
    against the deployment. After
    deploying, sign in once and confirm the right role appears under the name.
 2. **iPhone Safari.** The idle banners, the crash screen and the not-found page
-   were checked in Edge only.
+   were checked in Edge only — and so was fetching an answer back: on an
+   iPhone, ask a long question, lock the screen for ten seconds, and unlock.
+   The whole answer should appear, without "stopped part-way".
 3. **The two optional settings.** The shared sign-in lockout needs
    `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; alerts need
    `ERROR_ALERT_WEBHOOK_URL`. Both were tested against stand-ins. Once set, one

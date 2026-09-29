@@ -312,8 +312,16 @@ has its own conversation history the app does not currently use. Persisting
 raises questions about where history lives and who can see it.
 
 **OPEN QUESTION — What should happen to a very long conversation?** The app
-sends the whole thread each turn, and FabOrchestrator's route accepts at most
-**100 messages of 20,000 characters**.
+sends the whole thread each turn. FabOrchestrator sets no limit on a message,
+accepts requests up to 50 MB, and trims a long conversation to the model's
+context window itself. The limits are this app's: **100 messages, or 4 MB in
+all** — under the 4.5 MB a request to a Vercel function may carry.
+
+*Correction, 29 September: this said FabOrchestrator's route accepts at most 100
+messages of 20,000 characters. Those were this app's own limits, not
+FabOrchestrator's, and 20,000 characters per answer made a thread "full" after
+its first dashboard — reported after four questions. An answer is no longer
+capped; the conversation as a whole is.*
 
 *Correction, 2 September: version 1.0 of this document said the beginning was
 silently lost beyond the cap. That was wrong. Nothing in the app truncates

@@ -29,7 +29,6 @@ import {
   foConversation,
   foSetPinned,
 } from "@/lib/faborch/client";
-import { MAX_TEXT } from "@/lib/faborch/conversation";
 import { isContinuable, toTurns } from "@/lib/faborch/history";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
 import { reportError } from "@/lib/report-error";
@@ -111,13 +110,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       /**
        * Whether this thread can be added to.
        *
-       * `FabInsightRequestSchema` caps one message at 20,000 characters, so a
-       * stored FabOrchestrator answer longer than that can be read here but
-       * cannot be posted back as context. Reported as a fact rather than fixed
-       * by truncation: shortening what FO said, silently, to make a request fit
-       * would make the product look like it answered something it did not.
+       * The whole thread is posted back with every question, and the chat route
+       * reads at most 4 MB, so a stored thread larger than that can be read here
+       * but not continued. Reported as a fact rather than fixed by truncation:
+       * shortening what FO said, silently, to make a request fit would make the
+       * product look like it answered something it did not.
        */
-      continuable: isContinuable(turns, MAX_TEXT),
+      continuable: isContinuable(turns),
     });
   } catch (error) {
     return failed(error, "That conversation is unavailable right now.");

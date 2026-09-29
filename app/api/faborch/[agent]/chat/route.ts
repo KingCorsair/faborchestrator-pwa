@@ -40,7 +40,7 @@
  * would break the 15s keep-alive frames that exist to hold the connection open.
  */
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth-middleware";
 import { foAgent } from "@/lib/faborch/agents";
 import {
@@ -50,6 +50,7 @@ import {
   foErrorTextOf,
 } from "@/lib/faborch/client";
 import { codeForStatus, splitErrorId, statusForCode, type PwaErrorCode } from "@/lib/faborch/errors";
+import { keepReading } from "@/lib/faborch/keep-reading";
 import { ownsConversation } from "@/lib/faborch/owns";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
 import { connectedMcpIds } from "@/lib/faborch/tools";
@@ -63,8 +64,9 @@ import { CHAT_BODY_LIMIT, FabInsightRequestSchema } from "@/lib/validation";
  * **Read only by hosts that impose a limit of their own**, such as Vercel. On a
  * long-lived server like Fly's, nothing reads it, and until 2026-09-28 a turn
  * there had no limit at all. What bounds one now is `fetchFo`'s limit on how
- * long FabOrchestrator may take to begin answering, and the stall watchdog on
- * the answer itself (`lib/faborch/stream.ts`). Kept for the hosts that do
+ * long FabOrchestrator may take to begin answering, the stall watchdog on the
+ * answer itself (`lib/faborch/stream.ts`), and, for a turn read to the end
+ * after the phone has gone, `KEEP_READING_LIMIT_MS`. Kept for the hosts that do
  * read it.
  */
 export const maxDuration = 300;
@@ -167,9 +169,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
       conversationId,
       activeMcpIds,
       path: agent.foPath,
-      // Client disconnects propagate, so FO is not left streaming into nothing
-      // when the operator navigates away.
-      signal: req.signal,
+      // A turn FO is writing down is read to the end even if the phone goes —
+      // a minimised app or a locked screen — so FO can save it and the screen
+      // can fetch it back. See `lib/faborch/keep-reading.ts`. Any other turn
+      // still ends when the phone does, since there is nothing to save.
+      signal: conversationId ? undefined : req.signal,
     });
 
     if (upstream.status === 401) {
@@ -244,7 +248,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
       headers["X-FabOrch-Data-Connections"] = String(activeMcpIds.length);
     }
 
-    return new Response(upstream.body, { status: 200, headers });
+    if (!conversationId) return new Response(upstream.body, { status: 200, headers });
+
+    const { forPhone, finished } = keepReading(upstream.body);
+    try {
+      // Keeps a serverless host from freezing this function the moment the
+      // phone disconnects, before FO has finished. On a long-lived server it
+      // changes nothing: the reading carries on either way.
+      after(finished);
+    } catch {
+      // `after` exists only inside a request Next is serving, and the tests
+      // call this handler directly. The reading still happens there.
+    }
+    return new Response(forPhone, { status: 200, headers });
   } catch (error) {
     if (error instanceof FabOrchNotConfiguredError) {
       return fail("not_configured", error.message, 503);

@@ -25,6 +25,9 @@
  *   POST /api/chat             app/api/chat/route.ts:139
  *                              Bearer + {messages, model, activeMcpIds, …}
  *                              → an AI SDK UI-message stream (SSE)
+ *   GET  /api/files/{id}/download
+ *                              app/api/files/[fileId]/download/route.ts
+ *                              → a file FO's model made, as an attachment
  *
  * Nothing here was invented. If FO's contract changes, this file is the whole
  * blast radius.
@@ -83,6 +86,13 @@ export const FO_ANSWER_START_TIMEOUT_MS = 60_000;
  * The cookie is dropped either way — see `app/api/auth/logout/route.ts`.
  */
 export const FO_SIGN_OUT_TIMEOUT_MS = 5_000;
+
+/**
+ * How long FabOrchestrator may take to begin sending a file (2026-09-29). It
+ * fetches the whole file from Anthropic's Files API before answering, so a
+ * large deck is slow to start; the bytes then arrive for as long as they take.
+ */
+export const FO_FILE_TIMEOUT_MS = 60_000;
 
 /** Thrown when the integration is not configured. Never a bad password. */
 export class FabOrchNotConfiguredError extends Error {}
@@ -468,6 +478,23 @@ export async function foConversation(token: string, id: string): Promise<unknown
     );
   }
   return res.json();
+}
+
+/**
+ * A file FabOrchestrator's model made, returned unread for the route to relay.
+ *
+ * **FO checks only that the caller is signed in, not that the file is theirs**
+ * (`app/api/files/[fileId]/download/route.ts`: `requireAuth`, then straight to
+ * the Files API). So an id reaching here must already have been found in one
+ * of the caller's own conversations — `app/api/faborch/files/[fileId]/route.ts`
+ * does that first. Never pass an id straight out of a request.
+ */
+export async function foFileDownload(token: string, fileId: string): Promise<Response> {
+  return fetchFo(
+    `/api/files/${encodeURIComponent(fileId)}/download`,
+    { headers: authHeader(token) },
+    { timeoutMs: FO_FILE_TIMEOUT_MS, stream: true },
+  );
 }
 
 /**

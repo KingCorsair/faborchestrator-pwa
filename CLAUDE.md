@@ -96,6 +96,8 @@ FO writes the turn down.
 | `lib/faborch/agents.ts` | The agent registry: FabInsight and the Back-end Agent |
 | `lib/faborch/owns.ts`, `tools.ts` | The two lookups a question needs, remembered briefly |
 | `lib/faborch/keep-reading.ts`, `recover.ts` | An answer the phone lost part-way (app minimised, screen locked): read to the end on the server so FO saves it, then fetched back on the phone |
+| `lib/faborch/files.ts`, `lib/save-file.ts` | Files FO's model makes (a deck, a spreadsheet) and dashboards saved as files; putting them on the device — the share sheet on an iPhone |
+| `app/api/faborch/files/[fileId]` | A file download, **after** finding the file in one of the caller's own conversations — FO's own download route does not check whose it is |
 | `lib/faborch/session.ts` | The FabOrchestrator token's httpOnly cookie |
 | `lib/faborch/artifacts.ts` | The artifact parser, ported from FabOrchestrator |
 | `lib/auth.ts`, `lib/auth-middleware.ts` | This app's signed pass, and `requireAuth` |
@@ -262,7 +264,7 @@ it are the product's login page, `components/cockpit/cockpit-nav.tsx` and
 ## Testing
 
 ```bash
-npm test           # 545 tests, no network
+npm test           # 568 tests, no network
 npm run typecheck
 npm run lint
 npm run build

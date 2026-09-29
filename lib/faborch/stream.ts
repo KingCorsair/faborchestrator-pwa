@@ -30,9 +30,16 @@
  *  - `reasoning-*` — FO asks for these (`sendReasoning: true`). The product has
  *    a panel for thinking; this screen does not, and half-rendering it would be
  *    worse than not showing it.
- *  - `tool-output-*`, `data-fileDownload`, `source-*` — the answer already
- *    contains what the tools found.
+ *  - `tool-output-*`, `source-*` — the answer already contains what the tools
+ *    found.
+ *
+ * `data-fileDownload` was dropped too, until 2026-09-29: it is how FO announces
+ * a file its model made — a PowerPoint deck, a spreadsheet — and dropping it
+ * meant a deck the operator asked for never appeared. It is now a `file` event
+ * (`lib/faborch/files.ts`).
  */
+
+import { toFoFile, type FoFile } from "./files";
 
 /** Everything this interface can learn from FO's stream. */
 export type FoStreamEvent =
@@ -42,6 +49,8 @@ export type FoStreamEvent =
   | { type: "tool"; name: string }
   /** FO failed mid-stream. Its own message, including any `errorId`. */
   | { type: "error"; message: string }
+  /** FO made a file for this answer. Offered for download beneath it. */
+  | { type: "file"; file: FoFile }
   /**
    * Nothing at all has arrived for `STALL_MS` — three missed keep-alives.
    *
@@ -109,6 +118,13 @@ function toEvent(frame: Record<string, unknown>): FoStreamEvent | null {
       return typeof frame.toolName === "string"
         ? { type: "tool", name: frame.toolName }
         : null;
+
+    // `{ fileId, filename, mimeType, sizeBytes }`, written by FO after the
+    // model has finished. A frame without a usable id is not a file.
+    case "data-fileDownload": {
+      const file = toFoFile(frame.data);
+      return file ? { type: "file", file } : null;
+    }
 
     // FO's stream-level failure. `onError` in its route returns the user-facing
     // message plus `errorId=…` for anything unmapped, which is the string a

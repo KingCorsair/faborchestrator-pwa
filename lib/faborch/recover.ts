@@ -27,11 +27,18 @@
  */
 
 import type { Turn } from "./conversation";
+import { withFile, type FoFile } from "./files";
 
 export type StoredAnswer =
-  | { kind: "answered"; text: string }
+  | { kind: "answered"; text: string; files: FoFile[] }
   | { kind: "working" }
   | { kind: "missing" };
+
+/** An answer fetched back: its text, and any file FO made with it. */
+export interface RecoveredAnswer {
+  text: string;
+  files: FoFile[];
+}
 
 /**
  * Where FabOrchestrator's saved copy of the thread stands on the question just
@@ -60,12 +67,14 @@ export function storedAnswer(stored: Turn[], prompt: string, questionsAsked: num
     return { kind: "missing" };
   }
 
-  const answer = stored
-    .slice(lastQuestion + 1)
-    .filter((turn) => turn.role === "assistant" && turn.text.trim())
+  const replies = stored.slice(lastQuestion + 1).filter((turn) => turn.role === "assistant");
+  const text = replies
+    .filter((turn) => turn.text.trim())
     .map((turn) => turn.text)
     .join("\n\n");
-  return answer ? { kind: "answered", text: answer } : { kind: "working" };
+  let files: FoFile[] = [];
+  for (const file of replies.flatMap((turn) => turn.files ?? [])) files = withFile(files, file);
+  return text || files.length ? { kind: "answered", text, files } : { kind: "working" };
 }
 
 /** How often to look while FabOrchestrator is still answering. */
@@ -115,7 +124,7 @@ export interface RecoverOptions {
  * Always looks at least once, however late the phone comes back — an answer
  * finished long ago is the easiest one to fetch.
  */
-export async function recoverAnswer(options: RecoverOptions): Promise<string | null> {
+export async function recoverAnswer(options: RecoverOptions): Promise<RecoveredAnswer | null> {
   const now = options.now ?? Date.now;
   const wait = options.wait ?? pause;
   const whenVisible = options.whenVisible ?? onScreen;
@@ -133,7 +142,7 @@ export async function recoverAnswer(options: RecoverOptions): Promise<string | n
 
     if (stored) {
       const found = storedAnswer(stored, options.prompt, options.questionsAsked);
-      if (found.kind === "answered") return found.text;
+      if (found.kind === "answered") return { text: found.text, files: found.files };
       if (found.kind === "missing" && now() - started >= RECOVER_MISSING_GRACE_MS) return null;
     }
 

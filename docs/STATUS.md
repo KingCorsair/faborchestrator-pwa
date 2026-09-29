@@ -74,6 +74,22 @@ in Edge: eight questions in one conversation, each answered with a
 60,000-character dashboard — the eighth carried all eight answers back (413 KB)
 and nothing said "full".
 
+**29 September: dashboards and PowerPoint decks can be downloaded.** Asked for:
+"download options to dashboard and ppt". A dashboard's full-screen view has a
+Download button that saves FO's document as an `.html` file — what FO's own
+website gives. A file FO's model makes (a deck, a spreadsheet, a PDF) was
+announced by FO and dropped here, so it never appeared; it now shows as a card
+under the answer with a Download button, live and in threads reopened from
+history. Files come through `GET /api/faborch/files/[fileId]`, which fetches a
+file only after finding it in one of the caller's own conversations: FO's own
+download route checks that the caller is signed in and nothing more. They are
+served as attachments that cannot run as a page here. On an iPhone, Download
+opens the share sheet ("Save to Files"), since an installed web app there has
+nowhere to download to. Proved by 23 new tests (568 in all) and in Edge against
+a stand-in FabOrchestrator: a deck downloaded as `WIP by line.pptx`, a
+dashboard as `Analytics_Dashboard.html`, the deck again from the reopened
+thread, and somebody else's file id refused with FO never asked.
+
 **Phases 0 to 5 are complete.** Every build package is done, and the handover
 pass is finished: the whole suite re-run against the deployed app, a security
 review of the running deployment, the five user journeys walked end to end, and
@@ -1152,7 +1168,7 @@ Sign in with a **FabOrchestrator account**. There is no demo credential any
 more; a session that could not use the platform was worse than no session.
 
 ```bash
-npm test                          # 545 tests, no network needed
+npm test                          # 568 tests, no network needed
 npx tsx scripts/probe-faborch.ts  # the five live environment probes
 npx tsx scripts/e1-live-check.ts  # the M1 gate, against a running app
 

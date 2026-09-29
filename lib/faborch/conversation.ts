@@ -20,11 +20,19 @@
  * whole arrangement goes.
  */
 
+import { withFile, type FoFile } from "./files";
+
 /** One turn, in the shape `/api/faborch/[agent]/chat` accepts and FO understands. */
 export interface Turn {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /**
+   * Files FabOrchestrator made for this answer — a deck, a spreadsheet — to
+   * download beneath it (`lib/faborch/files.ts`). Never posted back: FO drops
+   * them from a request's history itself, and the text says what they hold.
+   */
+  files?: FoFile[];
   /**
    * The answer stopped before it finished, and not because the user said so.
    *
@@ -94,6 +102,8 @@ export type ConversationAction =
   | { type: "delta"; delta: string }
   /** FO started a tool. */
   | { type: "activity"; name: string }
+  /** FO made a file for the answer being written. */
+  | { type: "file"; file: FoFile }
   /** The turn failed — before it began, or part-way through. */
   | { type: "failed"; failure: Failure }
   /** The stream ended on its own. */
@@ -105,7 +115,7 @@ export type ConversationAction =
   /** The connection dropped; the answer is being fetched from FO's saved copy. */
   | { type: "recovering" }
   /** FO's saved copy of the answer, whole. It replaces whatever had arrived. */
-  | { type: "recovered"; text: string }
+  | { type: "recovered"; text: string; files?: FoFile[] }
   /** Start again with an empty thread. */
   | { type: "reset" }
   /**
@@ -139,8 +149,10 @@ function settle(
   state: ConversationState,
   { markIncomplete = false }: { markIncomplete?: boolean } = {},
 ): ConversationState {
+  // An answer that is only a file — a deck, no words — is still an answer.
   const kept = state.turns.filter(
-    (turn) => turn.id !== state.streamingId || turn.text.trim().length > 0,
+    (turn) =>
+      turn.id !== state.streamingId || turn.text.trim().length > 0 || (turn.files?.length ?? 0) > 0,
   );
 
   return {
@@ -205,6 +217,14 @@ export function conversationReducer(
     case "activity":
       return { ...state, phase: "working", activity: action.name };
 
+    case "file":
+      return {
+        ...state,
+        turns: state.turns.map((turn) =>
+          turn.id === state.streamingId ? { ...turn, files: withFile(turn.files, action.file) } : turn,
+        ),
+      };
+
     // A warning, not an ending. The turn stays open, the composer still shows
     // Stop, and a delta arriving later moves it straight back to `answering`.
     case "stalled":
@@ -218,11 +238,13 @@ export function conversationReducer(
     // The whole answer, so nothing is marked incomplete: the part that arrived
     // is replaced, not added to, because the saved copy already contains it.
     case "recovered":
-      if (!state.streamingId || !action.text.trim()) return state;
+      if (!state.streamingId || (!action.text.trim() && !action.files?.length)) return state;
       return settle({
         ...state,
         turns: state.turns.map((turn) =>
-          turn.id === state.streamingId ? { ...turn, text: action.text } : turn,
+          turn.id === state.streamingId
+            ? { ...turn, text: action.text, ...(action.files?.length ? { files: action.files } : {}) }
+            : turn,
         ),
       });
 

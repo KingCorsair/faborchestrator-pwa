@@ -114,7 +114,7 @@ describe("what FabOrchestrator's saved copy says about the question just asked",
 
   test("the question with an answer after it is answered", () => {
     const stored = [...earlier, turn("user", "WIP by line?"), turn("assistant", "Line 1: 42")];
-    assert.deepEqual(storedAnswer(stored, "WIP by line?", 2), { kind: "answered", text: "Line 1: 42" });
+    assert.deepEqual(storedAnswer(stored, "WIP by line?", 2), { kind: "answered", text: "Line 1: 42", files: [] });
   });
 
   test("the question with nothing after it is still being worked on", () => {
@@ -141,7 +141,7 @@ describe("what FabOrchestrator's saved copy says about the question just asked",
 
   test("an answer saved in several parts comes back as one", () => {
     const stored = [turn("user", "WIP?"), turn("assistant", "Part one.", "a1"), turn("assistant", "Part two.", "a2")];
-    assert.deepEqual(storedAnswer(stored, "WIP?", 1), { kind: "answered", text: "Part one.\n\nPart two." });
+    assert.deepEqual(storedAnswer(stored, "WIP?", 1), { kind: "answered", text: "Part one.\n\nPart two.", files: [] });
   });
 
   test("an empty saved answer is not an answer", () => {
@@ -200,14 +200,14 @@ describe("fetching the answer back", () => {
 
   test("an answer already saved is shown on the first look, without waiting", async () => {
     const h = harness([answered]);
-    assert.equal(await recoverAnswer(h.options()), "Line 1: 42");
+    assert.equal((await recoverAnswer(h.options()))?.text, "Line 1: 42");
     assert.equal(h.loads, 1);
     assert.equal(h.waits, 0);
   });
 
   test("while FabOrchestrator is still answering, it keeps looking", async () => {
     const h = harness([working, working, answered]);
-    assert.equal(await recoverAnswer(h.options()), "Line 1: 42");
+    assert.equal((await recoverAnswer(h.options()))?.text, "Line 1: 42");
     assert.equal(h.loads, 3);
     assert.equal(h.waits, 2);
   });
@@ -220,7 +220,7 @@ describe("fetching the answer back", () => {
 
   test("a look that fails is tried again, not taken as the end", async () => {
     const h = harness([new Error("offline"), null, answered]);
-    assert.equal(await recoverAnswer(h.options()), "Line 1: 42");
+    assert.equal((await recoverAnswer(h.options()))?.text, "Line 1: 42");
   });
 
   test("signed out, or the thread deleted, ends it at once", async () => {
@@ -245,7 +245,7 @@ describe("fetching the answer back", () => {
   test("coming back long after, it still looks once — and finds a finished answer", async () => {
     const h = harness([answered]);
     const late = h.options({ askedAt: 1_000_000 - 60 * 60_000 });
-    assert.equal(await recoverAnswer(late), "Line 1: 42");
+    assert.equal((await recoverAnswer(late))?.text, "Line 1: 42");
   });
 
   test("coming back long after to an unfinished answer gives up after that one look", async () => {

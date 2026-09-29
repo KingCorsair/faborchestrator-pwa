@@ -175,7 +175,7 @@ different numbers for the same question in one meeting.
 
 The scalability and reliability changes on branch `chetan`, and the 29 September
 work (the Next.js security upgrade, the fetched-back answer, the conversation
-size limit), pass 545 tests and were checked live against a stand-in
+size limit, downloads), pass 568 tests and were checked live against a stand-in
 FabOrchestrator and in Microsoft Edge. Four things could not be checked from a
 development machine:
 
@@ -187,7 +187,10 @@ development machine:
 2. **iPhone Safari.** The idle banners, the crash screen and the not-found page
    were checked in Edge only — and so was fetching an answer back: on an
    iPhone, ask a long question, lock the screen for ten seconds, and unlock.
-   The whole answer should appear, without "stopped part-way".
+   The whole answer should appear, without "stopped part-way". And downloads:
+   ask for a PowerPoint deck and for a dashboard, press Download on each, and
+   the share sheet should offer **Save to Files**. A real deck also needs the
+   live FabOrchestrator — the stand-in's was a few bytes that look like one.
 3. **The two optional settings.** The shared sign-in lockout needs
    `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; alerts need
    `ERROR_ALERT_WEBHOOK_URL`. Both were tested against stand-ins. Once set, one

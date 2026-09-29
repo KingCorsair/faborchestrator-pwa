@@ -33,10 +33,12 @@
  */
 
 import * as React from "react";
-import { AlertTriangle, Code2, Eye, X } from "lucide-react";
+import { AlertTriangle, Check, Code2, Download, Eye, X } from "lucide-react";
 import type { FoArtifact } from "@/lib/faborch/artifacts";
 import { presentationFor, typeLabel } from "@/lib/faborch/artifacts";
 import { enforceLightHtml } from "@/lib/faborch/enforce-light";
+import { artifactFile } from "@/lib/faborch/files";
+import { saveFile } from "@/lib/save-file";
 
 export function ArtifactSheet({
   artifact,
@@ -60,6 +62,20 @@ export function ArtifactSheet({
   }, [onClose]);
 
   const sourceShown = showSource || failed || !framable;
+
+  /**
+   * Save the dashboard as a file (2026-09-29): an `.html` that opens, charts
+   * and all, in any browser — what FabOrchestrator's own Download gives. The
+   * document is FO's as written; see `artifactFile`.
+   */
+  const [saved, setSaved] = React.useState(false);
+  const download = async () => {
+    const { filename, mimeType } = artifactFile(artifact);
+    const outcome = await saveFile(new Blob([artifact.content], { type: mimeType }), filename);
+    if (outcome === "cancelled") return;
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2_500);
+  };
 
   return (
     <div
@@ -91,6 +107,21 @@ export function ArtifactSheet({
             {typeLabel(artifact.type)} · from FabOrchestrator
           </span>
         </span>
+
+        <button
+          type="button"
+          onClick={download}
+          aria-label={`Download ${artifact.title}`}
+          className="flex min-h-[44px] cursor-pointer items-center gap-[6px] border-0 bg-transparent px-[6px] text-[12px] font-bold"
+          style={{ color: "var(--brand-indigo)" }}
+        >
+          {saved ? (
+            <Check size={14} strokeWidth={2.6} aria-hidden="true" />
+          ) : (
+            <Download size={14} strokeWidth={2.4} aria-hidden="true" />
+          )}
+          {saved ? "Saved" : "Download"}
+        </button>
 
         {/* Offered even when the frame works: an operator who doubts a figure
             should be able to see what produced it without leaving the phone. */}

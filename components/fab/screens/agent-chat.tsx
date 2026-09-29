@@ -83,7 +83,9 @@ import {
 } from "@/lib/faborch/errors";
 import { ArtifactSheet } from "@/components/fab/artifact-sheet";
 import { ArtifactTile } from "@/components/fab/artifact-tile";
+import { FileCard } from "@/components/fab/file-card";
 import { segmentMessageText, type FoArtifact } from "@/lib/faborch/artifacts";
+import type { FoFile } from "@/lib/faborch/files";
 import { recoverAnswer } from "@/lib/faborch/recover";
 import { readFoStream, STALL_MS } from "@/lib/faborch/stream";
 import { markFoActivity } from "@/lib/fo-activity";
@@ -233,6 +235,18 @@ export function AgentChat({
   }, [conversationId]);
 
   /**
+   * The same id, for rendering: a file FO made is downloaded by naming the
+   * conversation it is in (`FileCard`). State rather than the ref, because a
+   * render must not read a ref — and kept here rather than taken from the
+   * prop, because the cockpit's inline chat creates its conversation without
+   * telling anyone above it.
+   */
+  const [savedIn, setSavedIn] = React.useState<string | null>(conversationId ?? null);
+  React.useEffect(() => {
+    if (conversationId) setSavedIn(conversationId);
+  }, [conversationId]);
+
+  /**
    * The "a conversation now exists" callback, kept current without rebuilding
    * `send`.
    *
@@ -362,6 +376,7 @@ export function AgentChat({
               if (made.ok) markFoActivity();
               if (made.ok && typeof body?.id === "string") {
                 conversationRef.current = body.id;
+                setSavedIn(body.id);
                 onCreatedRef.current?.(body.id);
               }
             } catch {
@@ -416,6 +431,8 @@ export function AgentChat({
               dispatch({ type: "delta", delta: event.delta });
             } else if (event.type === "tool") {
               dispatch({ type: "activity", name: event.name });
+            } else if (event.type === "file") {
+              dispatch({ type: "file", file: event.file });
             } else if (event.type === "stalled") {
               // Not a failure. The stream is still open and FO may still be
               // working — this only stops the screen claiming progress it has
@@ -448,7 +465,7 @@ export function AgentChat({
           const savedIn = conversationRef.current;
           if (savedIn) {
             dispatch({ type: "recovering" });
-            const text = await recoverAnswer({
+            const recovered = await recoverAnswer({
               conversationId: savedIn,
               prompt,
               questionsAsked,
@@ -456,8 +473,8 @@ export function AgentChat({
               signal: controller.signal,
               load: loadSavedTurns,
             });
-            if (text) {
-              dispatch({ type: "recovered", text });
+            if (recovered) {
+              dispatch({ type: "recovered", text: recovered.text, files: recovered.files });
               return;
             }
             if (controller.signal.aborted) {
@@ -584,6 +601,8 @@ export function AgentChat({
                 key={turn.id}
                 text={turn.text}
                 incomplete={turn.incomplete}
+                files={turn.files}
+                conversationId={savedIn}
                 onOpenArtifact={setOpenArtifact}
               />
             ),
@@ -702,10 +721,16 @@ function UserTurn({ text }: { text: string }) {
 function AssistantTurn({
   text,
   incomplete,
+  files,
+  conversationId,
   onOpenArtifact,
 }: {
   text: string;
   incomplete?: boolean;
+  /** Files FabOrchestrator made with this answer — a deck, a spreadsheet. */
+  files?: FoFile[];
+  /** The conversation they are in, which is how a file is downloaded. */
+  conversationId: string | null;
   onOpenArtifact: (artifact: FoArtifact) => void;
 }) {
   /*
@@ -736,9 +761,12 @@ function AssistantTurn({
       <div className="flex min-w-0 flex-1 flex-col gap-[10px]">
         {segments.map((segment, i) =>
           segment.type === "text" ? (
-            <div className="fab-md" key={`t${i}`}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{segment.content}</ReactMarkdown>
-            </div>
+            // An answer that is only a file has no words to render.
+            segment.content.trim() ? (
+              <div className="fab-md" key={`t${i}`}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{segment.content}</ReactMarkdown>
+              </div>
+            ) : null
           ) : (
             <ArtifactTile
               key={segment.artifact.identifier || `a${i}`}
@@ -748,6 +776,12 @@ function AssistantTurn({
             />
           ),
         )}
+
+        {/* Files FO made for this answer, after it — FO announces them once
+            the model has finished, so that is where they belong. */}
+        {files?.map((file) => (
+          <FileCard key={file.fileId} file={file} conversationId={conversationId} />
+        ))}
 
         {/* An answer cut off part-way is true as far as it goes and misleading
             as a whole: a yield table that stopped after four rows looks like a

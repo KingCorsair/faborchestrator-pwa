@@ -23,8 +23,13 @@
  *   `reasoning`       dropped — FO's chat puts it behind a panel this app has
  *                     no equivalent of, and showing it inline would read as
  *                     part of the answer
- *   `file-download`   dropped — presigned S3 URLs that have since expired, and
- *                     an attachment surface this app does not have
+ *   `file-download`   kept, as a file to download (2026-09-29) — a deck or a
+ *                     spreadsheet FO's model made. Only its id, name, type
+ *                     and size travel; the bytes stay with FO, fetched through
+ *                     this app when the operator asks (`lib/faborch/files.ts`).
+ *                     Dropped until then as "presigned S3 URLs that have since
+ *                     expired" — FO's parts carry a Files API id instead, good
+ *                     for 30 days.
  *   anything unknown  dropped — `toUIMessage` passes unrecognised parts through
  *                     verbatim (`lib/storage.ts:610`), so this must reject by
  *                     default rather than accept by default. A part type added
@@ -46,6 +51,7 @@
  */
 
 import { capacityIssue, type Turn } from "./conversation";
+import { toFoFile, withFile, type FoFile } from "./files";
 
 /** One stored message, in the shape `toUIMessage` produces. */
 export interface FoStoredMessage {
@@ -122,6 +128,18 @@ function textOf(message: FoStoredMessage): string {
   return typeof message.content === "string" ? message.content : "";
 }
 
+/** The files FO made for one stored answer, from its `file-download` parts. */
+function filesOf(message: FoStoredMessage): FoFile[] {
+  const parts = Array.isArray(message.parts) ? message.parts : [];
+  let files: FoFile[] = [];
+  for (const part of parts) {
+    if (!part || typeof part !== "object" || (part as { type?: unknown }).type !== "file-download") continue;
+    const file = toFoFile(part);
+    if (file) files = withFile(files, file);
+  }
+  return files;
+}
+
 /**
  * Stored messages → the turns this app renders.
  *
@@ -141,14 +159,17 @@ export function toTurns(messages: unknown): Turn[] {
     if (role !== "user" && role !== "assistant") continue;
 
     const text = textOf(message);
+    const files = role === "assistant" ? filesOf(message) : [];
     // A turn that was nothing but tool calls has nothing to say once they are
-    // gone. An empty bubble in a transcript reads as a failed answer.
-    if (!text.trim()) continue;
+    // gone. An empty bubble in a transcript reads as a failed answer. A turn
+    // that is only a file has something to offer, so it stays.
+    if (!text.trim() && files.length === 0) continue;
 
     turns.push({
       id: typeof message.id === "string" && message.id ? message.id : `stored-${index}`,
       role,
       text,
+      ...(files.length ? { files } : {}),
     });
   }
   return turns;

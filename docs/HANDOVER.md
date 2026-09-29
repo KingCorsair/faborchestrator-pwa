@@ -32,7 +32,7 @@ npm install                 # playwright is a devDependency, for the checks
 npx playwright install chromium   # once, for the browser-driven checks
 cp .env.example .env        # then fill in the values below
 npm run dev                 # http://localhost:3002
-npm test                    # 545 tests, no network needed
+npm test                    # 568 tests, no network needed
 npm run build && npm start  # production build, same port
 ```
 
@@ -99,6 +99,9 @@ FabOrchestrator or the network between, and the app is written to say which.
 | "This browser is blocking the storage sign-in needs" | Site data is blocked, or a private mode refuses storage | Allow the site to store data, or leave private browsing |
 | "Something went wrong on this screen", with a reference | A bug in this app, caught by the crash screen | Ask for the reference: it is the `"where":"client"` line in the log. Try again, or Reset and reload |
 | "This conversation is full" | The conversation has reached 100 messages, or 4 MB in all — every question carries the whole conversation back as context | Start a new conversation; the answers above stay on screen until you do. A single long answer, such as a dashboard, does not cause this any more |
+| "That file has expired" (under a deck or spreadsheet) | FabOrchestrator keeps the files its model makes for 30 days | Ask again, and FO makes it anew |
+| "That file is not in this conversation yet" | Download was pressed the instant the file appeared, before FO saved it — the app already waited two seconds and tried again | Press Download again in a moment |
+| On an iPhone, Download opens the share sheet | An installed web app on iOS has no downloads folder | Choose **Save to Files** |
 | "That conversation is too large to send in one request" | A request over the size ceiling. The screen's own limits sit below it, so this should not happen | Start a new conversation, and report it — it means a limit has drifted |
 
 **Every failure carries a code** (`docs/STATUS.md` has the table, the source is

@@ -53,6 +53,7 @@ import { FabOrchNotConfiguredError } from "@/lib/faborch/client";
 import { clearFoTokenCookie } from "@/lib/faborch/session";
 import { bridgeAuthorization, endsTheSession, expiredUpstream } from "@/lib/gateway/auth-bridge";
 import { declaredTooLarge, limitBody, MAX_UPSTREAM_BODY_BYTES } from "@/lib/gateway/body-limit";
+import { budgetProblems, callClassFor, gatewayBudgets, startLifecycle } from "@/lib/gateway/deadline";
 import { downstreamResponseHeaders, upstreamRequestHeaders } from "@/lib/gateway/headers";
 import { injectShellScript, shouldInjectShell } from "@/lib/gateway/html-inject";
 import {
@@ -68,6 +69,14 @@ import {
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { classify, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
 import { upstreamOrigin } from "@/lib/gateway/upstream";
+import { reportError } from "@/lib/report-error";
+
+// RP4 part 5: the budgets must be sound. There is no startup hook to refuse
+// to start from yet (that is RP10-B's server entry), so an unsound
+// configuration is reported once, when this route is first loaded.
+for (const problem of budgetProblems(gatewayBudgets())) {
+  reportError("gateway/budget", new Error(problem));
+}
 
 /** FabOrchestrator's own budget for one turn (`app/api/chat/route.ts:38`). */
 export const maxDuration = 300;
@@ -130,7 +139,6 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     headers: headersOut,
     redirect: "manual",
     cache: "no-store",
-    signal: req.signal,
   };
 
   // ── Conversation ownership on chat turns (WP4) ───────────────────────────
@@ -173,6 +181,15 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     init.duplex = "half";
   }
 
+  // ── Deadlines (RP4, finding G1) ───────────────────────────────────────────
+  //
+  // Started here, after any ownership lookup, so only FabOrchestrator's own
+  // time is counted. The phone leaving (`req.signal`) cancels the upstream
+  // call; a deadline aborts it. See `lib/gateway/deadline.ts`.
+  const cls = callClassFor(owner, pathname, method, req.headers.get("content-type"));
+  const lifecycle = startLifecycle(cls, gatewayBudgets()[cls], req.signal, { pathname });
+  init.signal = lifecycle.signal;
+
   let upstream: Response;
   // When this request's evidence was asked for: a list read that began before
   // a delete the gateway saw cannot re-warm the deleted id (RP6 tombstone).
@@ -180,12 +197,34 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   try {
     upstream = await fetch(upstreamUrl, init);
   } catch (cause) {
-    console.error("[gateway] request to", upstreamUrl, "failed:", cause);
-    return NextResponse.json({ error: "Could not reach FabOrchestrator." }, { status: 502 });
+    lifecycle.done();
+    const reason = lifecycle.reason();
+    // Three different things, told apart (RP4 part 4, RP5's codes). The FO
+    // address is never logged or returned: `upstreamUrl` stays in this scope.
+    if (reason === "headers") {
+      return NextResponse.json(
+        { code: "upstream_timeout", error: "FabOrchestrator did not answer in time." },
+        { status: 504 },
+      );
+    }
+    if (reason === "cancelled" || req.signal.aborted) {
+      // The phone went away. Nobody is waiting for this answer.
+      return new NextResponse(null, { status: 499 });
+    }
+    reportError("gateway/unreachable", cause, { path: pathname, class: cls });
+    return NextResponse.json(
+      { code: "faborch_unavailable", error: "FabOrchestrator could not be reached just now." },
+      { status: 503 },
+    );
   }
+  lifecycle.onHeaders();
 
   const headers = downstreamResponseHeaders(upstream.headers, origin);
   let body = method === "HEAD" || BODYLESS_STATUSES.has(upstream.status) ? null : upstream.body;
+  // Idle and lifetime are enforced on FabOrchestrator's body itself, before
+  // any transform below, so they measure FabOrchestrator and nothing else.
+  if (body) body = lifecycle.watch(body);
+  else lifecycle.done();
 
   // ── The shell (WP6, WP10) ────────────────────────────────────────────────
   //

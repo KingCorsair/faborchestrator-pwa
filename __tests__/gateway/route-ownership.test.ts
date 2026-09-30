@@ -132,3 +132,27 @@ describe("what the gateway writes to the log (RP10-A)", () => {
     assert.ok(!line!.includes(THEIRS), "the whole id is access-bearing at FO");
   });
 });
+
+describe("a create FabOrchestrator declined proves nothing", () => {
+  test("a refused create, even one whose body names an id, does not warm the cache", async () => {
+    // FabOrchestrator answering the create with an error; the body carries an
+    // id-shaped field, which must not be read as a conversation made for us.
+    const answer = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/conversations" && (init.method ?? "GET").toUpperCase() === "POST") {
+        upstream.push({ method: "POST", path: url.pathname });
+        return Response.json({ id: MINE, error: "Conversation limit reached" }, { status: 403 });
+      }
+      return answer(input, init);
+    }) as typeof fetch;
+
+    const created = await call(POST, "POST", "/api/conversations", { title: "New chat" });
+    assert.equal(created.status, 403);
+    await created.text();
+
+    const turn = await call(POST, "POST", "/api/chat", { conversationId: MINE, messages: [] });
+    await turn.text();
+    assert.equal(lookups(), 1, "the turn had to prove ownership: the declined create proved nothing");
+  });
+});

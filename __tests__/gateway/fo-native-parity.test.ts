@@ -208,3 +208,28 @@ describe("FO's generated-file download, through the gateway", () => {
     assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytes);
   });
 });
+
+describe("FabOrchestrator unavailable is not a sign-out", () => {
+  test("a connection failure on FO's own Stay logged in is a 503, and the session is kept", async () => {
+    const realError = console.error;
+    const lines: string[] = [];
+    console.error = (...a: unknown[]) => lines.push(a.map(String).join(" "));
+    try {
+      globalThis.fetch = (async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("connect ECONNREFUSED 10.0.0.9:443"), { code: "ECONNREFUSED" }),
+        });
+      }) as typeof fetch;
+      const res = await viaGateway("/api/auth/me");
+      assert.equal(res.status, 503);
+      assert.equal(((await res.json()) as { code: string }).code, "faborch_unavailable");
+      assert.equal(res.headers.get("set-cookie"), null, "FO being down must not sign anybody out");
+      const line = lines.find((l) => l.includes('"where":"gateway/unreachable"'));
+      assert.ok(line, lines.join(" | "));
+      assert.match(line!, /"errorCode":"ECONNREFUSED"/);
+      assert.ok(!line!.includes("fo.test") && !line!.includes("10.0.0.9"), "never the FO address");
+    } finally {
+      console.error = realError;
+    }
+  });
+});

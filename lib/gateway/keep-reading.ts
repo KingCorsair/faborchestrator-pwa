@@ -36,9 +36,20 @@
  * also read to the end and saved whole, where FabOrchestrator's own site saves
  * nothing. What must not happen is that answer landing in the conversation
  * *after* the operator's next question: FabOrchestrator writes it when it
- * finishes. So **a new turn in the same conversation stops the read of the
- * previous answer** (`supersedeKeptReading`): that answer is then not saved,
- * exactly as on FabOrchestrator's own site, and the thread stays in order.
+ * finishes. So **a new turn in the same conversation stops the previous one**:
+ * that answer is then not saved, exactly as on FabOrchestrator's own site, and
+ * the thread stays in order.
+ *
+ * **Claimed before FabOrchestrator is asked** (review of c193e9e, issue 3). The
+ * first version registered a turn only once FabOrchestrator's headers had
+ * arrived, in `keepReading`. A hard question can take FabOrchestrator tens of
+ * seconds to start answering, and a turn stopped and replaced inside that
+ * window was invisible to the next turn's supersede: it later started
+ * streaming, was read to the end, and was saved *after* the new question. Now
+ * a turn claims its conversation (`claimTurn`) before the call is made, and a
+ * later claim stops the earlier one wherever it is: still waiting for headers
+ * (its lifecycle is aborted, so the call ends and FabOrchestrator stops) or
+ * already streaming (the read on the phone's behalf is cancelled).
  *
  * This departs from the plan's RP4 rule that the phone's disconnect aborts the
  * upstream call. It is recorded in `docs/STATUS.md`; **delete this file and its
@@ -47,7 +58,7 @@
 
 import { foFingerprint } from "@/lib/auth";
 import { afterResponse } from "@/lib/faborch/end-session";
-import { idPrefix, logEvent } from "@/lib/report-error";
+import { logEvent } from "@/lib/report-error";
 
 const DEFAULT_MAX_STREAMS = 50;
 
@@ -64,35 +75,86 @@ export function keptReadingCount(): number {
   return active;
 }
 
-/** The answer being read for a conversation, by `fingerprint:conversationId`. */
-const byConversation = new Map<string, () => void>();
+/**
+ * The current turn of each conversation, by `fingerprint:conversationId`,
+ * from the moment it claims the conversation until it ends.
+ */
+const byConversation = new Map<string, TurnClaim>();
 
 /** The key for one conversation of one session. Never the token itself. */
 export function keepReadingKey(foToken: string, conversationId: string): string {
   return `${foFingerprint(foToken)}:${conversationId}`;
 }
 
+/** One turn's hold on its conversation (`claimTurn`). */
+export interface TurnClaim {
+  /** True once a newer turn in the conversation has replaced this one. */
+  readonly superseded: boolean;
+  /** This turn is over, however it ended: drop the registration if it is still this turn's. */
+  release(): void;
+  /** @internal The read on the phone's behalf has started; a supersede cancels it. */
+  attach(reader: ReadableStreamDefaultReader<unknown>): void;
+  /** @internal Stop this turn: run `abort`, cancel any read. */
+  stop(): void;
+}
+
 /**
- * A new turn has started in this conversation: stop reading the previous
- * answer on the phone's behalf, so it cannot be saved after the new question.
- * A phone still reading it keeps its own half.
+ * Claim `key` for a new turn, **before FabOrchestrator is called**, stopping
+ * the conversation's previous turn wherever it is. `abort` ends this turn's
+ * own call when a later turn supersedes it (the lifecycle's `supersede()`).
+ * The claim must be released when the turn ends, on every path.
+ */
+export function claimTurn(key: string, abort: () => void): TurnClaim {
+  supersedeKeptReading(key);
+  let reader: ReadableStreamDefaultReader<unknown> | null = null;
+  const claim: TurnClaim & { superseded: boolean } = {
+    superseded: false,
+    stop() {
+      claim.superseded = true;
+      // The read on the phone's behalf first: when the phone has already
+      // gone, cancelling the other half of the tee ends the whole call by the
+      // tee's own composite cancel, and nothing is left holding a promise on
+      // it. Then the lifecycle, which still matters while FabOrchestrator has
+      // not answered yet, or while a phone is still reading: the call is
+      // aborted and that phone's half is errored, like a deadline.
+      reader?.cancel().catch(() => {});
+      abort();
+    },
+    attach(r) {
+      reader = r;
+      if (claim.superseded) r.cancel().catch(() => {});
+    },
+    release() {
+      if (byConversation.get(key) === claim) byConversation.delete(key);
+    },
+  };
+  byConversation.set(key, claim);
+  return claim;
+}
+
+/**
+ * A new turn has started in this conversation: stop the previous one, so its
+ * answer cannot be saved after the new question. A phone still reading it
+ * keeps its own half. (Called by `claimTurn`, and directly when the new turn
+ * has no keep-reading slot of its own.)
  */
 export function supersedeKeptReading(key: string): void {
-  const stop = byConversation.get(key);
-  if (!stop) return;
+  const current = byConversation.get(key);
+  if (!current) return;
   byConversation.delete(key);
-  stop();
+  current.stop();
 }
 
 export interface KeepReadingSlot {
   /**
    * Split `body`: return the phone's branch and read the other to the end
-   * here. Releases the slot when that read ends. Call at most once. `key` names
-   * the conversation, so a later turn in it can supersede this read.
+   * here. Releases the slot, and the claim, when that read ends. Call at most
+   * once. `claim` is the turn's hold on its conversation, so a later turn in
+   * it can supersede this read.
    */
   keepReading<T extends Uint8Array>(
     body: ReadableStream<T>,
-    context: { pathname: string; phone: AbortSignal; key?: string | null },
+    context: { pathname: string; phone: AbortSignal; claim?: TurnClaim | null },
   ): ReadableStream<T>;
   /** Give the slot back without using it (FabOrchestrator answered with no stream). */
   release(): void;
@@ -116,20 +178,16 @@ export function reserveKeepReading(): KeepReadingSlot | null {
 
   return {
     release,
-    keepReading(body, { pathname, phone, key }) {
+    keepReading(body, { pathname, phone, claim }) {
       const [forPhone, forFabOrchestrator] = body.tee();
       const reader = forFabOrchestrator.getReader();
       const startedAt = Date.now();
-      let superseded = false;
-      const stop = () => {
-        superseded = true;
-        reader.cancel().catch(() => {});
-      };
-      if (key) byConversation.set(key, stop);
+      claim?.attach(reader);
 
       const finished = readToEnd(reader).then((outcome) => {
-        if (key && byConversation.get(key) === stop) byConversation.delete(key);
+        claim?.release();
         release();
+        const superseded = claim?.superseded ?? false;
         // Only worth a line when it did something: the phone had gone, or a
         // new turn stopped it.
         if (phone.aborted || superseded) {
@@ -137,7 +195,6 @@ export function reserveKeepReading(): KeepReadingSlot | null {
             path: pathname,
             outcome: superseded ? "superseded" : outcome,
             elapsedMs: Date.now() - startedAt,
-            ...(key ? { idPrefix: idPrefix(key.slice(key.indexOf(":") + 1)) } : {}),
           });
         }
       });

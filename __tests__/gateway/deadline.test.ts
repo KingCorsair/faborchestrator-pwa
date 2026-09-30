@@ -405,6 +405,41 @@ describe("a chat answer the phone leaves is still read to the end (stopgap)", ()
     await readAll(second, 40_000);
   });
 
+  test("a new question sent while the previous answer is still awaited stops it, and only the new one is answered (review, issue 3)", async () => {
+    // Turn A is sent; FabOrchestrator thinks for a long time; the operator
+    // presses Stop and sends turn B before A's headers arrive. Until this
+    // fix A was invisible to B's supersede, later streamed, and was saved
+    // after B's question.
+    const CONVO = "66666666-6666-4666-8666-666666666666";
+    rememberFromList(FO_TOKEN, JSON.stringify([{ id: CONVO }]));
+    scriptFo({ headersAfterMs: 30_000, chunksAt: [0] });
+    const phone = new AbortController();
+    const pendingA = call(POST, "POST", "/api/chat", { conversationId: CONVO, messages: [] }, phone.signal);
+    await fetched();
+    const aUpstream = upstreamSignal!;
+    phone.abort(); // Stop, during FO's think time
+    await advance(1000);
+    assert.equal(aUpstream.aborted, false, "A is kept: FO's answer would still be read on the phone's behalf");
+
+    upstreamSignal = undefined;
+    const pendingB = call(POST, "POST", "/api/chat", { conversationId: CONVO, messages: [] });
+    await fetched();
+    const bUpstream = upstreamSignal!;
+    assert.equal(aUpstream.aborted, true, "B's claim stopped A while A was still waiting for headers");
+    assert.equal(bUpstream.aborted, false);
+    const resA = await answered(pendingA);
+    assert.equal(resA.status, 499, "A is over; FabOrchestrator will not produce A's answer");
+    assert.ok(infos.some((l) => l.includes('"event":"turn_superseded"')), infos.join("\n"));
+
+    await advance(30_000); // FO answers B
+    const resB = await answered(pendingB);
+    assert.equal(resB.status, 200);
+    const { text, error } = await readAll(resB, 5000);
+    assert.equal(error, null);
+    assert.equal(text, "c0;", "B's answer, and only B's, reaches the phone");
+    assert.equal(bUpstream.aborted, false, "B was never stopped");
+  });
+
   test("with every slot taken, a chat falls back to ending when the phone leaves", async () => {
     process.env.KEEP_READING_MAX_STREAMS = "0";
     scriptFo({ headersAfterMs: null });

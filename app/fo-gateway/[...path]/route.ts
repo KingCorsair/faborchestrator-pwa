@@ -62,7 +62,7 @@ import { budgetProblems, callClassFor, gatewayBudgets, startLifecycle } from "@/
 import { documentErrorResponse } from "@/lib/gateway/error-page";
 import { downstreamResponseHeaders, hardenFoApiHeaders, upstreamRequestHeaders } from "@/lib/gateway/headers";
 import { injectShellScript, shouldInjectShell } from "@/lib/gateway/html-inject";
-import { keepReadingKey, reserveKeepReading, supersedeKeptReading } from "@/lib/gateway/keep-reading";
+import { claimTurn, keepReadingKey, reserveKeepReading, supersedeKeptReading } from "@/lib/gateway/keep-reading";
 import {
   checkChatBody,
   deletedConversationId,
@@ -257,17 +257,22 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (req.signal.aborted) return new NextResponse(null, { status: 499 });
 
   const cls = callClassFor(owner, pathname, method, req.headers.get("content-type"));
-  // A new turn in a conversation stops the read of that conversation's
-  // previous answer, so the previous answer can never be saved after the new
-  // question (`lib/gateway/keep-reading.ts`).
+  const keepSlot = cls === "stream" ? reserveKeepReading() : null;
+  const lifecycle = startLifecycle(cls, gatewayBudgets()[cls], keepSlot ? null : req.signal, { pathname });
+  init.signal = lifecycle.signal;
+
+  // A new turn in a conversation stops that conversation's previous turn, so
+  // the previous answer can never be saved after the new question. The claim
+  // is made **before** FabOrchestrator is called, so a turn still waiting for
+  // FO's headers is stopped too (`lib/gateway/keep-reading.ts`; review of
+  // c193e9e, issue 3). With no slot to keep reading, the new turn still stops
+  // the previous one but registers nothing of its own.
   const keepKey =
     cls === "stream" && provedConversationId && verdict.action === "inject"
       ? keepReadingKey(verdict.foToken, provedConversationId)
       : null;
-  if (keepKey) supersedeKeptReading(keepKey);
-  const keepSlot = cls === "stream" ? reserveKeepReading() : null;
-  const lifecycle = startLifecycle(cls, gatewayBudgets()[cls], keepSlot ? null : req.signal, { pathname });
-  init.signal = lifecycle.signal;
+  const claim = keepKey && keepSlot ? claimTurn(keepKey, () => lifecycle.supersede()) : null;
+  if (keepKey && !keepSlot) supersedeKeptReading(keepKey);
 
   let upstream: Response;
   // When this request's evidence was asked for: a list read that began before
@@ -277,12 +282,19 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     upstream = await fetch(upstreamUrl, init);
   } catch (cause) {
     keepSlot?.release();
+    claim?.release();
     lifecycle.done();
     const reason = lifecycle.reason();
-    // Three different things, told apart (RP4 part 4, RP5's codes). The FO
+    // Four different things, told apart (RP4 part 4, RP5's codes). The FO
     // address is never logged or returned: `upstreamUrl` stays in this scope.
     if (reason === "headers") return fail(owner, 504, "upstream_timeout", "FabOrchestrator did not answer in time.");
-    if (reason === "cancelled" || req.signal.aborted) {
+    if (reason === "superseded") {
+      // A newer message in this conversation replaced this one before
+      // FabOrchestrator had started answering; its answer will not exist.
+      logEvent("info", "turn_superseded", { path: pathname, stage: "headers" });
+      return new NextResponse(null, { status: 499 });
+    }
+    if (reason === "cancelled" || (!keepSlot && req.signal.aborted)) {
       // The phone went away. Nobody is waiting for this answer.
       return new NextResponse(null, { status: 499 });
     }
@@ -302,8 +314,11 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
 
   // The stopgap: a chat answer is read to the end here even if the phone goes.
   if (keepSlot) {
-    if (body && upstream.ok) body = keepSlot.keepReading(body, { pathname, phone: req.signal, key: keepKey });
-    else keepSlot.release();
+    if (body && upstream.ok) body = keepSlot.keepReading(body, { pathname, phone: req.signal, claim });
+    else {
+      keepSlot.release();
+      claim?.release();
+    }
   }
 
   // ── The shell (WP6, WP10) ────────────────────────────────────────────────

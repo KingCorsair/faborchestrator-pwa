@@ -122,15 +122,32 @@ export class UpstreamTimeout extends Error {
   }
 }
 
+/** A newer turn in the same conversation replaced this one (`lib/gateway/keep-reading.ts`). */
+export class TurnSuperseded extends Error {
+  constructor() {
+    super("A newer message in this conversation replaced this one");
+    this.name = "TurnSuperseded";
+  }
+}
+
+export type LifecycleEnd = TimeoutReason | "cancelled" | "superseded";
+
 export type Lifecycle = {
   /** Pass to `fetch`: the caller's signal and this lifecycle's, combined. */
   signal: AbortSignal;
   /** Why the lifecycle ended early, or null. */
-  reason(): TimeoutReason | "cancelled" | null;
+  reason(): LifecycleEnd | null;
   /** The response headers arrived: stop the headers timer, start the lifetime. */
   onHeaders(): void;
   /** Wrap the upstream body so idle and lifetime are enforced on it. */
   watch(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array<ArrayBuffer>>;
+  /**
+   * A newer turn in this conversation has replaced this call: abort it now,
+   * whether it is still waiting for FabOrchestrator's headers or already
+   * streaming (the downstream is errored, never closed cleanly, like a
+   * deadline). RP4's abort semantics for a superseded turn.
+   */
+  supersede(): void;
   /** Clear every timer (the request is over, one way or another). */
   done(): void;
 };
@@ -151,11 +168,12 @@ export function startLifecycle(
 ): Lifecycle {
   const controller = new AbortController();
   const signal = callerSignal ? AbortSignal.any([callerSignal, controller.signal]) : controller.signal;
-  let ended: TimeoutReason | "cancelled" | null = null;
+  let ended: LifecycleEnd | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let lifeTimer: ReturnType<typeof setTimeout> | undefined;
   const startedAt = Date.now();
-  let onTimeout: ((reason: TimeoutReason) => void) | null = null;
+  /** Set by `watch`: errors the downstream and cancels the upstream read. */
+  let onEnd: ((error: Error) => void) | null = null;
 
   const clearAll = () => {
     clearTimeout(headersTimer);
@@ -169,7 +187,7 @@ export function startLifecycle(
     clearAll();
     const error = new UpstreamTimeout(reason);
     controller.abort(error);
-    onTimeout?.(reason);
+    onEnd?.(error);
     logStreamEnd(cls, reason, context.pathname, startedAt);
   };
 
@@ -188,13 +206,21 @@ export function startLifecycle(
       clearTimeout(headersTimer);
       if (!ended) lifeTimer = setTimeout(() => fire("lifetime"), budget.lifeMs);
     },
+    supersede() {
+      if (ended) return;
+      ended = "superseded";
+      clearAll();
+      const error = new TurnSuperseded();
+      controller.abort(error);
+      onEnd?.(error);
+    },
     watch(body) {
       const reader = body.getReader();
       let downstream: ReadableStreamDefaultController<Uint8Array<ArrayBuffer>> | null = null;
-      onTimeout = (reason) => {
-        reader.cancel(new UpstreamTimeout(reason)).catch(() => {});
+      onEnd = (error) => {
+        reader.cancel(error).catch(() => {});
         try {
-          downstream?.error(new UpstreamTimeout(reason));
+          downstream?.error(error);
         } catch {
           /* already closed */
         }

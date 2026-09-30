@@ -52,22 +52,16 @@ import * as React from "react";
 import { LogOut } from "lucide-react";
 import { logout } from "./use-session";
 import { loginHref } from "@/lib/return-path";
-
-const AUTH_TOKEN_KEY = "llmatscale_auth_token";
+import { AUTH_TOKEN_KEY, readStored } from "@/lib/stored-session";
 
 export function SignOutLink() {
   const [token, setToken] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    let stored: string | null;
-    try {
-      stored = localStorage.getItem(AUTH_TOKEN_KEY);
-    } catch {
-      /* Storage unavailable. No session we can prove and none we could mint —
-         see the header on why this must not redirect. */
-      return;
-    }
+    // Storage unavailable reads as no session: nothing we can prove and none
+    // we could mint (see the header on why this must not redirect).
+    const stored = readStored(AUTH_TOKEN_KEY);
 
     if (!stored) {
       // `location.replace`, not `router.replace`: the same document navigation

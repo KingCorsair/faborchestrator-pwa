@@ -20,9 +20,7 @@ import { BrandLockup } from "@/components/fab/brand";
 import { Button, Label } from "@/components/fab/primitives";
 import { submittedCredentials } from "@/lib/credentials";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
-
-const AUTH_TOKEN_KEY = "llmatscale_auth_token";
-const AUTH_SESSION_KEY = "llmatscale_auth_session";
+import { AUTH_TOKEN_KEY, clearStoredSession, readStored, storeSession } from "@/lib/stored-session";
 
 export interface LoginPageProps {
   /**
@@ -99,12 +97,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     // Storage that throws (site data blocked, some private modes) holds no
     // session to surface; the form below still works and says why if a
     // sign-in cannot be kept. Guard ported from the chetan branch (e843b9c).
-    let token: string | null;
-    try {
-      token = localStorage.getItem(AUTH_TOKEN_KEY);
-    } catch {
-      return;
-    }
+    const token = readStored(AUTH_TOKEN_KEY);
     if (!token) return;
 
     let cancelled = false;
@@ -119,8 +112,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
           // Stale or expired — including a token left by a different app on
           // this origin. Clear it rather than reasoning about it, so the form
           // below is the clean sign-in it looks like.
-          localStorage.removeItem(AUTH_TOKEN_KEY);
-          localStorage.removeItem(AUTH_SESSION_KEY);
+          clearStoredSession();
           return;
         }
         const data = (await res.json()) as {
@@ -204,10 +196,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
       // If storage refuses it, drop the cookie the server just set (and with
       // it the FO session) rather than leave half a session behind, and say
       // what is actually wrong instead of "could not reach the server".
-      try {
-        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ expiresAt: data.expiresAt }));
-      } catch {
+      if (!storeSession(data.token, data.expiresAt)) {
         void fetch("/api/pwa/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
         setError(
           "This browser is blocking the storage sign-in needs. Allow this site to store data " +

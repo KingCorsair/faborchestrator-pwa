@@ -25,6 +25,7 @@
  */
 
 import * as React from "react";
+import { bearerHeader } from "@/lib/stored-session";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/fab/app-shell";
 import { AgentChat } from "@/components/fab/screens/agent-chat";
@@ -116,7 +117,7 @@ export function AgentChatClient({
       try {
         const res = await fetch(`/api/faborch/conversations/${encodeURIComponent(selected)}`, {
           headers: {
-            Authorization: `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}`,
+            Authorization: bearerHeader(),
           },
         });
         if (cancelled) return;

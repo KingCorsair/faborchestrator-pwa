@@ -50,6 +50,7 @@
  */
 
 import * as React from "react";
+import { bearerHeader } from "@/lib/stored-session";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -307,7 +308,7 @@ export function AgentChat({
 
       void (async () => {
         try {
-          const bearer = `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}`;
+          const bearer = bearerHeader();
 
           /**
            * Start the FabOrchestrator conversation, on the first question only.

@@ -56,6 +56,7 @@
  */
 
 import * as React from "react";
+import { bearerHeader } from "@/lib/stored-session";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutGrid, Loader2, Pin, PinOff, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -105,8 +106,6 @@ export function NavDrawer({
   const [failed, setFailed] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
-  const bearer = () =>
-    `Bearer ${typeof window === "undefined" ? "" : (localStorage.getItem("llmatscale_auth_token") ?? "")}`;
 
   /**
    * Load the list when the drawer opens, not on a timer and not on mount.
@@ -118,7 +117,7 @@ export function NavDrawer({
    */
   const load = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/faborch/conversations", { headers: { Authorization: bearer() } });
+      const res = await fetch("/api/faborch/conversations", { headers: { Authorization: bearerHeader() } });
       if (!res.ok) {
         setFailed(true);
         return;
@@ -185,7 +184,7 @@ export function NavDrawer({
     try {
       await fetch(`/api/faborch/conversations/${encodeURIComponent(row.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: bearer() },
+        headers: { "Content-Type": "application/json", Authorization: bearerHeader() },
         body: JSON.stringify({ isPinned: !row.isPinned }),
       });
       await load();

@@ -30,6 +30,7 @@
  */
 
 import * as React from "react";
+import { bearerHeader } from "@/lib/stored-session";
 import { BarChart3, ChevronLeft, Clock, Lock } from "lucide-react";
 import { AppShell } from "@/components/fab/app-shell";
 import { EmptyState, ErrorState, SkeletonBar } from "@/components/fab/primitives";
@@ -94,7 +95,7 @@ function Reports() {
 
   const authHeaders = React.useCallback(
     (): HeadersInit => ({
-      Authorization: `Bearer ${localStorage.getItem("llmatscale_auth_token") ?? ""}`,
+      Authorization: bearerHeader(),
     }),
     [],
   );

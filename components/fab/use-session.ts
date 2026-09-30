@@ -16,9 +16,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { loginHref } from "@/lib/return-path";
-
-const AUTH_SESSION_KEY = "llmatscale_auth_session";
-const AUTH_TOKEN_KEY = "llmatscale_auth_token";
+import { clearStoredSession, readStoredSession } from "@/lib/stored-session";
 
 export interface SessionUser {
   id: string;
@@ -47,12 +45,7 @@ export interface Session {
 }
 
 export function clearAuthStorage() {
-  try {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
-    localStorage.removeItem(AUTH_SESSION_KEY);
-  } catch {
-    /* nothing useful to do if storage is unavailable */
-  }
+  clearStoredSession();
 }
 
 export function useSession(): Session {
@@ -66,15 +59,19 @@ export function useSession(): Session {
   });
 
   React.useEffect(() => {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    const raw = localStorage.getItem(AUTH_SESSION_KEY);
-    if (!token || !raw) {
+    // Guarded (lib/stored-session.ts): storage that throws holds no session,
+    // and sign-in is the screen that can say why one cannot be kept. It used
+    // to throw here, outside any guard, and take the screen down.
+    const stored = readStoredSession();
+    if (!stored) {
       clearAuthStorage();
       // Carries where they were headed, so sign-in returns them to it rather
       // than to `/orders` — see lib/return-path.ts.
       router.replace(loginHref());
       return;
     }
+
+    const { token, raw } = stored;
 
     // A missing or unparseable expiry means the banner stays down, which is the
     // right failure — a wrong countdown is worse than none.

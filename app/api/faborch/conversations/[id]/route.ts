@@ -32,7 +32,8 @@ import {
 import { MAX_TEXT } from "@/lib/faborch/conversation";
 import { isContinuable, toTurns } from "@/lib/faborch/history";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
-import { UpdateConversationSchema } from "@/lib/validation";
+import { bodyTooLarge, readJsonBody } from "@/lib/request-body";
+import { SMALL_JSON_BODY_LIMIT, UpdateConversationSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -130,7 +131,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!foToken) return noFoSession();
 
   const { id } = await params;
-  const parsed = UpdateConversationSchema.safeParse(await req.json().catch(() => null));
+  const body = await readJsonBody(req, SMALL_JSON_BODY_LIMIT);
+  if (body.tooLarge) return bodyTooLarge(SMALL_JSON_BODY_LIMIT);
+  const parsed = UpdateConversationSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
       { code: "invalid_request", error: "Only pinning can be changed from here." },

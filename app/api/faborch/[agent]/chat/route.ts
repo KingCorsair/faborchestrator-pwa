@@ -53,7 +53,8 @@ import {
 import { codeForStatus, splitErrorId, statusForCode, type PwaErrorCode } from "@/lib/faborch/errors";
 import { ownsConversation } from "@/lib/faborch/owns";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
-import { FabInsightRequestSchema } from "@/lib/validation";
+import { bodyTooLarge, readJsonBody } from "@/lib/request-body";
+import { CHAT_BODY_LIMIT, FabInsightRequestSchema } from "@/lib/validation";
 
 /** FO's own budget for one turn (`app/api/chat/route.ts:27`). */
 export const maxDuration = 300;
@@ -92,7 +93,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     );
   }
 
-  const parsed = FabInsightRequestSchema.safeParse(await req.json().catch(() => null));
+  // Size before content (plan RP1 part 3 item 7, finding B5).
+  const body = await readJsonBody(req, CHAT_BODY_LIMIT);
+  if (body.tooLarge) return bodyTooLarge(CHAT_BODY_LIMIT);
+  const parsed = FabInsightRequestSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Invalid request" },

@@ -27,6 +27,11 @@
 
 export type BodyRead = { tooLarge: true } | { tooLarge: false; value: unknown };
 
+/** The plan's coded refusal (RP5): 413 `body_too_large` with the limit. */
+export function bodyTooLarge(limit: number, error = "That request is larger than this app accepts."): Response {
+  return Response.json({ code: "body_too_large", error, details: { limit } }, { status: 413 });
+}
+
 export async function readJsonBody(req: Request, maxBytes: number): Promise<BodyRead> {
   const declared = Number(req.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > maxBytes) return { tooLarge: true };

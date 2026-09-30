@@ -21,6 +21,24 @@ export const LoginSchema = z.object({
  */
 export const LOGIN_BODY_LIMIT = 16 * 1024;
 
+/** The plan's `small-json` body class (RP1 part 3 item 7): 16 KiB. */
+export const SMALL_JSON_BODY_LIMIT = 16 * 1024;
+
+/**
+ * The native chat route's body limit: the plan's `chat` policy, 20 MiB
+ * (provisional, RP1). The route is B5's containment until it retires (RP8);
+ * note that Next's own `proxyClientMaxBodySize` (10 MB by default) cuts a
+ * larger body before this route sees it.
+ */
+export const CHAT_BODY_LIMIT = 20 * 1024 * 1024;
+
+/**
+ * Creating a conversation: derived from `CreateConversationSchema`, so the
+ * longest legal title (20,000 characters, up to six bytes each once JSON
+ * escapes it) always fits. `small-json` would refuse a long first question.
+ */
+export const CREATE_CONVERSATION_BODY_LIMIT = 20_000 * 6 + 1024;
+
 export const OrderStatusSchema = z.enum([
   "RELEASED",
   "IN_PROGRESS",

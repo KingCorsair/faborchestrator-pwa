@@ -127,6 +127,22 @@ export function proxy(req: NextRequest): NextResponse {
 
   const registry = readRegistry();
 
+  // ── The native API routes are closed in `whole` mode (plan RP8) ──────────
+  //
+  // In `whole` mode no screen of this app's that calls `/api/faborch/*` can be
+  // reached: its chat screens and cockpit redirect into FabOrchestrator's. So
+  // the least-hardened routes in the system answer a `no-store` 404 for the
+  // whole soak rather than staying reachable behind the redirect. `surfaces`
+  // and `off` keep them open, because there the native screens still render
+  // (with only `/chat` embedded, the native `/reports` page still calls its
+  // API). Turning the flag back restores them immediately, like the redirects.
+  if (registry.mode === "whole" && (pathname === "/api/faborch" || pathname.startsWith("/api/faborch/"))) {
+    return NextResponse.json(
+      { code: "not_found", error: "Not found." },
+      { status: 404, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+
   // ── The WP9 cutover: this app's retired chat screens (9 September) ────────
   //
   // While the gateway is serving FabOrchestrator's own `/chat`, this app's

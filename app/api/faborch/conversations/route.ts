@@ -35,7 +35,8 @@ import {
 } from "@/lib/faborch/client";
 import { toSummaries } from "@/lib/faborch/history";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
-import { CreateConversationSchema } from "@/lib/validation";
+import { bodyTooLarge, readJsonBody } from "@/lib/request-body";
+import { CREATE_CONVERSATION_BODY_LIMIT, CreateConversationSchema } from "@/lib/validation";
 
 export const runtime = "nodejs";
 
@@ -112,7 +113,9 @@ export async function POST(req: NextRequest) {
   const foToken = foTokenFrom(req);
   if (!foToken) return noFoSession();
 
-  const parsed = CreateConversationSchema.safeParse(await req.json().catch(() => null));
+  const body = await readJsonBody(req, CREATE_CONVERSATION_BODY_LIMIT);
+  if (body.tooLarge) return bodyTooLarge(CREATE_CONVERSATION_BODY_LIMIT);
+  const parsed = CreateConversationSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
       { code: "invalid_request", error: "A conversation needs the question it starts with." },

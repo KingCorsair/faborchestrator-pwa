@@ -54,7 +54,7 @@ import { clearFoTokenCookie } from "@/lib/faborch/session";
 import { bridgeAuthorization, endsTheSession, expiredUpstream } from "@/lib/gateway/auth-bridge";
 import { declaredTooLarge, limitBody, MAX_UPSTREAM_BODY_BYTES } from "@/lib/gateway/body-limit";
 import { budgetProblems, callClassFor, gatewayBudgets, startLifecycle } from "@/lib/gateway/deadline";
-import { downstreamResponseHeaders, upstreamRequestHeaders } from "@/lib/gateway/headers";
+import { downstreamResponseHeaders, hardenFoApiHeaders, upstreamRequestHeaders } from "@/lib/gateway/headers";
 import { injectShellScript, shouldInjectShell } from "@/lib/gateway/html-inject";
 import {
   checkChatBody,
@@ -220,6 +220,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   lifecycle.onHeaders();
 
   const headers = downstreamResponseHeaders(upstream.headers, origin);
+  // `nosniff` on API answers; a generated file is always a download.
+  if (owner === "fo-api") hardenFoApiHeaders(pathname, headers);
   let body = method === "HEAD" || BODYLESS_STATUSES.has(upstream.status) ? null : upstream.body;
   // Idle and lifetime are enforced on FabOrchestrator's body itself, before
   // any transform below, so they measure FabOrchestrator and nothing else.

@@ -123,3 +123,46 @@ export function downstreamResponseHeaders(upstream: Headers, foOrigin: string): 
   }
   return out;
 }
+
+// ── FabOrchestrator API responses, and generated files (2026-09-30) ─────────
+
+/** `/api/files/{id}/download`: a file FabOrchestrator's model made. */
+const FILE_DOWNLOAD = /^\/api\/files\/[^/]+\/download$/;
+
+export function isFileDownload(pathname: string): boolean {
+  return FILE_DOWNLOAD.test(pathname);
+}
+
+/**
+ * Harden what the gateway returns for FabOrchestrator's API (feature parity
+ * with the chetan branch's download route, `3d4fc1a`; plan RP7).
+ *
+ *  - **`nosniff` on every API response.** The browser takes the declared type
+ *    at its word and never guesses one; an API answer is data, never a page.
+ *    Not added to FO's documents and static assets, where a type FO got
+ *    slightly wrong would otherwise stop its own script loading.
+ *  - **A generated file is always a download.** FabOrchestrator's route sends
+ *    `attachment` today ([FO-clone] `app/api/files/[fileId]/download`), but
+ *    the file is a model's output served from *this* origin, where a document
+ *    rendered inline could read the session this origin keeps. So `inline` or
+ *    a missing disposition becomes `attachment` (the filename is kept), and
+ *    `Content-Security-Policy: sandbox` means that even a file opened directly
+ *    cannot run script as this origin.
+ *
+ * **Who may download which file is not decided here.** FabOrchestrator checks
+ * only that the caller is signed in; whether that is fixed in FabOrchestrator
+ * or proved at the gateway is an open ownership decision.
+ */
+export function hardenFoApiHeaders(pathname: string, headers: Headers): void {
+  headers.set("x-content-type-options", "nosniff");
+  if (!isFileDownload(pathname)) return;
+  const disposition = headers.get("content-disposition")?.trim() ?? "";
+  if (!disposition) {
+    headers.set("content-disposition", "attachment");
+  } else if (!/^attachment\b/i.test(disposition)) {
+    // `inline; filename="x.html"` → `attachment; filename="x.html"`
+    const params = disposition.includes(";") ? disposition.slice(disposition.indexOf(";")) : "";
+    headers.set("content-disposition", `attachment${params}`);
+  }
+  headers.set("content-security-policy", "sandbox");
+}

@@ -55,7 +55,16 @@ import { bridgeAuthorization, endsTheSession, expiredUpstream } from "@/lib/gate
 import { declaredTooLarge, limitBody, MAX_UPSTREAM_BODY_BYTES } from "@/lib/gateway/body-limit";
 import { downstreamResponseHeaders, upstreamRequestHeaders } from "@/lib/gateway/headers";
 import { injectShellScript, shouldInjectShell } from "@/lib/gateway/html-inject";
-import { checkChatBody, isConversationList, needsOwnershipCheck, warmFromListStream } from "@/lib/gateway/ownership";
+import {
+  checkChatBody,
+  deletedConversationId,
+  forgetConversation,
+  isConversationCreate,
+  isConversationList,
+  needsOwnershipCheck,
+  warmFromCreateStream,
+  warmFromListStream,
+} from "@/lib/gateway/ownership";
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { classify, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
 import { upstreamOrigin } from "@/lib/gateway/upstream";
@@ -165,6 +174,9 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   }
 
   let upstream: Response;
+  // When this request's evidence was asked for: a list read that began before
+  // a delete the gateway saw cannot re-warm the deleted id (RP6 tombstone).
+  const requestedAt = Date.now();
   try {
     upstream = await fetch(upstreamUrl, init);
   } catch (cause) {
@@ -199,8 +211,20 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   // forwarded chunk by chunk exactly as it would have been; only a copy is
   // kept, and only until the stream ends.
   if (body && verdict.action === "inject" && upstream.ok && isConversationList(pathname, method)) {
-    body = warmFromListStream(body, verdict.foToken);
+    body = warmFromListStream(body, verdict.foToken, requestedAt);
   }
+
+  // ── The same cache, from a create and a delete (RP6) ─────────────────────
+  //
+  // A 201 from `POST /api/conversations` names a conversation FabOrchestrator
+  // just made for this token, so its first turn needs no lookup. A successful
+  // `DELETE /api/conversations/{id}` forgets that id for every token and
+  // leaves a tombstone, so a proof already in flight cannot re-warm it.
+  if (body && verdict.action === "inject" && upstream.status === 201 && isConversationCreate(pathname, method)) {
+    body = warmFromCreateStream(body, verdict.foToken);
+  }
+  const deletedId = upstream.ok ? deletedConversationId(pathname, method) : null;
+  if (deletedId) forgetConversation(deletedId);
 
   // A `NextResponse` rather than a bare `Response`, only so that
   // `clearFoTokenCookie` below is the app's single definition of how that

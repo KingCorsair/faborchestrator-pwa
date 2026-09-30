@@ -310,3 +310,148 @@ describe("warming the cache from a conversation list (WP8)", () => {
     assert.equal(asked, 1);
   });
 });
+
+// ── Reconciled with RP6 (2026-09-30) ───────────────────────────────────────
+// The chetan branch's second ownership cache (fingerprint-keyed, warmed on
+// create) folded into this one, with the pieces RP6 designs around it.
+
+/** A stream of `text`, in two chunks, the way a response body arrives. */
+function streamOf(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  const half = Math.floor(bytes.length / 2);
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes.slice(0, half));
+      controller.enqueue(bytes.slice(half));
+      controller.close();
+    },
+  });
+}
+
+/** Read a passed-through stream to the end, as the phone would. */
+async function drain(stream: ReadableStream<Uint8Array>): Promise<string> {
+  return new Response(stream).text();
+}
+
+describe("the cache holds fingerprints, never tokens (RP6)", () => {
+  test("no key contains the FabOrchestrator token itself", async () => {
+    const { ownershipCacheStats } = await import("@/lib/gateway/ownership");
+    stubConversations([MINE]);
+    await check("/api/chat", { conversationId: MINE });
+    const stats = ownershipCacheStats(TOKEN);
+    assert.equal(stats.size, 1);
+    assert.equal(stats.contains, false, "a live credential must not sit in the cache");
+  });
+});
+
+describe("a create warms the cache (RP6 warmFromCreate)", () => {
+  test("the first turn in a conversation the gateway saw created needs no lookup", async () => {
+    const { warmFromCreateStream } = await import("@/lib/gateway/ownership");
+    const created = JSON.stringify({ id: MINE, title: "New chat", isPinned: false });
+    assert.equal(await drain(warmFromCreateStream(streamOf(created), TOKEN)), created, "passed through byte-exact");
+
+    let calls = 0;
+    stubConversations([], () => (calls += 1));
+    assert.equal((await check("/api/chat", { conversationId: MINE })).action, "forward-owned");
+    assert.equal(calls, 0);
+  });
+
+  test("the create proves nothing for another token", async () => {
+    const { warmFromCreateStream } = await import("@/lib/gateway/ownership");
+    await drain(warmFromCreateStream(streamOf(JSON.stringify({ id: MINE })), TOKEN));
+    stubConversations([]);
+    assert.equal((await check("/api/chat", { conversationId: MINE }, "somebody-elses-token")).action, "forward-stripped");
+  });
+
+  test("only a POST to the collection counts as a create", async () => {
+    const { isConversationCreate } = await import("@/lib/gateway/ownership");
+    assert.equal(isConversationCreate("/api/conversations", "POST"), true);
+    assert.equal(isConversationCreate("/api/conversations", "GET"), false);
+    assert.equal(isConversationCreate(`/api/conversations/${MINE}`, "POST"), false);
+  });
+});
+
+describe("a delete the gateway sees is forgotten, with a tombstone (RP6)", () => {
+  test("the id is forgotten for every token", async () => {
+    const { rememberFromList, forgetConversation } = await import("@/lib/gateway/ownership");
+    rememberFromList(TOKEN, JSON.stringify([{ id: MINE }]));
+    rememberFromList("second-device-token", JSON.stringify([{ id: MINE }]));
+    forgetConversation(MINE);
+
+    let calls = 0;
+    stubConversations([], () => (calls += 1));
+    assert.equal((await check("/api/chat", { conversationId: MINE })).action, "forward-stripped");
+    assert.equal((await check("/api/chat", { conversationId: MINE }, "second-device-token")).action, "forward-stripped");
+    assert.equal(calls, 2, "both had to ask FabOrchestrator again");
+  });
+
+  test("a list read that began before the delete cannot re-warm the id", async () => {
+    const { rememberFromList, forgetConversation } = await import("@/lib/gateway/ownership");
+    const listRequestedAt = Date.now() - 1000;
+    forgetConversation(MINE);
+    assert.equal(rememberFromList(TOKEN, JSON.stringify([{ id: MINE }]), listRequestedAt), 1);
+
+    let calls = 0;
+    stubConversations([], () => (calls += 1));
+    assert.equal((await check("/api/chat", { conversationId: MINE })).action, "forward-stripped");
+    assert.equal(calls, 1, "the stale list did not warm it");
+  });
+
+  test("evidence asked for after the delete is honoured", async () => {
+    const { rememberFromList, forgetConversation } = await import("@/lib/gateway/ownership");
+    forgetConversation(MINE, Date.now() - 1000);
+    rememberFromList(TOKEN, JSON.stringify([{ id: MINE }]), Date.now());
+    let calls = 0;
+    stubConversations([], () => (calls += 1));
+    assert.equal((await check("/api/chat", { conversationId: MINE })).action, "forward-owned");
+    assert.equal(calls, 0);
+  });
+
+  test("only a DELETE of one conversation names an id", async () => {
+    const { deletedConversationId } = await import("@/lib/gateway/ownership");
+    assert.equal(deletedConversationId(`/api/conversations/${MINE}`, "DELETE"), MINE);
+    assert.equal(deletedConversationId(`/api/conversations/${MINE}`, "PATCH"), null);
+    assert.equal(deletedConversationId("/api/conversations", "DELETE"), null);
+    assert.equal(deletedConversationId(`/api/conversations/${MINE}/messages`, "DELETE"), null);
+  });
+});
+
+describe("T_own and the size bound (RP6)", () => {
+  test("T_own comes from OWNERSHIP_TTL_MS, defaulting to 30 minutes", async () => {
+    const { ownershipTtlMs } = await import("@/lib/gateway/ownership");
+    delete process.env.OWNERSHIP_TTL_MS;
+    assert.equal(ownershipTtlMs(), 30 * 60_000);
+    process.env.OWNERSHIP_TTL_MS = "300000";
+    assert.equal(ownershipTtlMs(), 300_000);
+    process.env.OWNERSHIP_TTL_MS = "nonsense";
+    assert.equal(ownershipTtlMs(), 30 * 60_000);
+    delete process.env.OWNERSHIP_TTL_MS;
+  });
+
+  test("an entry past T_own is asked about again", async () => {
+    const { rememberFromList } = await import("@/lib/gateway/ownership");
+    mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+    try {
+      rememberFromList(TOKEN, JSON.stringify([{ id: MINE }]));
+      mock.timers.tick(30 * 60_000 + 1);
+      let calls = 0;
+      stubConversations([MINE], () => (calls += 1));
+      assert.equal((await check("/api/chat", { conversationId: MINE })).action, "forward-owned");
+      assert.equal(calls, 1);
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  test("the cache never holds more than MAX_ENTRIES, dropping the least recently used", async () => {
+    const { MAX_ENTRIES, ownershipCacheStats, rememberFromList } = await import("@/lib/gateway/ownership");
+    const ids = (from: number, n: number) =>
+      Array.from({ length: n }, (_, i) => ({ id: `c-${from + i}` }));
+    // Fill in batches (a single list is capped at 2,000 ids).
+    for (let from = 0; from < MAX_ENTRIES + 10; from += 2000) {
+      rememberFromList(TOKEN, JSON.stringify(ids(from, 2000)));
+    }
+    assert.equal(ownershipCacheStats().size, MAX_ENTRIES);
+    assert.equal(ownershipCacheStats(":c-0").contains, false, "the oldest went first");
+  });
+});

@@ -383,6 +383,80 @@ describe("a delete the gateway sees is forgotten, with a tombstone (RP6)", () =>
     assert.equal(lookups.length, 0);
   });
 
+  // The tombstone map is bounded and swept (review of c193e9e, issue 4).
+  const uuidNo = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+
+  test("a tombstone older than T_own is swept at the next delete", async () => {
+    const { forgetConversation, ownershipCacheStats, ownershipTtlMs } = await import("@/lib/gateway/ownership");
+    const t0 = 1_000_000;
+    forgetConversation(MINE, t0);
+    forgetConversation(THEIRS, t0 + 1000);
+    assert.equal(ownershipCacheStats().tombstones, 2);
+    forgetConversation(uuidNo(3), t0 + ownershipTtlMs() + 1); // MINE's has expired, THEIRS's has not
+    assert.equal(ownershipCacheStats().tombstones, 2, "MINE swept, THEIRS and the new one kept");
+    forgetConversation(uuidNo(4), t0 + 1000 + ownershipTtlMs() + 1);
+    assert.equal(ownershipCacheStats().tombstones, 2, "THEIRS swept in turn");
+  });
+
+  test("the map never holds more than MAX_TOMBSTONES, dropping the oldest first", async () => {
+    const { forgetConversation, MAX_TOMBSTONES, ownershipCacheStats, rememberFromList } = await import(
+      "@/lib/gateway/ownership"
+    );
+    const now = Date.now();
+    for (let i = 0; i < MAX_TOMBSTONES + 10; i++) forgetConversation(uuidNo(i), now + i);
+    assert.equal(ownershipCacheStats().tombstones, MAX_TOMBSTONES);
+    // The oldest ten are gone: a stale list can warm id 0 again, but not id 10.
+    assert.equal(rememberFromList(TOKEN, JSON.stringify([{ id: uuidNo(0) }]), now - 1), 1);
+    stubFo([uuidNo(0)]);
+    assert.equal((await check("/api/chat", { conversationId: uuidNo(0) })).action, "forward-owned");
+    assert.equal(lookups.length, 0, "id 0's tombstone was evicted, so the warm stood");
+    rememberFromList(TOKEN, JSON.stringify([{ id: uuidNo(10) }]), now - 1);
+    stubFo([]);
+    assert.equal((await check("/api/chat", { conversationId: uuidNo(10) })).action, "refuse");
+    assert.equal(lookups.length, 1, "id 10's tombstone still refuses the stale warm");
+  });
+
+  test("a repeat delete of the same id is one tombstone, moved to the recent end", async () => {
+    const { forgetConversation, MAX_TOMBSTONES, ownershipCacheStats } = await import("@/lib/gateway/ownership");
+    const now = Date.now();
+    forgetConversation(MINE, now);
+    for (let i = 1; i < MAX_TOMBSTONES; i++) forgetConversation(uuidNo(i), now + i);
+    forgetConversation(MINE, now + MAX_TOMBSTONES); // refreshed, not duplicated
+    assert.equal(ownershipCacheStats().tombstones, MAX_TOMBSTONES);
+    forgetConversation(uuidNo(MAX_TOMBSTONES), now + MAX_TOMBSTONES + 1); // evicts the oldest: id 1, not MINE
+    assert.equal(ownershipCacheStats().tombstones, MAX_TOMBSTONES);
+    stubFo([]);
+    assert.equal((await check("/api/chat", { conversationId: MINE })).action, "refuse");
+    assert.equal(lookups.length, 1, "MINE is still tombstoned: no positive survived");
+  });
+
+  test("an id that could never be proved gets no tombstone, though its positives are forgotten", async () => {
+    const { forgetConversation, ownershipCacheStats, rememberFromList } = await import("@/lib/gateway/ownership");
+    rememberFromList(TOKEN, JSON.stringify([{ id: "not-a-uuid" }]));
+    assert.equal(ownershipCacheStats(":not-a-uuid").contains, true);
+    forgetConversation("not-a-uuid");
+    forgetConversation("x".repeat(2000));
+    assert.equal(ownershipCacheStats().tombstones, 0);
+    assert.equal(ownershipCacheStats(":not-a-uuid").contains, false);
+  });
+
+  test("the in-flight protection holds across a sweep: a proof that began before the delete still cannot re-warm", async () => {
+    const { forgetConversation, rememberFromList, ownershipTtlMs } = await import("@/lib/gateway/ownership");
+    mock.timers.enable({ apis: ["Date"], now: 2_000_000 });
+    try {
+      const askedAt = Date.now() - 500;
+      forgetConversation(MINE, Date.now());
+      mock.timers.tick(ownershipTtlMs() - 1); // almost T_own later, a sweep at another delete
+      forgetConversation(THEIRS, Date.now());
+      assert.equal(rememberFromList(TOKEN, JSON.stringify([{ id: MINE }]), askedAt), 1);
+      stubFo([]);
+      assert.equal((await check("/api/chat", { conversationId: MINE })).action, "refuse");
+      assert.equal(lookups.length, 1, "the pre-delete evidence was refused");
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
   test("only a DELETE of one conversation names an id", async () => {
     const { deletedConversationId } = await import("@/lib/gateway/ownership");
     assert.equal(deletedConversationId(`/api/conversations/${MINE}`, "DELETE"), MINE);

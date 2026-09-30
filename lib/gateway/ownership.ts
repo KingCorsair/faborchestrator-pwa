@@ -169,8 +169,18 @@ const MAX_WARM_BYTES = 4 * 1024 * 1024;
 /** `own:<fp>:<id>` → expiry instant. Map order is recency order (LRU). */
 const owned = new Map<string, number>();
 
-/** Conversation id → when the gateway saw it deleted. Held for `T_own`. */
+/**
+ * Conversation id → when the gateway saw it deleted. Held for `T_own`, swept
+ * on every insert, and never more than `MAX_TOMBSTONES` (oldest first past
+ * it). Map order is insertion order, refreshed on a repeat delete, so the
+ * oldest tombstone is always first. Until 30 September 2026 this map had no
+ * bound and was pruned only when the same id was re-proved after `T_own`
+ * (review of c193e9e, issue 4).
+ */
 const deletedAt = new Map<string, number>();
+
+/** The most tombstones held. A delete is one round trip to FO per entry, so this is generous. */
+export const MAX_TOMBSTONES = 10_000;
 
 /** Only these paths have a body worth inspecting. */
 export function needsOwnershipCheck(pathname: string, method: string): boolean {
@@ -217,11 +227,34 @@ function remembered(token: string, id: string): boolean {
 /**
  * A conversation was deleted through the gateway: forget it for every token
  * (RP6: an O(n) scan, deletes are rare) and hold a tombstone for `T_own`.
+ *
+ * Only an id that could ever be proved gets a tombstone: the proof accepts
+ * UUIDs alone, so a tombstone for anything else would protect nothing and
+ * would let a caller fill the map with junk one PATCH at a time. The positive
+ * entries are still forgotten whatever the id looks like.
  */
 export function forgetConversation(id: string, now: number = Date.now()): void {
-  deletedAt.set(id, now);
+  if (ConversationId.safeParse(id).success) {
+    sweepTombstones(now);
+    deletedAt.delete(id); // a repeat delete moves to the recent end
+    deletedAt.set(id, now);
+    while (deletedAt.size > MAX_TOMBSTONES) {
+      const oldest = deletedAt.keys().next();
+      if (oldest.done) break;
+      deletedAt.delete(oldest.value);
+    }
+  }
   const suffix = `:${id}`;
   for (const key of owned.keys()) if (key.endsWith(suffix)) owned.delete(key);
+}
+
+/** Drop every tombstone older than `T_own`. Oldest first, so the scan stops at the first live one. */
+function sweepTombstones(now: number): void {
+  const ttl = ownershipTtlMs();
+  for (const [id, at] of deletedAt) {
+    if (at + ttl > now) break;
+    deletedAt.delete(id);
+  }
 }
 
 /** Testing seam. The cache is process-wide, and a test must not inherit another's. */
@@ -230,11 +263,11 @@ export function resetOwnershipCache(): void {
   deletedAt.clear();
 }
 
-/** Testing seam: how many entries the cache holds, and whether any key contains `text`. */
-export function ownershipCacheStats(text?: string): { size: number; contains: boolean } {
+/** Testing seam: how many entries the cache and the tombstone map hold, and whether any cache key contains `text`. */
+export function ownershipCacheStats(text?: string): { size: number; tombstones: number; contains: boolean } {
   let contains = false;
   if (text) for (const key of owned.keys()) if (key.includes(text)) contains = true;
-  return { size: owned.size, contains };
+  return { size: owned.size, tombstones: deletedAt.size, contains };
 }
 
 export type OwnershipOutcome =

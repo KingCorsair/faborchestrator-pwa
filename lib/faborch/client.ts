@@ -40,6 +40,7 @@
  * enforce that at build time, and this app does not carry it — the enforcement
  * here is that the single caller is a route handler.
  */
+import { reportError } from "../report-error";
 
 /**
  * FO's own default, from `GET /api/chat`'s response body
@@ -58,10 +59,50 @@ export class FabOrchRequestError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
   }
 }
+
+/* ── How long FabOrchestrator is given ──────────────────────────────────────
+ *
+ * Ported from the `chetan` branch (`e843b9c`, 2026-09-28). Until then no call
+ * in this file had a limit: an FO that accepted a request and went quiet held
+ * it for Node's own default, five minutes, and sign-out sat on "Signing out…"
+ * for as long as the call hung.
+ *
+ * The three limits are named after the call classes of the architecture plan
+ * (RP4, `docs/architectural_review_issues/PWA_ARCHITECTURAL_REMEDIATION_PLAN.md`)
+ * so the full lifecycle design can take them over without renaming callers.
+ * **The values are provisional**: RP4 leaves every budget to checkpoint CP3,
+ * bounded by the edge's own origin timeout (§9 question 48). Each can be set
+ * from the environment in the meantime.
+ *
+ * This covers the calls this app makes to FO itself (sign-in, `/me`,
+ * sign-out, and the native screens' calls). **It does not cover the gateway**
+ * (`app/fo-gateway/[...path]/route.ts`), whose forwarding has its own `fetch`
+ * and still has no deadline: RP4's finding G1, which stays open.
+ */
+function limitFromEnv(name: string, fallback: number): number {
+  const value = Number(process.env[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export const FO_CALL_TIMEOUTS = {
+  /** RP4 `bounded`: a lookup, a sign-in, `/me`: headers **and** body. */
+  bounded: limitFromEnv("FO_TIMEOUT_BOUNDED_MS", 15_000),
+  /**
+   * RP4 `stream` headers: how long an answer may take to *begin*. Sixty
+   * seconds because the CloudFront distribution in front of production FO
+   * abandons a silent origin at sixty (FO's own `app/api/chat/route.ts`
+   * comment). The body then streams unbounded here; the native chat screen's
+   * reader watches it.
+   */
+  streamStart: limitFromEnv("FO_TIMEOUT_STREAM_START_MS", 60_000),
+  /** RP4 `revoke`: FO's `/api/auth/logout`. Nobody should wait on it. */
+  revoke: limitFromEnv("FO_TIMEOUT_REVOKE_MS", 5_000),
+} as const;
 
 /**
  * Hosts for which plain HTTP is a development convenience rather than a defect.
@@ -323,15 +364,16 @@ export async function foPinnedReport(
  */
 export async function foLogout(token: string): Promise<boolean> {
   try {
-    const res = await fetchFo("/api/auth/logout", {
-      method: "POST",
-      headers: authHeader(token),
-    });
+    const res = await fetchFo(
+      "/api/auth/logout",
+      { method: "POST", headers: authHeader(token) },
+      { timeoutMs: FO_CALL_TIMEOUTS.revoke },
+    );
     // 404 means FO had already dropped it — idle eviction, or an admin force
     // logout. The session is gone either way, which is the outcome asked for.
     return res.ok || res.status === 404;
-  } catch (error) {
-    console.error("[faborch] sign-out could not reach FabOrchestrator:", error);
+  } catch {
+    // Too slow or unreachable; `fetchFo` has already reported which.
     return false;
   }
 }
@@ -516,12 +558,18 @@ export async function foChat(options: {
   // is the clearest possible way to say "do not persist this turn".
   if (options.conversationId) body.conversationId = options.conversationId;
 
-  return fetchFo(options.path ?? "/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeader(options.token) },
-    body: JSON.stringify(body),
-    signal: options.signal,
-  });
+  return fetchFo(
+    options.path ?? "/api/chat",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader(options.token) },
+      body: JSON.stringify(body),
+      signal: options.signal,
+    },
+    // The limit covers the wait for the answer to begin, and nothing after:
+    // the body is handed back unread, to stream for as long as it takes.
+    { timeoutMs: FO_CALL_TIMEOUTS.streamStart, stream: true },
+  );
 }
 
 function authHeader(token: string): Record<string, string> {
@@ -529,23 +577,76 @@ function authHeader(token: string): Record<string, string> {
 }
 
 /**
+ * Every call to FabOrchestrator, with its time limit.
+ *
  * `no-store` on every call: Next caches `fetch` in route handlers by default,
  * and a cached sign-in or a cached conversation turn is a defect, not a saving.
+ *
+ * ── The limit covers the body too, unless the body is a stream ──────────────
+ * `fetch` resolves when the headers arrive, so a limit that stopped there would
+ * still let a response that starts and then stalls hang its caller. Ordinary
+ * calls are therefore read to the end *inside* the limit and handed back
+ * already buffered, so a caller's `res.json()` cannot hang after this returns.
+ * Only `stream: true` (an answer) is returned unread, with the limit covering
+ * the wait for it to begin.
+ *
+ * ── Three ways it fails, told apart ─────────────────────────────────────────
+ *   too slow        → 504, and reported
+ *   unreachable     → 503, and reported
+ *   cancelled here  → 499: the caller's own abort (the operator pressed Stop or
+ *                     left). Not FabOrchestrator's fault, so not reported.
  */
-async function fetchFo(path: string, init: RequestInit): Promise<Response> {
+async function fetchFo(
+  path: string,
+  init: RequestInit,
+  { timeoutMs = FO_CALL_TIMEOUTS.bounded, stream = false }: { timeoutMs?: number; stream?: boolean } = {},
+): Promise<Response> {
   const url = `${foBaseUrl()}${path}`;
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), timeoutMs);
+  const signal = init.signal ? AbortSignal.any([init.signal, deadline.signal]) : deadline.signal;
+
   try {
-    return await fetch(url, { ...init, cache: "no-store" });
+    const res = await fetch(url, { ...init, signal, cache: "no-store" });
+    if (stream) return res;
+
+    const body = await res.arrayBuffer();
+    return new Response(NULL_BODY_STATUSES.has(res.status) ? null : body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: { "Content-Type": res.headers.get("Content-Type") ?? "application/json" },
+    });
   } catch (cause) {
-    // The common one by far: FO is not running. Say so, with the address that
-    // was tried, rather than leaking `fetch failed` to the screen.
-    console.error("[faborch] request to", url, "failed:", cause);
-    throw new FabOrchRequestError(
+    if (deadline.signal.aborted) {
+      const error = new FabOrchRequestError(
+        `FabOrchestrator did not answer within ${Math.round(timeoutMs / 1000)} seconds.`,
+        504,
+        { cause },
+      );
+      reportError("faborch/timeout", error, { path, timeoutMs });
+      throw error;
+    }
+    if (init.signal?.aborted) {
+      throw new FabOrchRequestError("The request was cancelled before FabOrchestrator answered.", 499, {
+        cause,
+      });
+    }
+    // The common one by far: FO is not running. Say so, rather than leaking
+    // `fetch failed` to the screen.
+    const error = new FabOrchRequestError(
       `Could not reach FabOrchestrator at ${foBaseUrl()}. Is it running?`,
       503,
+      { cause },
     );
+    reportError("faborch/unreachable", error, { path });
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
+
+/** Statuses a `Response` may not be built with a body for. */
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
 /**
  * Reduce any FabOrchestrator error body to one displayable string.

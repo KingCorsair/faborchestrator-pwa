@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { PWA_ASSET_PREFIX, revalidateSourcePattern } from "./lib/gateway/registry";
 
 const nextConfig: NextConfig = {
   // Next 16's Turbopack infers its workspace root from the nearest lockfiles.
@@ -7,6 +8,26 @@ const nextConfig: NextConfig = {
   // directory with no `node_modules`, at which point `@import "tailwindcss"`
   // in app/globals.css cannot resolve.
   turbopack: { root: __dirname },
+
+  /**
+   * This app's own build output lives under a prefix, so bare `/_next/…` is
+   * unambiguously FabOrchestrator's when the embedding gateway is on (WP1,
+   * 2026-09-08). With `FO_EMBED_SURFACES` set, `proxy.ts` classifies bare
+   * `/_next/*` as an FO asset and forwards it; this app's documents therefore
+   * must not ask for their chunks there. `assetPrefix` makes them ask at
+   * `/pwa-assets/_next/*` instead, and `proxy.ts` rewrites that back to the
+   * real `/_next/*` before Next's filesystem routing — a same-origin path
+   * prefix, not a CDN. With the flag unset the prefix still applies and the
+   * rewrite still runs, so the app is byte-for-byte itself either way; the
+   * rewrite is unconditional in `proxy.ts` for exactly that reason.
+   *
+   * Verified by build + local run (WP1): the app's own chunks resolve through
+   * the prefix and the existing checks pass with the flag off. If a path-based
+   * assetPrefix ever misbehaves under `output: "standalone"`, the fallback in
+   * the architecture map is to drop this and have the middleware claim the
+   * app's chunk paths from `.next/build-manifest.json` instead.
+   */
+  assetPrefix: PWA_ASSET_PREFIX,
 
   /**
    * Move Next's own dev-tools badge out of the bottom-left corner.
@@ -85,11 +106,29 @@ const nextConfig: NextConfig = {
    * (the icons, the zxing wasm, the demo labels) fall under the rule and are
    * better for it: they have no hash to bust, so revalidation is the only thing
    * that keeps them current, and a 304 costs nothing.
+   *
+   * ── `pwa-assets/` too, and it was missing (WP3, 2026-09-08) ───────────────
+   * `assetPrefix` moved this app's own chunks to `/pwa-assets/_next/static/…`,
+   * and this pattern excluded only the bare `_next/static`, so from WP1 until
+   * this line **every content-hashed chunk this app owns was served
+   * `no-cache, must-revalidate`** — revalidated on every navigation, on a
+   * phone, for files whose names change whenever their contents do. Measured
+   * against the preview and against production side by side: production, built
+   * before the prefix, answered `public, max-age=31536000, immutable`; the
+   * preview answered `no-cache`. FabOrchestrator's proxied chunks were correct
+   * throughout, because the gateway passes their headers through and never
+   * consults this rule.
+   *
+   * The exclusion is written to match the prefix optionally, so the rule keeps
+   * behaving identically whether or not `assetPrefix` is set.
    */
   async headers() {
     return [
       {
-        source: "/((?!_next/static|_next/image).*)",
+        // Built from `IMMUTABLE_ASSET_PREFIXES`, so the exclusion cannot drift
+        // from the prefix again — `__tests__/gateway/cache-policy.test.ts`
+        // holds it against the paths both builds actually serve.
+        source: revalidateSourcePattern(),
         headers: [{ key: "Cache-Control", value: "no-cache, must-revalidate" }],
       },
     ];

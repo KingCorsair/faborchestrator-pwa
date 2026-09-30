@@ -105,6 +105,188 @@ current tier works cleanly end to end.
    Approve / Reject / Escalate buttons record the decision only (in-memory or
    simple log at first).
 
+## Architecture design workflow (the RP process)
+
+Added 2026-09-24. The controlling engineering plan for bringing this app to
+production is `docs/architectural_review_issues/PWA_ARCHITECTURAL_REMEDIATION_PLAN.md`,
+published as a Claude Artifact built from that file. It divides the work into
+remediation packages RP0–RP9, RP10-A and RP10-B. Each RP is first **designed**
+(its section rewritten from design language into the proposed corrected
+architecture), then frozen, and only later implemented. "RP finished" in this
+workflow means the detailed architecture design is complete, not that
+production code exists. The fixed direction is: installed PWA → same-origin
+gateway → the real FabOrchestrator UI and APIs, `whole` mode; the PWA-native
+chat, reports and cockpit retire. Do not reopen it.
+
+The design of every RP from RP3 onwards follows these steps, in order:
+
+A. Inspect the RP section and the code it describes (and, where the design
+   depends on FabOrchestrator, the local FO clone; anything learned there is
+   not production behaviour and is tagged `[FO-clone]`).
+B. Produce the detailed corrected architecture: component responsibilities,
+   request and data flows, every finding mapped problem → root cause → exact
+   fix → affected components → behavioural test, with no vague statements.
+C. Resolve every question the repository or engineering principles can
+   answer. Ask the human only genuine product, FO-owner or deployment
+   decisions, each explained in plain English with realistic options and a
+   recommendation where one is justified. Stop and wait for the answers.
+D. Incorporate the answers into the plan. When the RP design would otherwise
+   be considered complete, **run the independent architecture review
+   automatically**, without being asked. The mechanism (verified 2026-09-24
+   by a dry run in this repository) is:
+   1. read the reviewer charter
+      `docs/architectural_review_issues/ARCHITECTURE_REVIEWER.md` in full;
+   2. spawn a built-in **`general-purpose`** subagent through the Agent tool
+      (`subagent_type: general-purpose`) whose prompt tells it to read that
+      charter file with the Read tool and follow it exactly, and gives it:
+      the RP name (or `WHOLE`), the plan path and expected revision, and
+      the frozen earlier RPs it depends on or interacts with (§2 "Depends
+      on" and §5);
+   3. take the review it returns as the independent review.
+   The subagent runs in its own context and sees only the charter, the plan
+   and the repository, which is what makes the review independent. A named
+   project agent `architecture-reviewer` (`.claude/agents/`) exists as an
+   optional alias that follows the same charter; Claude Code loads
+   `.claude/agents/` only at session start and only when the session is
+   opened in this repository's root, and a test on 2026-09-24 showed a file
+   added during a session is not seen, so **never depend on the alias**: use
+   the `general-purpose` mechanism above. The human must never have to ask
+   for this review.
+E. The reviewer performs an independent adversarial review and returns
+   findings graded A. BLOCKING, B. FIX NOW or C. DEFER, each with an
+   evidence status (VERIFIED FROM CODE, VERIFIED BY TEST/PROBE, INFERRED,
+   REQUIRES FO/PRODUCTION CONFIRMATION), the eleven fields the charter
+   requires, a closure check, a cross-RP check, and the verdict
+   `SAFE TO FREEZE` or `NOT SAFE TO FREEZE`.
+F. Examine every finding. For technically derivable BLOCKING and FIX NOW
+   findings: verify the finding against the code, correct the architecture,
+   update the plan, and keep the finding maps, tests, §2 summary, §8 matrix
+   and dependency edges consistent. For DEFER findings: assign one primary
+   owner (a specific RP part, checkpoint or external owner; never "RP3/RP7").
+   For genuine human decisions: stop and ask; do not guess. Reject a finding
+   only with stated evidence, and record the rejection.
+G. If BLOCKING or substantial FIX NOW findings changed the architecture,
+   run the same review mechanism (step D) exactly once more against the
+   corrected design.
+H. At most two automatic review rounds per RP. If problems remain after the
+   second round, show them to the human; do not spawn further reviews.
+I. Mark the RP **FROZEN FOR DESIGN PASS** only when: no BLOCKING finding is
+   unresolved; every FIX NOW finding is resolved; every DEFER finding has an
+   explicit owner; every genuine human decision is answered or recorded as an
+   external dependency; and the consistency checks pass:
+   `python docs/architectural_review_issues/check_plan.py docs/architectural_review_issues/PWA_ARCHITECTURAL_REMEDIATION_PLAN.md`
+   (every review finding and G-finding owned exactly once, §2 summary equal
+   to the §8 matrix, dependency edges equal to the summary, no cycles, every
+   RP and CP section present) plus, after republishing the Artifact, every
+   internal page link resolving.
+
+The reviewer also checks each RP against the frozen earlier RPs it depends on
+or interacts with (RP3 against RP1 and RP2, RP4 against RP1–RP3, and so on),
+inspecting only the interaction, not re-auditing the earlier RP.
+
+After all RPs are designed, run the same review mechanism once with the RP
+name `WHOLE` against the complete plan: cross-RP contradictions, missing end-to-end failure
+paths, security boundaries, authentication and session interactions,
+deployment and scaling assumptions, observability, operational recovery,
+whether every finding is owned and closed or deferred, and whether the RPs
+form one coherent production architecture. This is separate from the per-RP
+reviews.
+
+Traceability is the reviewer's own output plus a concise review record kept
+in the RP section or the plan's revision history: review performed, the
+reviewer mechanism used (`general-purpose` subagent with the charter, or the
+named alias if it happened to be available), findings raised, findings
+accepted, rejected or deferred, architecture changes made, the second
+review's result if one ran, and the freeze status. No separate trace system.
+
+### Delta review: changing a section that has already been reviewed
+
+Added 2026-09-27. The per-RP review above happens once, at the end of an RP's
+design. Sections keep changing after that (a later RP moves an assumption, a
+context restoration finds a stale fact, a freeze correction lands), and a change
+to a reviewed section can undo what the review established. **DELTA REVIEW** is
+the same reviewer, the same charter (`ARCHITECTURE_REVIEWER.md`, "DELTA mode")
+and the same `general-purpose` subagent, pointed at the change instead of the
+plan. It is not a second agent and it never depends on the named alias. **Verified
+2026-09-27 by a dry run:** a fabricated three-hunk cosmetic diff (revision
+number, a doubled space, `sub-domain` to `subdomain`) was classified cosmetic
+and triggered nothing; a fabricated two-hunk RP2 diff (a cookie-alone GET
+exception to the G26 rule, and a 30-day cookie outliving the 12-hour bearer)
+triggered the reviewer, which returned 2 BLOCKING and 3 FIX NOW findings
+against exactly those hunks, cited `auth-bridge.ts`, `injection.test.ts`,
+`session.ts`, `proxy.ts` and RP1's G31 text, named the RP1 and RP7 conflicts,
+raised nothing outside the change, and ended `DELTA NOT SAFE`.
+
+**When.** Every time Claude edits `PWA_ARCHITECTURAL_REMEDIATION_PLAN.md` inside
+an RP section that has already received its normal review (frozen or awaiting
+freeze), or edits a checkpoint, §2, §5 or §8 row that such an RP owns, Claude
+produces the diff of the plan against its **last reviewed state** and reads it
+hunk by hunk before doing anything else. The last reviewed state is the commit
+recorded in the RP's review record once the plan is committed; while the plan
+is uncommitted (it is, as of 2026-09-27) it is the snapshot
+`docs/architectural_review_issues/baseline/PWA_ARCHITECTURAL_REMEDIATION_PLAN.reviewed.md`,
+which Claude refreshes **only** when a review round (normal or delta) has
+completed and its corrections are in the plan. The diff is
+`diff -u <baseline> <plan>`; hunks that fall in sections not yet reviewed (an
+RP still being designed) are outside DELTA's scope and are ignored.
+
+**Classify each hunk.** A hunk is **substantive** if it changes a component's
+responsibility; a request or data flow; authentication or authorisation;
+session behaviour; which routes are exposed; a trust boundary; a body limit;
+timeout, error, rate-limiting, caching, browser-security or service-worker
+behaviour; a deployment or scaling assumption; who owns a finding; a
+dependency between RPs; or a behavioural acceptance criterion or test. A
+factual statement about FO or the code that a rule rests on counts as
+substantive when its truth value changes, even if the rule's wording does not.
+A hunk is **cosmetic** if it is spelling, formatting, wording that leaves the
+meaning intact, link repair, or a revision number. **Any substantive hunk in a
+reviewed section triggers DELTA REVIEW automatically**; a diff that is entirely
+cosmetic does not, and Claude says so in one line in the revision history
+entry. When in doubt the hunk is substantive: a wrong "cosmetic" costs a
+missed review, a wrong "substantive" costs one subagent run.
+
+**Invocation.** Spawn a `general-purpose` subagent whose prompt tells it to
+read the charter with the Read tool and follow its DELTA mode, and gives it:
+the affected RP(s); the plan path and revision; the unified diff (only the
+substantive hunks and their context, so the reviewer is not asked to filter
+noise); the current text of the affected part(s); the frozen RPs the change
+interacts with; and pointers to the code, tests or FO-clone files the changed
+statements rely on. The reviewer concentrates on the change and returns
+findings with IDs `<RP>-D<n>` and the verdict `DELTA SAFE` or
+`DELTA NOT SAFE`.
+
+**Cross-RP changes.** When a later RP's design changes an assumption or rule
+that belongs to an earlier frozen RP (RP4 needing an RP2 session rule to move,
+say), the delta review receives **both sides**: the hunk in the later RP and
+the earlier RP's rule it touches, named explicitly. The reviewer inspects the
+interaction only, never the whole earlier RP, and the finding ID names both
+(`RP4/RP2-D1`). The earlier RP is not re-reviewed and its freeze is not
+withdrawn by the fact of the change; it is withdrawn only if the delta review
+finds a BLOCKING or FIX NOW finding against its rule.
+
+**Result.** `DELTA SAFE`: record and continue. `DELTA NOT SAFE`: Claude
+verifies each finding against the code and the plan, corrects technically
+derivable BLOCKING and FIX NOW findings, asks the human only genuine product,
+FO-owner, security or deployment decisions, keeps the finding maps, tests, §2,
+§5 and §8 consistent, and reruns
+`python docs/architectural_review_issues/check_plan.py docs/architectural_review_issues/PWA_ARCHITECTURAL_REMEDIATION_PLAN.md`.
+If the corrections were themselves substantive, one further delta review runs
+against them; at most two delta rounds per change, after which anything left
+is shown to the human. **An affected RP is not marked frozen again, and a
+freeze is not restored, until the delta review passes.** Then the baseline is
+refreshed.
+
+**Traceability.** One short entry in the plan's revision history (or the RP's
+review record): architecture changed; affected RP(s); delta review run;
+findings, if any; resulting corrections; `DELTA SAFE` or `DELTA NOT SAFE`.
+Nothing else: no trace database, no extra agent.
+
+RP1 and RP2 went through this process manually and are frozen for this
+design pass in plan revision 3.4; do not re-review them automatically. The
+automatic process begins with RP3. The reviewer never edits the plan or any
+code, and this workflow never authorises production code changes: those come
+later, per RP, after the design is frozen.
+
 ## Reuse before adding
 
 Before adding any dependency or pattern, check whether FabOrchestrator already

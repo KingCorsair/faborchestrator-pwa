@@ -115,10 +115,14 @@ async function main() {
   // ── P4: connected data connections ────────────────────────────────────────
   try {
     const r = await fetch(`${BASE}/api/mcp/connections`, { headers: auth });
-    const body = (await r.json().catch(() => ({}))) as {
-      connections?: { id: string; name: string; status: string }[];
-    };
-    const all = body.connections ?? [];
+    type Conn = { id: string; name: string; status: string };
+    const body = (await r.json().catch(() => ({}))) as Conn[] | { connections?: Conn[] };
+    // FO answers with a bare array (`app/api/mcp/connections/route.ts`). The
+    // `{ connections }` shape this read until 2026-09-08 never existed on the
+    // deployment, so P4 reported "0 connected of 0 visible" for an account
+    // that had connected servers. Found during WP0 of the embedding work;
+    // both shapes are accepted so the probe cannot regress the other way.
+    const all = Array.isArray(body) ? body : (body.connections ?? []);
     const connected = all.filter((c) => c.status === "connected");
     record(
       "P4",

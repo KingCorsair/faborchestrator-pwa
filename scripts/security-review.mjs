@@ -53,7 +53,7 @@ try {
 
 /* ── 2. Session cookie ────────────────────────────────────────────────────── */
 
-const login = await fetch(`${APP}/api/auth/login`, {
+const login = await fetch(`${APP}/api/pwa/auth/login`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ email: env.FABORCH_PROBE_EMAIL, password: env.FABORCH_PROBE_PASSWORD }),
@@ -81,7 +81,7 @@ check("session", "the FabOrchestrator token is not also in the response body",
 /* ── 3. Authentication is required ────────────────────────────────────────── */
 
 const guarded = [
-  ["GET", "/api/auth/me"],
+  ["GET", "/api/pwa/auth/me"],
   ["GET", "/api/faborch/reports"],
   ["GET", "/api/faborch/reports/anything"],
   ["POST", "/api/faborch/insight/chat"],

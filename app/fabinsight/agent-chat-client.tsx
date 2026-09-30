@@ -153,7 +153,7 @@ export function AgentChatClient({
   );
 
   // `useSession` redirects to `/login` when there is no token at all, so the
-  // skeleton here covers the moment between mount and `/api/auth/me` answering.
+  // skeleton here covers the moment between mount and `/api/pwa/auth/me` answering.
   // Rendering the conversation before that would flash the "sign in to
   // FabOrchestrator" card at somebody who is already signed in to it.
   if (!session.ready) return <PageSkeleton />;

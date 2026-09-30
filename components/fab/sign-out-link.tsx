@@ -33,7 +33,7 @@
  * before.
  *
  * ── Why not `useSession` ────────────────────────────────────────────────────
- * That hook fetches `/api/auth/me` and holds a skeleton until it answers,
+ * That hook fetches `/api/pwa/auth/me` and holds a skeleton until it answers,
  * which on this screen would trade a cold-launch cockpit for a cold-launch
  * skeleton — and this page's whole value is that it paints immediately. It
  * also pulls in `useRouter`, which this component cannot have: see below.

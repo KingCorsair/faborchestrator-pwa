@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit",
     "icons": "npx tsx scripts/generate-icons.ts",
     "test:platform": "npx tsx --test \"__tests__/platform/*.test.ts\"",
-    "test": "npm run test:platform && npm run test:faborch",
+    "test": "npm run test:platform && npm run test:faborch && npm run test:gateway",
     "qr": "npx tsx scripts/generate-qr.ts",
-    "test:faborch": "npx tsx --test \"__tests__/faborch/*.test.ts\""
+    "test:faborch": "npx tsx --test \"__tests__/faborch/*.test.ts\"",
+    "test:gateway": "npx tsx --test \"__tests__/gateway/*.test.ts\""
   },
   "dependencies": {
     "clsx": "^2.1.1",

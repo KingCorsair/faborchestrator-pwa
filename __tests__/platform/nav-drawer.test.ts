@@ -141,7 +141,7 @@ describe("the drawer is a conversation sidebar, not a second navigation", () => 
     for (const label of ["Cockpit", "Agents", "Workflows", "Sites", "Reports"]) {
       assert.ok(!code.includes(`>${label}<`), `nav-drawer.tsx must not list ${label}`);
     }
-    assert.ok(!code.includes("NAV.map"), "the nav list must not be rendered here any more");
+    assert.ok(!code.includes("navItems("), "the nav list must not be rendered here any more");
     assert.ok(!drawer.includes('from "./nav-items"'), "and must not be imported");
   });
 
@@ -156,7 +156,12 @@ describe("the drawer is a conversation sidebar, not a second navigation", () => 
     // only from an agent screen.
     assert.ok(!landing.includes('className="hidden items-center gap-1.5 md:flex"'));
     assert.match(landing, /fab-nav-strip order-last flex w-full/);
-    assert.match(landing, /NAV\.map/);
+    // Since WP9 the list is a function of where the chat currently lives, so
+    // the Agents pill follows the cutover rather than naming a screen the rest
+    // of the app has stopped pointing at. Still one shared definition — that is
+    // the point of `nav-items.ts`, and why the cockpit and the shell stopped
+    // disagreeing about what the platform offers.
+    assert.match(landing, /navItems[(]chatHref[)][.]map/);
   });
 
   test("the agent screens carry no pill strip at all", () => {

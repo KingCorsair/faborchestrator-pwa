@@ -48,6 +48,23 @@ primary_region = "sin"
 [env]
   FABORCH_BASE_URL = "https://d7y8a8whrch88.cloudfront.net"
 
+  # ── Embedding gateway (WP1, 2026-09-08) ─────────────────────────────────────
+  #
+  # The FabOrchestrator documents this origin opens, as a comma-separated list
+  # of paths from the catalogue in `lib/gateway/registry.ts`, e.g. "/chat" or
+  # "/chat,/reports". Set, the middleware serves those FO pages (and their
+  # assets and API) from this origin through `app/__fo/[...path]/route.ts`.
+  #
+  # **Deliberately absent here, which means empty, which means off.** With no
+  # value the gateway is disabled and every path is this app's exactly as
+  # before the embedding work — the rollback at every stage. It is set only on
+  # a preview app while the embedded experience is proven, never on production
+  # until WP9 acceptance. WP1 does not authenticate the forwarded requests
+  # (that is WP2), so with it on, FO's chat *document* loads but its data calls
+  # meet FO's own 401 until WP2.
+  #
+  #   FO_EMBED_SURFACES = "/chat"
+
 [build]
 
 [http_service]

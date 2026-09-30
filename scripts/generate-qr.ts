@@ -29,6 +29,15 @@
  * a version bump and nothing else.
  *
  * Run: npm run qr -- https://your-app.fly.dev/orders
+ *      npm run qr -- https://your-app.fly.dev/ some-name
+ *
+ * ── The optional second argument ─────────────────────────────────────────────
+ * By default the file is named after the host, which was right while there was
+ * one deployment. There is now more than one — production and the embedding
+ * preview — and two codes whose names differ only by a hostname are two codes
+ * somebody mixes up when they are looking at printouts rather than at URLs.
+ * Passing a name says which is which. It is a file name, not a path:
+ * separators are refused, so this cannot write outside `qr/`.
  */
 
 import { mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -81,7 +90,17 @@ if (ephemeral) {
 const outDir = resolve(join(import.meta.dirname, "..", "qr"));
 mkdirSync(outDir, { recursive: true });
 
-const outFile = join(outDir, `${url.hostname.replace(/[^a-z0-9]+/gi, "-")}.png`);
+const requestedName = process.argv[3];
+if (requestedName !== undefined && !/^[a-z0-9][a-z0-9._-]*$/i.test(requestedName)) {
+  fail(
+    `"${requestedName}" is not usable as a file name.\n` +
+      "    Letters, digits, dot, dash and underscore only, and it may not begin\n" +
+      "    with a separator — the name is joined onto qr/, never taken as a path.",
+  );
+}
+
+const stem = (requestedName ?? url.hostname.replace(/[^a-z0-9]+/gi, "-")).replace(/\.png$/i, "");
+const outFile = join(outDir, `${stem}.png`);
 
 // Wrapped rather than awaited at the top level: tsx compiles these scripts to
 // CJS (there is no `"type": "module"` in package.json), where top-level await

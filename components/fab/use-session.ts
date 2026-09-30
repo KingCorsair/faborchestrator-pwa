@@ -41,7 +41,7 @@ export interface Session {
    *
    * The token itself is an httpOnly cookie this hook cannot read and must not
    * (`lib/faborch/session.ts`); the server reports the boolean on
-   * `/api/auth/me`. False until that answers, like everything else here.
+   * `/api/pwa/auth/me`. False until that answers, like everything else here.
    */
   faborch: boolean;
 }
@@ -92,7 +92,7 @@ export function useSession(): Session {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/auth/me", {
+        const res = await fetch("/api/pwa/auth/me", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -141,7 +141,7 @@ export function useSession(): Session {
 export async function logout(token: string | null) {
   if (token) {
     try {
-      await fetch("/api/auth/logout", {
+      await fetch("/api/pwa/auth/logout", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });

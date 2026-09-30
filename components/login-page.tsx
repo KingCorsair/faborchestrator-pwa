@@ -102,7 +102,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/auth/me", {
+        const res = await fetch("/api/pwa/auth/me", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -179,7 +179,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/login", {
+      const res = await fetch("/api/pwa/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: submittedEmail, password: submittedPassword }),

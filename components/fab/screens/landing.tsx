@@ -75,7 +75,8 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
-import { NAV } from "@/components/fab/nav-items";
+import { navItems } from "@/components/fab/nav-items";
+import { chatHref } from "@/lib/gateway/destinations";
 import { SignOutLink } from "@/components/fab/sign-out-link";
 import { Ask } from "@/components/fab/screens/landing-ask";
 
@@ -98,7 +99,7 @@ import { Ask } from "@/components/fab/screens/landing-ask";
  * the nav on every screen behind this one, so the front door and the app do not
  * disagree about what this product is.
  */
-function CockpitNav() {
+function CockpitNav({ chatHref }: { chatHref: string }) {
   return (
     <div
       className="sticky top-0 z-20 flex flex-wrap items-center gap-1.5 px-4 py-[14px] sm:px-[26px]"
@@ -137,7 +138,7 @@ function CockpitNav() {
         className="fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto md:order-none md:w-auto md:overflow-visible"
         aria-label="Sections"
       >
-        {NAV.map((item) => {
+        {navItems(chatHref).map((item) => {
           if (item.unavailable) {
             return (
               <span
@@ -289,6 +290,29 @@ interface Agent {
  *
  * The metrics are the product's own placeholders. See the file header.
  */
+/**
+ * ── Where the three open cards point, after the WP9 cutover ────────────────
+ *
+ * `chatHref` is `/chat` once the gateway is serving FabOrchestrator's own
+ * conversation screen and `/fabinsight` before that, and **all three open
+ * cards take it**, because in FabOrchestrator all three *are* the same screen:
+ * AGENT · 01, 02 and 04 every one route to `/chat` there (verified against
+ * upstream `e5a5abd`), and `lib/faborch/agents.ts` records that every agent
+ * this app exposes already shares `/api/chat`. There was never anything to
+ * route between — this app drew three doors onto one room, which is exactly
+ * the duplication WP9 exists to undo.
+ *
+ * Their framing stays. A card still says what that agent is for, because that
+ * is the cockpit's own presentation and it is how somebody decides which
+ * question to ask; what changed is that walking through the door now lands you
+ * in FabOrchestrator rather than in this app's copy of it.
+ */
+function agents(chatHref: string): Agent[] {
+  return AGENTS.map((a) =>
+    a.href === "/fabinsight" || a.href === "/backend-agent" ? { ...a, href: chatHref } : a,
+  );
+}
+
 const AGENTS: Agent[] = [
   {
     num: "AGENT · 01",
@@ -336,7 +360,7 @@ const AGENTS: Agent[] = [
   },
 ];
 
-function Nucleus() {
+function Nucleus({ chatHref }: { chatHref: string }) {
   return (
     <section aria-label="The Nucleus">
       <div className="mb-[18px] mt-[58px] flex flex-wrap items-center gap-[11px]">
@@ -366,7 +390,7 @@ function Nucleus() {
       </div>
 
       <ul className="grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-4">
-        {AGENTS.map((agent) => (
+        {agents(chatHref).map((agent) => (
           <AgentCard key={agent.num} {...agent} />
         ))}
       </ul>
@@ -567,18 +591,29 @@ function FooterStats() {
 
 /* ── The page ────────────────────────────────────────────────────────────── */
 
+/**
+ * The cockpit.
+ *
+ * A server component, which is what lets it read `FO_EMBED_SURFACES` directly
+ * and hand one answer to everything below. `chatHref` is the WP9 cutover in a
+ * single value: with the gateway serving FabOrchestrator's chat every door on
+ * this page opens it, and with the flag off every door opens this app's own
+ * screen exactly as it did before.
+ */
 export function Landing() {
+  const chat = chatHref();
+
   return (
     <div className="fab min-h-full" style={{ background: "var(--page-surface)" }}>
-      <CockpitNav />
+      <CockpitNav chatHref={chat} />
 
       <div className="mx-auto w-full max-w-[var(--page-width)] px-4 pb-[48px] pt-[38px] sm:px-[26px]">
         <div className="text-center">
           <Hero />
-          <Ask />
+          <Ask chatHref={chat} />
         </div>
 
-        <Nucleus />
+        <Nucleus chatHref={chat} />
         <FooterStats />
 
         {/* The strapline that sat here named the production order workflow's

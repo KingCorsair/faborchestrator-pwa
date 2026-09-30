@@ -19,8 +19,8 @@ process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign"
 
 import { NextRequest } from "next/server";
 import { sessionFor, verifyToken } from "@/lib/auth";
-import { POST } from "@/app/api/auth/login/route";
-import { POST as LOGOUT } from "@/app/api/auth/logout/route";
+import { POST } from "@/app/api/pwa/auth/login/route";
+import { POST as LOGOUT } from "@/app/api/pwa/auth/logout/route";
 
 const realFetch = globalThis.fetch;
 let calls: string[] = [];

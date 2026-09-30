@@ -124,7 +124,7 @@ ok("…on the sign-in page", at === "/login", at);
 /* ── 4. sign in, then the reported sequence end to end ──────────────────── */
 console.log("\n── 4. sign in → cockpit → sign out → cold launch ──────────────────");
 
-const login = await fetch(`${APP}/api/auth/login`, {
+const login = await fetch(`${APP}/api/pwa/auth/login`, {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -137,17 +137,53 @@ const jar = setCookies.map((c) => c.split(";")[0]).join("; ");
 const { token } = await login.json().catch(() => ({}));
 ok("sign-in succeeds", login.status === 200, `HTTP ${login.status}`);
 
-const cockpit = await visit("/", jar);
+// The front door leads into FabOrchestrator's cockpit since the audit, so a
+// signed-in operator meets a redirect here rather than a document. What the
+// gate owes is that it is **not** the sign-in redirect; the destination is
+// followed and checked below.
+const front = await visit("/", jar);
+const frontTo = front.headers.get("location");
+ok(
+  "a signed-in operator is not bounced to sign-in",
+  front.status === 200 || (front.status === 307 && !(frontTo ?? "").includes("/login")),
+  `HTTP ${front.status}${frontTo ? ` → ${frontTo}` : ""}`,
+);
+const cockpit = front.status === 307 ? await visit(new URL(frontTo, APP).pathname, jar) : front;
 const cockpitBody = await cockpit.text();
-ok("a signed-in operator gets the cockpit", cockpit.status === 200, `HTTP ${cockpit.status}`);
-ok("…and it is the real one", /The Nucleus/.test(cockpitBody), `${cockpitBody.length} bytes`);
+ok("…and reaches a cockpit", cockpit.status === 200, `HTTP ${cockpit.status}`);
+// FabOrchestrator's own cockpit, or this app's, depending on the mode. Its
+// text cannot be asserted from the wire: FabOrchestrator's `/home` is a client
+// component, so the document that arrives is a skeleton and the cockpit only
+// exists once its chunks have run. What IS on the wire is whose build it is —
+// this app's chunks under the asset prefix, or FabOrchestrator's bare
+// `/_next`. Either is a real cockpit and the gate is indifferent between them.
+const fromPwa = cockpitBody.includes("/pwa-assets/_next/");
+const fromFo = /(?:src|href)="\/_next\/static\//.test(cockpitBody);
+ok(
+  "…and it is a real one",
+  fromPwa || fromFo,
+  `${cockpitBody.length} bytes, ${fromFo ? "FabOrchestrator's build" : fromPwa ? "this app's build" : "neither"}`,
+);
 
+// What the gate owes these paths is that a *signed-in* operator is not
+// bounced to sign-in. Where they land afterwards changed in WP9: with the
+// gateway serving FabOrchestrator's chat, this app's own `/fabinsight` and
+// `/backend-agent` redirect to it (307 → /chat) rather than rendering, and
+// `/reports` is answered by FabOrchestrator itself. So the assertion is
+// "not the sign-in page", which is the property the gate actually has —
+// asserting 200 was asserting the old navigation as a side effect.
 for (const path of ["/fabinsight", "/backend-agent", "/reports"]) {
   const res = await visit(path, jar);
-  ok(`…and ${path} opens`, res.status === 200, `HTTP ${res.status}`);
+  const to = res.headers.get("location");
+  const bounced = res.status === 307 && (to ?? "").includes("/login");
+  ok(
+    `…and ${path} is not bounced to sign-in`,
+    res.status === 200 || (res.status === 307 && !bounced),
+    `HTTP ${res.status}${to ? ` → ${new URL(to, APP).pathname}` : ""}`,
+  );
 }
 
-const signOut = await fetch(`${APP}/api/auth/logout`, {
+const signOut = await fetch(`${APP}/api/pwa/auth/logout`, {
   method: "POST",
   headers: { cookie: jar, Authorization: `Bearer ${token}` },
 });
@@ -177,7 +213,7 @@ ok(
 /* ── 5. the boundary underneath, which was never the problem ────────────── */
 console.log("\n── 5. the API still refuses the revoked session ───────────────────");
 
-const staleMe = await fetch(`${APP}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+const staleMe = await fetch(`${APP}/api/pwa/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
 ok("the old bearer token alone authenticates nothing", staleMe.status === 401, `HTTP ${staleMe.status}`);
 
 /**
@@ -236,7 +272,7 @@ for (const path of ["/api/faborch/reports", "/api/faborch/insight/chat"]) {
  * recorded in `lib/auth.ts` and was refused before this change; nothing here
  * alters it.
  */
-const replayedMe = await fetch(`${APP}/api/auth/me`, {
+const replayedMe = await fetch(`${APP}/api/pwa/auth/me`, {
   headers: { cookie: jar, Authorization: `Bearer ${token}` },
 });
 console.log(

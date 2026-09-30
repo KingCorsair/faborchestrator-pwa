@@ -1,0 +1,120 @@
+# Fly.io configuration for the **embedding preview**, not for production.
+#
+# ── Why a second app and a second file (WP1, 2026-09-08) ──────────────────────
+# The embedding gateway is proven on a deployment before anyone is asked to
+# accept it, and production (`faborch-demo`, configured by `fly.toml`) must go
+# on being the app people already have. So the preview is a separate Fly app
+# with its own hostname, its own session secret and its own machine. Nothing
+# here touches production; `flyctl deploy -c fly.preview.toml` names this file
+# explicitly and `fly.toml` is never read during a preview deploy.
+#
+# Deploy:
+#   flyctl deploy -c fly.preview.toml --ha=false --app faborch-embed-preview
+#
+# Retire it after the embedding work is accepted:
+#   flyctl apps destroy faborch-embed-preview
+app = "faborch-embed-preview"
+
+# ── Next to FabOrchestrator, not next to the user (WP8, 9 September) ──────────
+#
+# This was `sin`, matching production, so that a comparison between the two
+# would be a comparison of architecture rather than geography. WP8 measured what
+# that cost and the answer was most of the latency in the product:
+#
+#   from a machine in sin   FO /chat via the gateway   302 ms
+#   from a machine in sjc   FO /chat via the gateway    40 ms
+#
+# FabOrchestrator's origin is in US-West, and its CloudFront distribution caches
+# nothing (`docs/OPEN_ISSUES.md` item 0b), so **every** request reaches that
+# origin. From Singapore each one paid a trans-Pacific round trip; a phone
+# loading the embedded chat paid 27 of them.
+#
+# The counterintuitive part: a gateway is normally placed near its users, but
+# this one proxies a fixed, distant origin. Placing it beside FabOrchestrator
+# turns 27 long round trips into 27 short ones plus a single long leg the
+# browser amortises over one connection. For the same reason, running machines
+# in *both* regions would not help — an operator routed to the near machine
+# would still pay the far leg 27 times.
+#
+# Measured end to end from a US-West client, first load of the embedded chat:
+# **3.7 s → 0.75 s**; warm load 854 ms → 256 ms. The demo and its expected users
+# are in the US, which is the condition this choice depends on. If that changes,
+# re-run `scripts/embed-latency-check.mjs` from where the operators actually are
+# before assuming this is still the right region.
+primary_region = "sjc"
+
+[env]
+  # The same FabOrchestrator production reads. The preview forwards to it and
+  # never writes to it: every request the gateway makes is a GET, or a call the
+  # signed-in operator's own session is entitled to make.
+  FABORCH_BASE_URL = "https://d7y8a8whrch88.cloudfront.net"
+
+  # ── FabOrchestrator's mobile-navigation fix, ahead of FabOrchestrator ──────
+  #
+  # 11 September. Pages and `/_next` assets come from a build of the
+  # FabOrchestrator branch `mobile-nav-preview`, running privately as
+  # `faborch-fo-ui-preview` (`fly.fo-ui-preview.toml`: no secrets, no public
+  # address). Every API call still goes to FABORCH_BASE_URL above. Delete this
+  # line to go back to FabOrchestrator production's own UI — which is also what
+  # to do once their team has shipped the fix. See lib/gateway/upstream.ts.
+  FO_UI_BASE_URL = "http://faborch-fo-ui-preview.internal:3000"
+
+  # ── The switch this preview exists to exercise ──────────────────────────────
+  #
+  # Set here and **only** here. Production's `fly.toml` deliberately leaves it
+  # out, which means off, which means every FabOrchestrator path is unreachable
+  # there and the app is exactly what it was before the embedding work.
+  #
+  # `/chat` came from WP1 and `/reports` from WP7 — and **adding the second one
+  # was this entire line's worth of work**, which is the point WP7 exists to
+  # demonstrate. No page, no proxy route, no parser, no screen: the Dashboard
+  # is FabOrchestrator's own `/reports`, and everything it needs
+  # (`/api/fabinsight/pinned`, `/api/fabinsight/render`, its own `/_next`
+  # chunks) was already forwarded and already authenticated by the WP2 bridge.
+  #
+  # `/reports` is also the one path both sides claim. This flag decides which
+  # one the URL serves: listed, FabOrchestrator's page; absent, the app's own
+  # read-only screen, unchanged and still in the tree until WP9. That is the
+  # rollback, and `__tests__/gateway/registry.test.ts` holds both directions.
+  # ── Whole-application embedding (audit, 9 September) ───────────────────────
+  #
+  # `surfaces` served two of FabOrchestrator ten pages while forty-eight of its
+  # fifty-two API routes already went through. The gateway was built general and
+  # pointed at two paths, so a page FabOrchestrator shipped was a 404 here until
+  # somebody listed it — which is how its own Back button came to point at a
+  # dead page.
+  #
+  #   off       no FabOrchestrator on this origin. The app of 7 September.
+  #   surfaces  WP1-WP9 behaviour, driven by FO_EMBED_SURFACES below.
+  #   whole     FabOrchestrator owns the documents on this origin except the
+  #             ones this app reserves and the ones explicitly denied.
+  #
+  # **Documents only.** The API stays an explicit allow-list in every mode, so a
+  # page their team deploys appears by itself but an endpoint they add is looked
+  # at by a person first. See lib/gateway/registry.ts.
+  FO_EMBED_MODE = "whole"
+
+  # Kept for the rollback: set FO_EMBED_MODE to "surfaces" and this decides
+  # again, exactly as it did through WP9. Ignored while the mode is "whole".
+  FO_EMBED_SURFACES = "/chat,/reports"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  # http → https. Not cosmetic: outside a secure context the service worker
+  # will not register, so the installed-app behaviour under test would differ
+  # from production's for a reason that has nothing to do with the gateway.
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # Matching production. The gateway streams bodies rather than buffering them,
+  # so proxying FabOrchestrator's ~4 MB of chunks does not need more memory than
+  # answering this app's own pages — which is itself something the preview is
+  # here to confirm under a real deploy.
+  memory = "512mb"

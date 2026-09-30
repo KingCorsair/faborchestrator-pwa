@@ -35,17 +35,42 @@
  * sent on arrival — that is how `/fabinsight?q=…` worked. Nothing new was
  * needed to make the first question send itself.
  *
+ * ── After the WP9 cutover it is a door, not a composer ─────────────────────
+ * When the gateway is serving FabOrchestrator's own `/chat`, everything below
+ * is replaced by a single control that opens it. That is not a smaller version
+ * of this screen; it is the recognition that **this ask bar was always a copy
+ * of FabOrchestrator's composer** — same 780px card, same gradient Ask, and,
+ * as WP9 confirmed against production, the same placeholder text down to the
+ * ellipsis. Keeping both would give the cockpit two composers wired to two
+ * different chats, and an operator a different experience depending on whether
+ * they typed here or tapped a card.
+ *
+ * **The typed question cannot travel, and that is why the input goes rather
+ * than staying.** FabOrchestrator's chat ignores `?q=`, `?message=` and
+ * `?prompt=` — all three verified against the production deployment, composer
+ * still empty — so a box here could only throw away what was typed into it. An
+ * input that discards your sentence is worse than no input at all. The one
+ * honest alternative was to have this app's script type into FabOrchestrator's
+ * composer after it hydrates, which is the same fragile class as the three
+ * failed WP6 sidebar attempts and was rejected for the same reason.
+ *
+ * The cost is real and worth stating: the cockpit stops being ask-first, and a
+ * question now begins one tap further in, in FabOrchestrator's own composer.
+ * Amay made that call on 9 September against the two alternatives above.
+ *
+ * With the flag off, every line below runs exactly as it did.
+ *
  * ── Why the session is read here rather than after the question ─────────────
  * `AgentChat` will not send until `hasFabOrchSession` is true, so resolving the
  * session only *after* somebody presses Ask would leave the first question
- * sitting for as long as `/api/auth/me` takes — on the deployment, long enough
+ * sitting for as long as `/api/pwa/auth/me` takes — on the deployment, long enough
  * to read as nothing having happened. Reading it at the top means the session
  * is already resolved by the time anyone finishes typing.
  */
 
 import * as React from "react";
 import Link from "next/link";
-import { Send } from "lucide-react";
+import { ArrowRight, Send } from "lucide-react";
 import { AgentChat } from "@/components/fab/screens/agent-chat";
 import { useSession } from "@/components/fab/use-session";
 import { FO_AGENTS } from "@/lib/faborch/agents";
@@ -58,9 +83,14 @@ function isModifiedClick(e: React.MouseEvent): boolean {
   return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
 }
 
-export function Ask() {
+export function Ask({ chatHref }: { chatHref: string }) {
   const session = useSession();
   const [asked, setAsked] = React.useState<string | null>(null);
+
+  // The cutover. `chatHref` is decided on the server by
+  // `lib/gateway/destinations.ts`; when it is FabOrchestrator's own chat, this
+  // page offers the door and FabOrchestrator offers the composer.
+  if (chatHref === "/chat") return <OpenChat href={chatHref} />;
 
   if (asked !== null) {
     return (
@@ -137,5 +167,53 @@ export function Ask() {
         ))}
       </div>
     </>
+  );
+}
+
+/**
+ * The cockpit's primary action once FabOrchestrator owns the chat.
+ *
+ * Deliberately one control and not a row of them. The three suggestion chips
+ * went with the composer: each carried a question in its URL, and a question
+ * cannot be handed to FabOrchestrator's chat any more than a typed one can, so
+ * a chip could only have opened the same empty screen three times over while
+ * implying it would ask something.
+ *
+ * It keeps the ask bar's own shape — the 780px card, the gradient, the arrow —
+ * because the cockpit's layout was built around that block, and because what
+ * sits here should still read as "this is where you ask", which it is. It is a
+ * plain `<Link>`: it works before hydration, opens in a new tab on a modified
+ * click, and needs no JavaScript at all, which is more than the form it
+ * replaced could say.
+ */
+function OpenChat({ href }: { href: string }) {
+  return (
+    <div className="mx-auto mt-[26px] w-full max-w-[780px]">
+      <Link
+        href={href}
+        className="fab-card flex w-full items-center justify-between gap-3 py-[18px] pl-5 pr-[18px] no-underline transition-transform hover:-translate-y-px"
+        style={{ color: "var(--text-ink)" }}
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span
+            className="flex h-9 w-9 flex-none items-center justify-center"
+            style={{
+              borderRadius: 11,
+              background: "linear-gradient(135deg,var(--brand-indigo),var(--cockpit-indigo))",
+              boxShadow: "var(--shadow-brand)",
+            }}
+          >
+            <Send size={16} strokeWidth={2} color="white" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 text-left">
+            <span className="block text-[15px] font-bold">Ask FabInsight</span>
+            <span className="block truncate text-[12px]" style={{ color: "var(--text-subtle)" }}>
+              Questions, dashboards and files, in FabOrchestrator
+            </span>
+          </span>
+        </span>
+        <ArrowRight size={18} strokeWidth={2} aria-hidden="true" style={{ color: "var(--text-subtle)" }} />
+      </Link>
+    </div>
   );
 }

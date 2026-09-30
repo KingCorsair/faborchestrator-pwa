@@ -1,0 +1,46 @@
+# FabOrchestrator's **UI**, built from a branch, for the embedding preview only.
+#
+# ── What this is (11 September) ───────────────────────────────────────────────
+# The mobile-navigation fix is a change to FabOrchestrator's own components. It
+# has to be seen on a phone before their team ships it, and FabOrchestrator
+# production must not be touched to do that. So the branch is built with
+# FabOrchestrator's own Dockerfile and run here as a separate app, and the
+# preview gateway (`fly.preview.toml`, `FO_UI_BASE_URL`) sends it **page and
+# asset traffic only**. Every API call still goes to FabOrchestrator
+# production, exactly as it did before this app existed.
+#
+# ── Why it is safe to run ─────────────────────────────────────────────────────
+#   · **No secrets.** Nothing is set with `flyctl secrets`: no DATABASE_URL, no
+#     JWT secret, no MES or model credentials. Its API routes cannot reach any
+#     data, and the gateway never sends it an API call anyway.
+#   · **No public address.** Deployed with `--no-public-ips` and no
+#     `[http_service]`, so it is reachable only from this organisation's other
+#     machines over Fly's private network, as
+#     `faborch-fo-ui-preview.internal:3000`.
+#   · **The report scheduler cannot touch production.** FabOrchestrator's
+#     `instrumentation.ts` starts it on boot; with no DATABASE_URL its first
+#     query fails to connect and the tick logs an error. The interval below
+#     makes that once a day rather than once a minute.
+#
+# Deploy (build context = the FabOrchestrator branch checkout):
+#   flyctl deploy "<fo-mobile-nav>/claudeai_athena" -c fly.fo-ui-preview.toml \
+#     --dockerfile "<fo-mobile-nav>/claudeai_athena/Dockerfile" \
+#     --no-public-ips --ha=false --app faborch-fo-ui-preview
+#
+# Retire it once FabOrchestrator production ships the fix: remove
+# `FO_UI_BASE_URL` from `fly.preview.toml`, redeploy the preview, then
+#   flyctl apps destroy faborch-fo-ui-preview
+app = "faborch-fo-ui-preview"
+primary_region = "sjc"
+
+[env]
+  # Fly's private network is IPv6; FabOrchestrator's Dockerfile binds 0.0.0.0,
+  # which would accept nothing over it. "::" listens on both.
+  HOSTNAME = "::"
+  PORT = "3000"
+  # One scheduler tick a day instead of one a minute (see above).
+  REPORT_TICK_INTERVAL_MS = "86400000"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"

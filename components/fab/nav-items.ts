@@ -50,10 +50,25 @@ export interface NavItem {
 const PLACEHOLDER_ON_BOTH_SIDES =
   "Not available in this app yet, and a placeholder on the platform's own cockpit.";
 
-export const NAV: NavItem[] = [
-  { href: "/", label: "Cockpit", icon: LayoutGrid },
-  { href: "/fabinsight", label: "Agents", icon: Sparkles },
-  { href: "/workflows", label: "Workflows", icon: Workflow, unavailable: PLACEHOLDER_ON_BOTH_SIDES },
-  { href: "/sites", label: "Sites", icon: Building2, unavailable: PLACEHOLDER_ON_BOTH_SIDES },
-  { href: "/reports", label: "Reports", icon: BarChart3 },
-];
+/**
+ * ── Agents points wherever the chat currently lives (WP9, 9 September) ──────
+ *
+ * `chatHref` comes from `lib/gateway/destinations.ts`: `/chat` once the gateway
+ * is serving FabOrchestrator's own conversation screen, `/fabinsight` before
+ * that. It is passed in rather than read here because this module carries no
+ * directive and is imported by a client component, which cannot read the
+ * environment. The server decides and the value travels down.
+ *
+ * Reports needs no such treatment. It is `/reports` in both worlds — the flag
+ * decides which *application* answers it, which is the collision WP7 resolved —
+ * so a Reports link is never rewritten.
+ */
+export function navItems(chatHref: string): NavItem[] {
+  return [
+    { href: "/", label: "Cockpit", icon: LayoutGrid },
+    { href: chatHref, label: "Agents", icon: Sparkles },
+    { href: "/workflows", label: "Workflows", icon: Workflow, unavailable: PLACEHOLDER_ON_BOTH_SIDES },
+    { href: "/sites", label: "Sites", icon: Building2, unavailable: PLACEHOLDER_ON_BOTH_SIDES },
+    { href: "/reports", label: "Reports", icon: BarChart3 },
+  ];
+}

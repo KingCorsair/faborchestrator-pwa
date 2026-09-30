@@ -36,11 +36,33 @@ import { Landing } from "@/components/fab/screens/landing";
  * still tested — kept because the target design may want the derived count
  * ("orders awaiting review"), and its provenance is expensive to rebuild.
  *
- * `/` still prerenders as `○` in the build output either way, and that still
- * matters even now the page is behind a session: the gate runs in middleware,
- * so a request that gets this far is one that has already been decided, and
- * what it should meet is finished HTML rather than a skeleton waiting on a
- * fetch. The cockpit paints on a cold cache, before any bundle arrives.
+ * This page prerendered as `○` until WP9, and that mattered even behind the
+ * session: the gate runs in middleware, so a request that gets this far has
+ * already been decided, and what it should meet is finished HTML rather than a
+ * skeleton waiting on a fetch.
+ *
+ * ── Why it is `ƒ` now, and why that is not a regression (WP9) ───────────────
+ * The cockpit reads `FO_EMBED_SURFACES` — through `chatHref()` — to decide
+ * whether its doors open FabOrchestrator's chat or this app's own screen. A
+ * **statically prerendered page reads that variable once, during `next build`**,
+ * inside a Docker build where it is not set. The value would be baked into the
+ * HTML as `/fabinsight` and stay there for the life of the image, so the
+ * cutover would appear to work locally and silently do nothing on the
+ * deployment — and, worse, the rollback would stop being a flag: you would have
+ * to rebuild to change where the front door points.
+ *
+ * That last part is what settles it. Every package since WP1 has rested on
+ * **one build, with the flag deciding at runtime**, and baking a build-time
+ * answer into the front door would quietly take that away. So the page is
+ * server-rendered on demand instead.
+ *
+ * The cost is a server render rather than a static file. It is small and it was
+ * measured: this app's own documents answer in 12–20 ms from inside the machine
+ * (WP8), the cockpit fetches nothing, and it is still *finished HTML* on
+ * arrival — dynamic rendering changes when the HTML is built, not whether the
+ * phone waits for a bundle to see it. `__tests__/platform/route-gate.test.ts`
+ * pins the export, because this is precisely the kind of thing that regresses
+ * silently: nothing fails, the front door just quietly stops moving.
  *
  * Thin, like every other page in this app — the screen is in
  * `components/fab/screens/`.
@@ -51,6 +73,9 @@ export const metadata: Metadata = {
   description:
     "An enterprise AI platform for manufacturing operations. Review and approve production orders using MES evidence and AI-assisted analysis.",
 };
+
+/** See the note above: the front door must read the flag per request, not per build. */
+export const dynamic = "force-dynamic";
 
 export default function Page() {
   return <Landing />;

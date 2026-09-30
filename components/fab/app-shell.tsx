@@ -24,7 +24,7 @@ import { LogOut, Menu, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
 import { NavDrawer, type DrawerHistory } from "./nav-drawer";
-import { NAV } from "./nav-items";
+import { navItems } from "./nav-items";
 import { logout, type SessionUser } from "./use-session";
 
 export function AppShell({
@@ -161,7 +161,21 @@ export function AppShell({
           className="fab-nav-strip order-last flex w-full items-center gap-1.5 overflow-x-auto sm:order-none sm:ml-3 sm:w-auto sm:overflow-visible"
           aria-label="Sections"
         >
-          {NAV.map((item) => {
+          {/*
+            `/fabinsight`, deliberately, and only reachable when that is the
+            truth (WP9). `AppShell` is rendered by exactly two screens — this
+            app's own conversation screen and its own Reports screen — and both
+            of them are screens that *only exist* while the gateway is not
+            serving FabOrchestrator's: with the flag on, `/fabinsight` and
+            `/backend-agent` redirect to `/chat` and `/reports` is answered by
+            FabOrchestrator itself. So this strip cannot render in a world where
+            `/fabinsight` is the wrong destination, and passing the live value
+            down through two client components to prove it would be ceremony.
+            `__tests__/platform/route-gate.test.ts` pins the redirect that makes
+            this safe; if a surviving screen ever adopts `AppShell`, that is the
+            moment to thread the real `chatHref` through.
+          */}
+          {navItems("/fabinsight").map((item) => {
             const Icon = item.icon;
 
             // Rendered as a <span>, not a disabled <a>: a link with no

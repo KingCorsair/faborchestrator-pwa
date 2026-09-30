@@ -1,89 +1,219 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
+import {
+  classify,
+  GATEWAY_INTERNAL_PREFIX,
+  GATEWAY_MARKER_HEADER,
+  readRegistry,
+  type Owner,
+} from "@/lib/gateway/registry";
+import { frontDoorRedirect, retiredScreenRedirect } from "@/lib/gateway/destinations";
+import { safeGatewayPath } from "@/lib/gateway/path";
 import { safeReturnPath } from "@/lib/return-path";
 
 /**
- * The session gate, in front of the document rather than inside it.
+ * The session gate, in front of the document rather than inside it — and,
+ * since WP1 of the embedding work, the ownership decision for every path.
  *
  * ── Why this file is called `proxy.ts` ──────────────────────────────────────
  * It is Next's middleware, under the name Next 16 gives it. `middleware.ts`
  * still runs and builds with a deprecation warning; `proxy.ts` exporting
  * `proxy` is the supported convention as of 16.1, and the two cannot coexist —
  * the build errors if both are present. The name describes Next's mechanism,
- * not this file's job, which is the session gate described below.
+ * not this file's job.
  *
- * ── The defect this exists for (2026-09-04) ─────────────────────────────────
- * Reported on the installed iPhone app: sign in, sign out, force-quit from the
- * app switcher, reopen from the Home Screen — and the app opens on the cockpit
- * as though the operator were still signed in. Only pressing an agent card
- * revealed the truth, and by then they had read four agent cards, a Live ops
- * panel and a Recent activity feed that a signed-out person has no business
- * being shown.
+ * ── Two jobs ────────────────────────────────────────────────────────────────
  *
- * **It was never an access-control failure.** Nothing behind `/api/` was
- * reachable: `requireAuth` refuses any request whose bearer token does not
- * arrive beside the matching FabOrchestrator cookie, and sign-out drops that
- * cookie. What leaked was the *appearance* of a session, which for a product
- * whose entire argument is "do not show a supervisor a number you cannot stand
- * behind" is its own kind of wrong.
+ * **1. The gate (2026-09-04).** Reported on the installed iPhone app: sign in,
+ * sign out, force-quit, reopen from the Home Screen — and the app opened on the
+ * cockpit as though the operator were still signed in. Never an access-control
+ * failure: nothing behind `/api/` was reachable. What leaked was the
+ * *appearance* of a session, because `/` was a statically prerendered page that
+ * read no session and `start_url` points at it. A client-side check cannot run
+ * before the HTML it means to suppress has painted, so the answer has to be in
+ * front of the document. The FabOrchestrator cookie is the thing read because
+ * it is the only half of the session the server can see on a navigation, it is
+ * what sign-out deletes, and it carries FO's own expiry. It is deliberately not
+ * validated against FO's `/api/auth/me` on every navigation: that would bump
+ * FO's idle clock and corrupt somebody else's session audit (`lib/auth.ts`).
+ * A forged cookie buys the cockpit's placeholder metrics and nothing else; the
+ * first real request still meets `requireAuth`.
  *
- * The cause was structural, not a bug in any line. `/` was a statically
- * prerendered page that read no session at all — deliberately, so the front
- * door would open before any bundle arrived — and the manifest's `start_url`
- * is `/`, so **every cold launch of the installed app landed on the one screen
- * in the app that never asked who you were.** The session checks all lived in
- * `useSession`, which runs on the screens behind the cockpit. Nothing was
- * broken; the check simply was not there.
+ * **2. Ownership (2026-09-08, WP1).** With `FO_EMBED_SURFACES` set, some paths
+ * on this origin are FabOrchestrator's. `lib/gateway/registry.ts` decides
+ * which; this file acts on the decision:
  *
- * A client-side check on the landing page would not have fixed it either. It
- * cannot run before the HTML it is meant to suppress has already painted, and
- * on a cold standalone launch the gap between paint and hydration is at its
- * widest. The answer has to be in front of the document.
+ *   pwa          → this app serves it (the gate applies to documents)
+ *   fo-document  → the gate applies, then the request is rewritten to the
+ *                  internal gateway route `/fo-gateway/<path>`
+ *   fo-api       → rewritten to the gateway (FO answers 401 itself when a
+ *   fo-static      token is missing; static assets are public on FO too)
+ *   denied       → 404
+ *   unknown      → 404, deny by default
  *
- * ── Why the FabOrchestrator cookie is the thing being read ──────────────────
- * It is the only half of this app's session the server can see on a plain
- * navigation. The bearer token lives in `localStorage` (`lib/auth.ts` explains
- * why: it is the convention the product itself uses), and no middleware can
- * read that.
+ * With the variable unset or empty, `classify` returns `pwa` for everything
+ * and this file behaves exactly as it did before WP1. That is the rollback.
  *
- * That turns out to be the right half rather than a compromise. The FO cookie
- * is the credential `requireAuth` cannot proceed without, it is what sign-out
- * deletes, and it carries FO's own expiry so the browser drops it on the same
- * clock FO does. Every state the reported sequence can produce — signed out,
- * expired, never signed in — is a state with no cookie, and every one of them
- * now ends at `/login` before a byte of cockpit is rendered.
+ * ── Why the matcher now covers everything ───────────────────────────────────
+ * Until WP1 the matcher excluded `/api/`, `/_next/` and any path with a file
+ * extension, because those are not documents and the gate has nothing to say
+ * about them. The gateway does: FabOrchestrator's chunks live under `/_next/`
+ * and its API under `/api/`, and Next resolves middleware *before* its own
+ * filesystem routes (verified in `next/dist/server/lib/router-utils/
+ * resolve-routes.js`), so this is the only place that can claim them. The
+ * gate's old exclusions are now the `isDocument` test below, applied by hand.
  *
- * What it deliberately does **not** claim: that the cookie is valid, or that
- * FabOrchestrator still honours it. Proving that needs FO's own `/api/auth/me`
- * on every navigation, which would reset FO's idle timer and corrupt somebody
- * else's session audit — the trade `lib/auth.ts` already recorded and refused.
- * A forged cookie buys its holder the cockpit's four hardcoded placeholder
- * metrics and nothing else; the first real request still meets `requireAuth`.
- *
- * ── Deny by default ────────────────────────────────────────────────────────
- * `PUBLIC` is an allowlist, so a screen added later is behind the gate on the
- * day it is created rather than on the day somebody remembers. The three
- * entries on it are each there for a reason worth stating, and are stated at
- * the constant.
+ * ── This app's own build output ─────────────────────────────────────────────
+ * `next.config.ts` sets `assetPrefix: "/pwa-assets"`, so this app's documents
+ * ask for their chunks at `/pwa-assets/_next/…` and bare `/_next/…` is
+ * unambiguously FabOrchestrator's. Next does not serve the prefixed path by
+ * itself; the rewrite below maps it back onto the real `/_next/…` internally,
+ * before the ownership decision, so it holds whether the registry is on or
+ * off.
  */
 
 /**
  * The paths a signed-out visitor may reach.
  *
  *  - `/login` — the destination. Gating it is the redirect loop.
- *  - `/offline` — the service worker serves this from cache when the network
- *    is gone, so a request for it can arrive from a device that could not
- *    reach the server to be redirected in the first place. Bouncing it to a
- *    sign-in page that cannot load is the worst possible offline screen.
+ *  - `/offline` — served from cache by the service worker when the network is
+ *    gone; bouncing it to a sign-in page that cannot load is the worst
+ *    possible offline screen.
  *  - `/diagnostics` — the page you open when the app is not working, and
- *    "log in first" is not a diagnostic. It reads nothing but what the browser
- *    reports about itself; that file carries the reasoning.
+ *    "log in first" is not a diagnostic.
  */
 const PUBLIC = new Set(["/login", "/offline", "/diagnostics"]);
+
+/** This app's chunk prefix, from `next.config.ts`. */
+const PWA_ASSET_PREFIX = "/pwa-assets";
+
+/**
+ * The old matcher's exclusions, as a predicate: not the API, not build output,
+ * not a file. Only documents meet the gate.
+ */
+function isDocument(pathname: string): boolean {
+  // **A malformed path is not a file, whatever it ends with.** A
+  // protocol-relative `//evil.example`, or the backslash a browser normalises
+  // into one, is an origin wearing a path's clothes; the extension heuristic
+  // below would read `.example` as a file type and wave it past the gate.
+  // These meet the gate instead, so a signed-out visitor is bounced to
+  // sign-in and `safeReturnPath` refuses to carry the value as a return
+  // target. Held by `__tests__/platform/route-gate.test.ts`, which caught
+  // exactly this when the old matcher's exclusions moved into this function
+  // during WP1.
+  if (pathname.startsWith("//") || pathname.includes("\\")) return true;
+
+  if (pathname.startsWith("/api/")) return false;
+  if (pathname.startsWith("/_next/")) return false;
+  if (/\.[^/]+$/.test(pathname)) return false;
+  return true;
+}
 
 export function proxy(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
 
+  // The gateway's internal path is never reachable directly. The handler also
+  // refuses any request without the marker header, so this is belt and braces.
+  if (pathname === GATEWAY_INTERNAL_PREFIX || pathname.startsWith(`${GATEWAY_INTERNAL_PREFIX}/`)) {
+    return notFound(req);
+  }
+
+  // This app's own chunks, from the prefix back to where Next keeps them.
+  if (pathname.startsWith(`${PWA_ASSET_PREFIX}/_next/`)) {
+    const url = req.nextUrl.clone();
+    url.pathname = pathname.slice(PWA_ASSET_PREFIX.length);
+    return NextResponse.rewrite(url);
+  }
+
+  const registry = readRegistry();
+
+  // ── The WP9 cutover: this app's retired chat screens (9 September) ────────
+  //
+  // While the gateway is serving FabOrchestrator's own `/chat`, this app's
+  // `/fabinsight` and `/backend-agent` are duplicates of it, and every link
+  // that used to point at them now points at the real thing. The screens stay
+  // in the tree, built and tested, and arriving at one lands on
+  // FabOrchestrator's instead — so a bookmark, a shared link or a home-screen
+  // shortcut made before the cutover keeps working rather than opening a
+  // screen the rest of the app has stopped pointing at.
+  //
+  // It is a redirect rather than a rewrite on purpose: the operator should end
+  // up *at* `/chat`, with `/chat` in the address bar, so that reloading,
+  // sharing or installing from there does the same thing next time.
+  //
+  // Gated first, so an unauthenticated request meets the sign-in gate and its
+  // `?next=` rather than being bounced to a URL it cannot open yet.
+  const retired = retiredScreenRedirect(pathname, registry);
+  if (retired) {
+    const gated = gate(req);
+    if (gated.status !== 200) return gated;
+    const url = req.nextUrl.clone();
+    url.pathname = retired;
+    // The question, if one was in the URL, does not survive — FabOrchestrator's
+    // chat accepts no prefill (`?q=`, `?message=` and `?prompt=` all verified
+    // against production, composer still empty). Dropping the query is the
+    // honest outcome: carrying it would put a parameter in the address bar that
+    // nothing reads.
+    url.search = "";
+    const res = NextResponse.redirect(url, 307);
+    // 307 and `no-store` for the same reason the sign-in gate uses them: a
+    // cached redirect would outlive the flag that caused it, and turning the
+    // embedding off must restore these screens immediately.
+    res.headers.set("Cache-Control", "no-store");
+    return res;
+  }
+
+  // ── The front door leads into FabOrchestrator's cockpit ──────────────────
+  //
+  // The product is an installable delivery of FabOrchestrator, so the cockpit
+  // is FabOrchestrator's `/home` — its composer, its agent cards, and whatever
+  // Danish's team ships there next without an edit here. `/` is this app's
+  // front door and sends a signed-in operator on to it.
+  //
+  // Gated first, so a visitor with no session meets sign-in rather than being
+  // bounced towards a page they cannot open.
+  //
+  // **This is one half of a loop that must not exist.** FabOrchestrator's
+  // guards navigate to `/` meaning "go to our login page"; here `/` comes back
+  // to `/home`. `public/fo-shell.js` closes it at the midpoint by signing this
+  // app out as soon as FabOrchestrator's own token is gone — including the idle
+  // case, where FabOrchestrator clears its storage after 30 minutes without any
+  // request, so no upstream 401 ever reaches `expiredUpstream()`.
+  // `scripts/fo-auth-loop-check.mjs` drives an expired session through it.
+  const frontDoor = frontDoorRedirect(pathname, registry);
+  if (frontDoor) {
+    const gated = gate(req);
+    if (gated.status !== 200) return gated;
+    const url = req.nextUrl.clone();
+    url.pathname = frontDoor;
+    const res = NextResponse.redirect(url, 307);
+    res.headers.set("Cache-Control", "no-store");
+    return res;
+  }
+
+  const owner: Owner = classify(pathname, registry);
+
+  switch (owner) {
+    case "pwa":
+      return gate(req);
+    case "fo-document": {
+      const gated = gate(req);
+      if (gated.status !== 200) return gated;
+      return toGateway(req);
+    }
+    case "fo-api":
+    case "fo-static":
+      return toGateway(req);
+    case "denied":
+    case "unknown":
+      return notFound(req);
+  }
+}
+
+/** The 2026-09-04 gate, unchanged in behaviour. */
+function gate(req: NextRequest): NextResponse {
+  const { pathname } = req.nextUrl;
+  if (!isDocument(pathname)) return NextResponse.next();
   if (PUBLIC.has(pathname)) return NextResponse.next();
 
   // An empty value is what `clearFoTokenCookie` leaves behind on the way out,
@@ -112,31 +242,40 @@ export function proxy(req: NextRequest): NextResponse {
   return res;
 }
 
+/**
+ * Hand the request to the gateway route, marked so the route knows it came
+ * from here. The path is re-checked for hygiene first: a path the gateway
+ * would refuse is refused here too, before anything is rewritten.
+ */
+function toGateway(req: NextRequest): NextResponse {
+  const { pathname } = req.nextUrl;
+  if (!safeGatewayPath(pathname)) return notFound(req);
+
+  const url = req.nextUrl.clone();
+  url.pathname = `${GATEWAY_INTERNAL_PREFIX}${pathname}`;
+
+  const headers = new Headers(req.headers);
+  headers.set(GATEWAY_MARKER_HEADER, "1");
+  return NextResponse.rewrite(url, { request: { headers } });
+}
+
+/**
+ * Next's own not-found page, at 404, by rewriting to a path nothing serves.
+ * A bare `new NextResponse(null, { status: 404 })` would also work, but a
+ * document request deserves the app's 404 page rather than an empty body.
+ */
+function notFound(req: NextRequest): NextResponse {
+  const url = req.nextUrl.clone();
+  url.pathname = "/__gateway-not-found";
+  url.search = "";
+  return NextResponse.rewrite(url);
+}
+
 export const config = {
   /**
-   * Everything except the things that are not documents.
-   *
-   * `/api/` is excluded because those routes answer to `requireAuth`, which is
-   * a stronger check than this one and returns 401 rather than redirecting —
-   * a `fetch` cannot follow a redirect to a sign-in page usefully, and the
-   * screens are written to read the 401.
-   *
-   * Anything with a file extension is excluded, which covers the build output
-   * and everything in `public/`. Three of those matter enough to name:
-   * `/manifest.webmanifest` and the icons, because redirecting them would break
-   * installation for the signed-out visitor who is about to sign in; and
-   * `/sw.js`, because a service worker script that answers 307 does not
-   * register, and the app would silently lose its offline page.
-   *
-   * ⚠ **`\\.` and not `\.`.** This is a regular expression inside a string
-   * literal, so the backslash needs escaping twice. Written `\.` it parses as a
-   * bare `.`, the lookahead then matches almost every path, and the gate is
-   * excluded from the routes it exists to protect — a fix that builds, passes
-   * its unit tests and does nothing at all, because those tests call `proxy`
-   * directly and never see this matcher. It was written that way once during
-   * the 2026-09-04 change and caught before deploying; nothing in the suite
-   * would have caught it, which is why `scripts/gate-live-check.mjs` exists and
-   * runs against the deployment rather than against a mock.
+   * Every path. See "Why the matcher now covers everything" above; the
+   * document-only rule the old matcher expressed now lives in `isDocument`,
+   * and `scripts/gate-live-check.mjs` still proves it over the wire.
    */
-  matcher: ["/((?!api/|_next/|.*\\.[^/]+$).*)"],
+  matcher: ["/(.*)"],
 };

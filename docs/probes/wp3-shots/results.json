@@ -1,0 +1,77 @@
+[
+  {
+    "name": "this app's service worker is registered and controlling",
+    "ok": true,
+    "detail": "scope https://faborch-embed-preview.fly.dev/"
+  },
+  {
+    "name": "…and it is this app's script, not FabOrchestrator's",
+    "ok": true,
+    "detail": "https://faborch-embed-preview.fly.dev/sw.js"
+  },
+  {
+    "name": "…caching only the offline page and its icons, nothing of either build",
+    "ok": true,
+    "detail": "/offline, /icon-192.png, /apple-touch-icon.png"
+  },
+  {
+    "name": "the two builds are distinguishable, which is what forces a full load rather than a mixed payload",
+    "ok": true,
+    "detail": "this app n/a · FabOrchestrator Wl7I33FnAeisyQyREfIK4"
+  },
+  {
+    "name": "a link from this app's page reaches FabOrchestrator's /chat",
+    "ok": true,
+    "detail": "/home → /chat"
+  },
+  {
+    "name": "…and FabOrchestrator's own page is what rendered",
+    "ok": true,
+    "detail": "LLMatscale.ai - AI Chat Application · Skip to main content Toggle Sidebar FabOrchestrator.ai Good evening, User What would you l"
+  },
+  {
+    "name": "FabOrchestrator's page renders links rooted on this origin",
+    "ok": true,
+    "detail": "none in the DOM (its nav is script-driven)"
+  },
+  {
+    "name": "FabOrchestrator's link to / lands on a usable page",
+    "ok": true,
+    "detail": "HTTP 307 → /home → HTTP 200"
+  },
+  {
+    "name": "FabOrchestrator's link to /home lands on a usable page",
+    "ok": true,
+    "detail": "HTTP 200"
+  },
+  {
+    "name": "FabOrchestrator's link to /reports lands on a usable page",
+    "ok": true,
+    "detail": "HTTP 200"
+  },
+  {
+    "name": "the front door opens a cockpit",
+    "ok": true,
+    "detail": "/home · A FabOrchestrator ATHENATEC E ALL AGENTS ONLINE Your orchestration cockpit. Unif"
+  },
+  {
+    "name": "…still signed in after visiting FabOrchestrator",
+    "ok": true,
+    "detail": "token present: true"
+  },
+  {
+    "name": "this app's own chunk is immutable",
+    "ok": true,
+    "detail": "/_next/static/chunks/17450d5f1f92fe1e.js → public, max-age=31536000, immutable"
+  },
+  {
+    "name": "FabOrchestrator's chunk is immutable",
+    "ok": true,
+    "detail": "/_next/static/chunks/691d640dd1298ee5.js → public, max-age=31536000, immutable"
+  },
+  {
+    "name": "no console errors across the whole run",
+    "ok": true,
+    "detail": "none"
+  }
+]

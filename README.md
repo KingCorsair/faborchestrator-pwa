@@ -104,7 +104,7 @@ FABORCH_PROBE_PASSWORD=...
 ```bash
 npm run dev                 # http://localhost:3002, hot reload
 npm run build && npm start  # production build, same port
-npm test                    # 272 tests, no network needed
+npm test                    # 523 tests, no network needed
 ```
 
 Sign in with a FabOrchestrator account. There is no demo credential — a local
@@ -234,6 +234,30 @@ node scripts/mobile-audit.mjs           # 16, two viewports
 node scripts/hydration-typing-check.mjs # sign-in under slow hydration
 ```
 
+Three more read FabOrchestrator itself, read-only, for the embedding baseline
+(WP0, 8 September). They sign in as the probe account and sign out again:
+
+```bash
+node scripts/embed-live-check.mjs       # the embedding gateway: ownership, assets, single login (needs FO_EMBED_SURFACES set)
+node scripts/embed-mobile-check.mjs     # the embedded FO chat at 390×844 and 360×640 → docs/probes/wp2-shots/
+node scripts/embed-routing-check.mjs    # two builds on one origin: service worker, cross-build navigation, chunk caching
+node scripts/embed-dashboard-check.mjs     # the FO Dashboard/Reports surface through the gateway
+node scripts/embed-mobile-hardening-check.mjs # sidebar, keyboard, safe areas, rotation, standalone at phone width
+node scripts/embed-chat-check.mjs       # ⚠ costs ~4 real model turns: streaming, tools, history, conversation ownership
+node scripts/fo-surface-probe.mjs       # FO /chat /reports /settings: headers, assets, CORS, account facts
+node scripts/fo-mobile-probe.mjs        # FO pages at 390×844 and 360×640, screenshots → docs/probes/wp0-shots/
+node scripts/latency-baseline.mjs       # two questions via this app and direct to FO; 4 model turns
+node scripts/embed-cutover-check.mjs    # WP9: the whole path walked from the cockpit, never by typing a URL
+node scripts/fo-navigation-check.mjs    # WP9: clicks FabOrchestrator OWN controls (its Back button, FO Overview)
+node scripts/fo-auth-loop-check.mjs     # WP10: expired FO session → no /home ↔ / loop, no second login
+node scripts/pwa-install-check.mjs      # WP10: manifest + service worker on FO pages, via Chrome own parser
+node scripts/fo-mobile-nav-check.mjs    # FO's own responsive nav: one system per width, taps, desktop parity (PART=matrix|taps|parity)
+node scripts/fo-installed-nav-check.mjs # desktop matches FO production; phone views get FO's phone nav; Chat disabled (CASE=1..5)
+node scripts/fo-nav-invariant-check.mjs # INVARIANT: every route, context and width (incl. 767.5) keeps a tappable Home/Reports control
+node scripts/embed-load-profile.mjs     # WP8: one phone visit, cold cache then warm — requests, bytes, timings
+node scripts/embed-latency-check.mjs    # WP8: ⚠ costs 6 model turns; embedded vs direct, and the ownership-check cost
+```
+
 > **`npm run build` on Windows prints a page of `EINVAL: copyfile` warnings.**
 > Expected and harmless. Turbopack names externals chunks after the module they
 > wrap — `[externals]_node:path_….js` — and a colon is illegal in an NTFS
@@ -249,7 +273,7 @@ node scripts/hydration-typing-check.mjs # sign-in under slow hydration
 |---|---|
 | `npm run dev` | Dev server on 3002 |
 | `npm run build` / `npm start` | Production build and server |
-| `npm test` | **272 tests** — auth, proxy, streaming, conversation, errors, artifacts, reports, platform |
+| `npm test` | **523 tests** — auth, proxy, streaming, conversation, errors, artifacts, reports, platform, and the embedding gateway |
 | `npm run lint` / `npm run typecheck` | ESLint / `tsc --noEmit` |
 | `npm run icons` | Regenerate the PWA icons |
 | `npm run qr -- <https url>` | QR code for a deployed URL, written to `qr/` |

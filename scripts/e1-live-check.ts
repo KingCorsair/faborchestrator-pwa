@@ -52,7 +52,7 @@ async function main() {
   console.log(`E1 against ${APP}\n`);
 
   // ── 1 & 2: sign in with FO credentials ────────────────────────────────────
-  const login = await fetch(`${APP}/api/auth/login`, {
+  const login = await fetch(`${APP}/api/pwa/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
@@ -155,7 +155,7 @@ async function main() {
   );
 
   // ── 5: sign out drops the FO cookie ───────────────────────────────────────
-  const out = await fetch(`${APP}/api/auth/logout`, {
+  const out = await fetch(`${APP}/api/pwa/auth/logout`, {
     method: "POST",
     headers: { Authorization: `Bearer ${loginBody.token}`, cookie: cookieHeader },
   });

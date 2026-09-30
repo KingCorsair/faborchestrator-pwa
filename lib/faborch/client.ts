@@ -40,6 +40,7 @@
  * enforce that at build time, and this app does not carry it — the enforcement
  * here is that the single caller is a route handler.
  */
+import { z } from "zod";
 import { reportError } from "../report-error";
 
 /**
@@ -339,6 +340,56 @@ export async function foPinnedReport(
     );
   }
   return (await res.json()) as FoPinnedReport;
+}
+
+/**
+ * What FabOrchestrator's `/api/auth/me` says about a token it has just issued.
+ *
+ *   GET /api/auth/me → 200 { user: { …, role: { id, name } | null } }
+ *                      403 { code: "FORCE_PASSWORD_CHANGE", … }  forced change
+ *                      403 { error: "Account is no longer active…" }
+ *                      401                                     token not honoured
+ *
+ * ([FO-clone] `lib/auth-middleware.ts:182-205`, `app/api/auth/me/route.ts`.)
+ *
+ * Ported from the `chetan` branch (`e843b9c`), where it returned the role or
+ * `null` for every refusal. The plan's sign-in design (RP2, login step 2)
+ * treats those refusals differently, so they are told apart here and the
+ * login route decides.
+ *
+ * **Calling it counts as FO activity**, so it is called at sign-in only, where
+ * FO's login has just set the idle clock anyway. Never on a timer.
+ *
+ * Throws `FabOrchRequestError` for anything else (timeout, unreachable, 5xx);
+ * the caller treats that as "could not find out", never as a refusal.
+ */
+export type FoMeResult =
+  | { kind: "ok"; roleName: string | null }
+  | { kind: "force_password_change" }
+  | { kind: "inactive" }
+  | { kind: "unauthorized" };
+
+const FoMeBodySchema = z.object({
+  user: z.object({ role: z.object({ name: z.string() }).nullable().optional() }),
+});
+
+export async function foMe(token: string): Promise<FoMeResult> {
+  const res = await fetchFo("/api/auth/me", { headers: authHeader(token) });
+  if (res.status === 401) return { kind: "unauthorized" };
+  if (res.status === 403) {
+    const body = (await res.json().catch(() => null)) as { code?: unknown } | null;
+    return body?.code === "FORCE_PASSWORD_CHANGE" ? { kind: "force_password_change" } : { kind: "inactive" };
+  }
+  if (!res.ok) {
+    throw new FabOrchRequestError(
+      await foErrorTextOf(res, "FabOrchestrator could not confirm the session."),
+      res.status,
+    );
+  }
+  // A body of the wrong shape costs the label, not the sign-in.
+  const parsed = FoMeBodySchema.safeParse(await res.json().catch(() => null));
+  const name = parsed.success ? parsed.data.user.role?.name.trim() : undefined;
+  return { kind: "ok", roleName: name ? name : null };
 }
 
 /**

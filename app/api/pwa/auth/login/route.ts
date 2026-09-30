@@ -1,6 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sessionFor } from "@/lib/auth";
-import { foLogin, isFabOrchConfigured, FabOrchRequestError } from "@/lib/faborch/client";
+import {
+  foLogin,
+  foLogout,
+  foMe,
+  isFabOrchConfigured,
+  FabOrchRequestError,
+} from "@/lib/faborch/client";
+import { reportError } from "@/lib/report-error";
 import { setFoTokenCookie } from "@/lib/faborch/session";
 import { readJsonBody } from "@/lib/request-body";
 import { LOGIN_BODY_LIMIT, LoginSchema } from "@/lib/validation";
@@ -12,14 +19,12 @@ import {
 } from "@/lib/rate-limit";
 
 /**
- * What this app calls its operators in the top bar.
- *
- * FabOrchestrator's login response carries no role — that lives on its
- * `/api/auth/me` — and a second round trip to label a nav item is not worth
- * making a person wait for. Previously this read `DEMO_USER_ROLE`, which
- * outlived the demo credential it belonged to.
+ * The label used when FabOrchestrator could not say what the operator's role
+ * is. It claims no role at all: "Supervisor" used to appear under an
+ * administrator's name. (Dropping the label entirely is RP8's N6 residue,
+ * gated on FO confirming its embedded client does not read `roleName`.)
  */
-const DEFAULT_ROLE_LABEL = "Supervisor";
+const ROLE_WHEN_UNKNOWN = "Signed in";
 
 /**
  * Sign in — **FabOrchestrator is the only identity.**
@@ -92,7 +97,7 @@ export async function POST(req: NextRequest) {
   // did while a local demo credential still existed — would send an operator
   // to retype a password that was never going to be checked by anything.
   if (!isFabOrchConfigured()) {
-    console.error("[auth] FABORCH_BASE_URL is not set; sign-in cannot work");
+    reportError("auth/not-configured", new Error("FABORCH_BASE_URL is not set; sign-in cannot work"));
     return NextResponse.json(
       { error: "Sign-in is not configured on this server: FabOrchestrator is not reachable." },
       { status: 503 },
@@ -110,7 +115,9 @@ export async function POST(req: NextRequest) {
       error instanceof FabOrchRequestError
         ? error.message
         : "Could not reach FabOrchestrator to check those credentials.";
-    console.error("[auth] FabOrchestrator sign-in failed:", error);
+    // A timeout or an unreachable FO was reported inside `fetchFo`; anything
+    // else is this app's surprise.
+    if (!(error instanceof FabOrchRequestError)) reportError("auth/login", error);
     return NextResponse.json({ error: message }, { status: 503 });
   }
 
@@ -119,10 +126,51 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 });
   }
 
-  // This app's own session, for an operator FO has vouched for. `roleName` is
-  // not read from FO: its `/api/auth/login` response carries no role (that is
-  // on `/api/auth/me`), and a second round trip to label the top nav is not
-  // worth it. The label is what this app calls its operators.
+  // One extra FO call, `/api/auth/me` with the new token (plan RP2, login
+  // step 2; `foMe` ported from the chetan branch). FO's login has just set its
+  // idle clock, so this extends nothing. It yields the real role, and two
+  // answers that change the outcome:
+  //
+  //  - 403 "no longer active" after a correct password: a coded failure, not
+  //    "wrong password", and the token FO just minted is revoked before we
+  //    answer so no session row is left behind. Not counted as a failed guess.
+  //  - 401 for a token FO issued a moment ago: 502 `upstream_error`, and the
+  //    token is revoked the same way.
+  //
+  // A forced password change (403 FORCE_PASSWORD_CHANGE) signs in as before:
+  // FabOrchestrator's own pages hold the operator at /force-password-change,
+  // which is in the gateway's document catalogue. Any other failure (timeout,
+  // unreachable, 5xx) costs only the label.
+  let roleName: string | null = null;
+  try {
+    const me = await foMe(fo.token);
+    if (me.kind === "inactive") {
+      await foLogout(fo.token);
+      return NextResponse.json(
+        {
+          code: "account_inactive",
+          error: "This account is no longer active. Contact your administrator.",
+        },
+        { status: 403 },
+      );
+    }
+    if (me.kind === "unauthorized") {
+      await foLogout(fo.token);
+      return NextResponse.json(
+        {
+          code: "upstream_error",
+          error: "FabOrchestrator did not confirm the new session. Try signing in again.",
+        },
+        { status: 502 },
+      );
+    }
+    if (me.kind === "ok") roleName = me.roleName;
+  } catch (error) {
+    // A timeout or an unreachable FO has already been reported by `fetchFo`.
+    if (!(error instanceof FabOrchRequestError)) reportError("auth/me-probe", error);
+  }
+
+  // This app's own session, for an operator FO has vouched for.
   //
   // `fo.expiresAt` caps this session at FabOrchestrator's own expiry, so the
   // PWA can never hold a session that outlives the token behind it — see
@@ -132,7 +180,7 @@ export async function POST(req: NextRequest) {
       id: fo.user.id,
       email: fo.user.email,
       name: fo.user.name || fo.user.email,
-      roleName: DEFAULT_ROLE_LABEL,
+      roleName: roleName ?? ROLE_WHEN_UNKNOWN,
     },
     fo.expiresAt,
     fo.token,

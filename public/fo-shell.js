@@ -93,14 +93,35 @@
     }
   }
 
+  /* Set once FabOrchestrator has had its 4 s to boot: only then does a missing
+   * token mean sign-out. A replacement counts from the moment this runs. */
+  var booted = false;
+
   /* One look at the token: gone → sign out; replaced → reload; else remember. */
   function checkToken() {
     var token = tokenNow();
     if (token === UNREADABLE) return;
-    if (!token) return endSession();
+    if (!token) {
+      // A page already on its way to a reload posts no sign-out: the token it
+      // sees missing may be FO's wrapper reacting to this page's own stale
+      // request, and the reloaded page will judge for itself (RP2-D14).
+      if (booted && !reloading) endSession();
+      return;
+    }
     if (known && token !== known) return reloadForNewSession();
     known = token;
   }
+
+  /* The baseline for "replaced" is the token this page loaded with, read now,
+   * before FabOrchestrator boots and builds its transport from the same value.
+   * Read only at the first check, a sign-in in another tab during those first
+   * seconds would become the baseline instead of a replacement, and this page
+   * would stay armed with the old bearer (delta review RP2-D13). Absent or
+   * unreadable: no baseline yet; the first check adopts what is there. */
+  (function () {
+    var token = tokenNow();
+    if (token !== UNREADABLE && token) known = token;
+  })();
 
   /* Sign-in, returning to this page afterwards: FabOrchestrator's idle expiry
    * lands the operator back where they were once they sign in again. Only a
@@ -150,23 +171,29 @@
   }
 
   function watchSession() {
+    // Another tab signing out, or signing in again, and coming back to a
+    // backgrounded tab, are all cheaper to catch than to wait 1.5s for. Both
+    // listen from the start: a replacement is a replacement whenever it lands.
+    // A removal before FabOrchestrator has booted is left to the first check.
+    window.addEventListener("storage", function (e) {
+      if (e.key !== FO_TOKEN_KEY) return;
+      if (!e.newValue) {
+        if (booted && !reloading) endSession();
+        return;
+      }
+      if (known && e.newValue !== known) reloadForNewSession();
+    });
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) checkToken();
+    });
     // Not on the first tick: FabOrchestrator writes its token during its own
     // boot, and reading before it has finished would sign out a session that is
     // in the middle of starting.
     setTimeout(function () {
+      booted = true;
       checkToken();
-      if (signingOut) return;
+      if (signingOut || reloading) return;
       setInterval(checkToken, 1500);
-      // Another tab signing out, or signing in again, and coming back to a
-      // backgrounded tab, are all cheaper to catch than to wait 1.5s for.
-      window.addEventListener("storage", function (e) {
-        if (e.key !== FO_TOKEN_KEY) return;
-        if (!e.newValue) return endSession();
-        if (known && e.newValue !== known) reloadForNewSession();
-      });
-      document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) checkToken();
-      });
     }, 4000);
   }
 

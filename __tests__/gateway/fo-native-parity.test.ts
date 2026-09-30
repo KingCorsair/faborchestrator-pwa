@@ -75,9 +75,15 @@ function loadShell({ tokenPresent = true, storageThrows = false, path = undefine
       (listeners[type] ??= []).push(fn);
     },
   };
+  const document = {
+    hidden: false,
+    addEventListener: (type: string, fn: () => void) => {
+      (listeners[`document:${type}`] ??= []).push(fn as never);
+    },
+  };
   const context = vm.createContext({
     window,
-    document: { hidden: false, addEventListener: () => {} },
+    document,
     navigator: {},
     setTimeout: (fn: () => void, ms: number) => timers.push({ at: now + ms, fn }),
     setInterval: (fn: () => void, ms: number) => timers.push({ at: now + ms, every: ms, fn }),
@@ -120,6 +126,11 @@ function loadShell({ tokenPresent = true, storageThrows = false, path = undefine
     },
     storageEvent: (e: { key: string; oldValue?: string | null; newValue: string | null }) =>
       listeners.storage?.forEach((fn) => fn(e)),
+    /** The tab goes to the background, or comes back; timers do not run meanwhile. */
+    setHidden: (hidden: boolean) => {
+      document.hidden = hidden;
+      listeners["document:visibilitychange"]?.forEach((fn) => (fn as () => void)());
+    },
   };
 }
 
@@ -180,6 +191,50 @@ describe("FO's idle expiry ends this app's session (fo-shell.js)", () => {
     page.anotherTabSignsIn(); // the event never arrives (a frozen tab)
     await page.advance(1_500);
     assert.equal(page.reloads(), 1);
+    assert.deepEqual(page.posts, []);
+  });
+
+  test("a sign-in that lands during FabOrchestrator's first seconds is a replacement too (RP2-D13)", async () => {
+    // The baseline is the token the page loaded with, read when the shell
+    // runs; a sign-in in another tab at t = 1 s must not become the baseline.
+    const byEvent = loadShell();
+    await byEvent.advance(1_000);
+    byEvent.storageEvent(byEvent.anotherTabSignsIn());
+    await byEvent.advance(0);
+    assert.equal(byEvent.reloads(), 1, "reloaded on the event, before the first check");
+    await byEvent.advance(10_000);
+    assert.deepEqual(byEvent.posts, []);
+    assert.equal(byEvent.reloads(), 1);
+
+    const silently = loadShell();
+    await silently.advance(1_000);
+    silently.anotherTabSignsIn(); // no event reaches this tab
+    await silently.advance(3_000); // the first check, at 4 s
+    assert.equal(silently.reloads(), 1, "the first check sees a replacement, not a baseline");
+    assert.deepEqual(silently.posts, []);
+  });
+
+  test("a replacement found on return from the background reloads before the first tap (RP2-D15)", async () => {
+    const page = loadShell();
+    await page.advance(4_000);
+    page.setHidden(true);
+    page.anotherTabSignsIn(); // while this tab was frozen: no tick, no event
+    page.setHidden(false);
+    assert.equal(page.reloads(), 1);
+    assert.deepEqual(page.posts, []);
+  });
+
+  test("a page on its way to a reload posts no sign-out for a token FO's wrapper removed (RP2-D14)", async () => {
+    const page = loadShell();
+    await page.advance(4_000);
+    page.storageEvent(page.anotherTabSignsIn());
+    await page.advance(0);
+    assert.equal(page.reloads(), 1);
+    // FO's fetch wrapper in this stale page wipes the token on a 401 that was
+    // already in flight; this page must not add a logout to the damage.
+    page.foClearsItsToken();
+    page.storageEvent({ key: "llmatscale_auth_token", oldValue: "pwa-bearer-2", newValue: null });
+    await page.advance(3_000);
     assert.deepEqual(page.posts, []);
   });
 

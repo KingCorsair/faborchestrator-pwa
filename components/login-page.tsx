@@ -96,7 +96,15 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
    * is surfaced as a notice offering to continue.
    */
   React.useEffect(() => {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    // Storage that throws (site data blocked, some private modes) holds no
+    // session to surface; the form below still works and says why if a
+    // sign-in cannot be kept. Guard ported from the chetan branch (e843b9c).
+    let token: string | null;
+    try {
+      token = localStorage.getItem(AUTH_TOKEN_KEY);
+    } catch {
+      return;
+    }
     if (!token) return;
 
     let cancelled = false;
@@ -191,8 +199,22 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
         return;
       }
 
-      localStorage.setItem(AUTH_TOKEN_KEY, data.token);
-      localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ expiresAt: data.expiresAt }));
+      // Signed in at FabOrchestrator, but the session has to be kept on this
+      // device too: the bearer beside the cookie is what every request needs.
+      // If storage refuses it, drop the cookie the server just set (and with
+      // it the FO session) rather than leave half a session behind, and say
+      // what is actually wrong instead of "could not reach the server".
+      try {
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token);
+        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ expiresAt: data.expiresAt }));
+      } catch {
+        void fetch("/api/pwa/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
+        setError(
+          "This browser is blocking the storage sign-in needs. Allow this site to store data " +
+            "(or leave private browsing) and try again.",
+        );
+        return;
+      }
       router.replace(next);
     } catch {
       setError("Could not reach the server");

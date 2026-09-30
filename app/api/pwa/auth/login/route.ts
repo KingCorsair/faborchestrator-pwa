@@ -1,15 +1,19 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { sessionFor } from "@/lib/auth";
+import { sessionFor, sessionKeyRing } from "@/lib/auth";
 import {
   foLogin,
-  foLogout,
   foMe,
   isFabOrchConfigured,
   FabOrchRequestError,
+  type FoSession,
 } from "@/lib/faborch/client";
+import { revokeFoSession, sessionConfigProblems, type SessionEndReason } from "@/lib/faborch/end-session";
+import { clearPasswordChangeMark, passwordChangeMarkedFor } from "@/lib/faborch/password-mark";
+import { foTokenFrom, sessionCookieGraceSeconds, setFoTokenCookie } from "@/lib/faborch/session";
+import { classify, readRegistry } from "@/lib/gateway/registry";
 import { reportError } from "@/lib/report-error";
-import { setFoTokenCookie } from "@/lib/faborch/session";
 import { readJsonBody } from "@/lib/request-body";
+import { publicOrigin, sameOriginVerdict } from "@/lib/same-origin";
 import { LOGIN_BODY_LIMIT, LoginSchema } from "@/lib/validation";
 import {
   checkLoginAllowed,
@@ -17,6 +21,17 @@ import {
   clientAddress,
   recordLoginFailure,
 } from "@/lib/rate-limit";
+
+// Plan RP2 part 5 asks for a refusal at startup when the signing keys or the
+// cookie grace are unusable. Until RP10-B's server entry exists there is no
+// startup to refuse, so an unusable setting is reported once, when this route
+// is loaded, and every sign-in answers `not_configured` before FabOrchestrator
+// is asked anything. Not during `next build`, which runs without the secrets.
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  for (const setting of sessionConfigProblems()) {
+    reportError("auth/session-config", new Error("unusable session setting"), { setting });
+  }
+}
 
 /**
  * The label used when FabOrchestrator could not say what the operator's role
@@ -26,33 +41,50 @@ import {
  */
 const ROLE_WHEN_UNKNOWN = "Signed in";
 
+/** Where FabOrchestrator holds a user whose password must change (plan RP2, G20). */
+const FORCED_CHANGE_PAGE = "/force-password-change";
+
+const NO_STORE = { "Cache-Control": "no-store" };
+
 /**
  * Sign in — **FabOrchestrator is the only identity.**
  *
  * One credential: a FabOrchestrator account, checked against FO's own
- * `/api/auth/login`. It opens everything this app offers — the agents, and the
- * production order workflow that runs on the local mock MES.
+ * `/api/auth/login`. It opens the whole embedded FabOrchestrator.
  *
  * ── Why the demo credential was removed (WP2, 2026-09-01) ───────────────────
  * This route used to try a local `DEMO_USER_*` pair first. It authenticated
  * with no network call and issued a session with **no FO token**, so the
  * operator reached the app, opened an agent, and found the composer disabled —
- * a session that looks signed in and cannot ask a single question. That is
- * indistinguishable from a broken app, and it was reported as one.
- *
- * The alternative that was rejected at the same time is worth recording:
- * carrying a shared FO service account in the environment so any visitor gets
- * agent access. It would make every row in FO's `prompt_audit_logs`
- * attributable to a machine rather than a person, and hand whoever holds the
- * demo URL somebody else's MES access. A demo is not a reason to build that;
- * asking each person for their own FO credential is.
+ * a session that looks signed in and cannot ask a single question. The
+ * alternative rejected at the same time, a shared FO service account in the
+ * environment, would make every row in FO's audit attributable to a machine
+ * rather than a person.
  *
  * ── The FO token never reaches the browser ─────────────────────────────────
- * It is set as an httpOnly cookie (`lib/faborch/session.ts`) and read only by
- * `app/api/faborch/chat/route.ts`. The response body carries this app's own
- * session, exactly as it did before.
+ * It is set as an httpOnly cookie (`lib/faborch/session.ts`). The response body
+ * carries this app's own session, and the user fields FabOrchestrator's own
+ * pages read from the session blob (plan RP2, G30).
  *
- * ── Wrong guesses are throttled, and that is new ───────────────────────────
+ * ── The flow (plan RP2 part 3, "Login") ─────────────────────────────────────
+ *  1. Only from this app's own pages, and only JSON (the same-origin gate and
+ *     JSON-only rule of RP3 part 5: a form on another site can send neither);
+ *     the limiter, the body limit, the schema; this app's own session
+ *     settings, **before** FabOrchestrator is asked anything; then `foLogin`.
+ *  2. One extra FO call, `/api/auth/me` with the new token: the real role, an
+ *     inactive account, or a forced password change.
+ *  3. A new sign-in **ends the session it replaces**: a cookie from an older
+ *     sign-in on this browser has its FabOrchestrator token revoked, before
+ *     this one is answered, rather than left alive for 30 days.
+ *  4. This app's session is minted, capped at FabOrchestrator's own expiry.
+ *  5. The answer carries `next`: FabOrchestrator's change page when the account
+ *     must change its password, which is the only way a phone can reach it.
+ *     The FO cookie lives as long as this app's session plus a short grace.
+ *
+ * Anything that fails after FabOrchestrator has issued a token revokes that
+ * token before answering, so a failed sign-in never leaves a live FO session.
+ *
+ * ── Wrong guesses are throttled ─────────────────────────────────────────────
  * Because this route forwards to a **real** FabOrchestrator, it is the only
  * thing between a public URL and a production identity store. Eight wrong
  * guesses from one address buys a ten-minute wait — see `lib/rate-limit.ts`,
@@ -60,11 +92,24 @@ const ROLE_WHEN_UNKNOWN = "Signed in";
  * never throttled: success clears the counter.
  */
 export async function POST(req: NextRequest) {
+  if (sameOriginVerdict(req.headers, publicOrigin()) === "cross-site") {
+    return NextResponse.json(
+      { code: "cross_site_request", error: "Sign-in has to come from this app." },
+      { status: 403, headers: NO_STORE },
+    );
+  }
+  if (!/^application\/json\b/i.test(req.headers.get("content-type") ?? "")) {
+    return NextResponse.json(
+      { code: "unsupported_media_type", error: "Sign-in expects JSON." },
+      { status: 415, headers: NO_STORE },
+    );
+  }
+
   const address = clientAddress(req.headers);
   const verdict = checkLoginAllowed(address);
   if (!verdict.allowed) {
     return NextResponse.json(
-      { error: "Too many sign-in attempts. Try again in a few minutes." },
+      { code: "login_rate_limited", error: "Too many sign-in attempts. Try again in a few minutes." },
       { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
     );
   }
@@ -85,7 +130,7 @@ export async function POST(req: NextRequest) {
   const parsed = LoginSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid request" },
+      { code: "invalid_request", error: parsed.error.issues[0]?.message ?? "Invalid request" },
       { status: 400 },
     );
   }
@@ -93,76 +138,110 @@ export async function POST(req: NextRequest) {
   const { email, password } = parsed.data;
 
   // No FabOrchestrator, no sign-in. This is a **deployment fault, not a bad
-  // password**, and saying "incorrect email or password" here — as this route
-  // did while a local demo credential still existed — would send an operator
-  // to retype a password that was never going to be checked by anything.
+  // password**, and saying "incorrect email or password" here would send an
+  // operator to retype a password that was never going to be checked.
   if (!isFabOrchConfigured()) {
     reportError("auth/not-configured", new Error("FABORCH_BASE_URL is not set; sign-in cannot work"));
+    return notConfigured();
+  }
+
+  // This app's own session settings, checked before FabOrchestrator is asked
+  // anything: an unusable one found after `foLogin` would leave FabOrchestrator
+  // holding a session nobody can use or revoke.
+  try {
+    sessionKeyRing();
+    sessionCookieGraceSeconds();
+  } catch (error) {
+    reportError("auth/session-config", error);
+    return notConfigured("Sign-in is not configured on this server.");
+  }
+
+  let fo: FoSession | null;
+  try {
+    fo = await foLogin(email, password);
+  } catch (error) {
+    // FO being down must not read as a wrong password: somebody typing their
+    // own credentials correctly and being told they are wrong will spend the
+    // demo re-typing them. The sentence is fixed and never FabOrchestrator's
+    // address (plan RP5, m4); a timeout or an outage was already reported
+    // inside `fetchFo`, and anything else is this app's surprise.
+    if (!(error instanceof FabOrchRequestError)) reportError("auth/login", error);
+    if (error instanceof FabOrchRequestError && error.status === 504) {
+      return NextResponse.json(
+        { code: "upstream_timeout", error: "FabOrchestrator did not answer in time. Try again in a moment." },
+        { status: 504 },
+      );
+    }
     return NextResponse.json(
-      { error: "Sign-in is not configured on this server: FabOrchestrator is not reachable." },
+      { code: "faborch_unavailable", error: "FabOrchestrator could not be reached just now. Try again in a moment." },
       { status: 503 },
     );
   }
 
-  let fo;
-  try {
-    fo = await foLogin(email, password);
-  } catch (error) {
-    // FO being down must not read as a wrong password. Somebody typing their
-    // own credentials correctly and being told they are wrong will spend the
-    // demo re-typing them.
-    const message =
-      error instanceof FabOrchRequestError
-        ? error.message
-        : "Could not reach FabOrchestrator to check those credentials.";
-    // A timeout or an unreachable FO was reported inside `fetchFo`; anything
-    // else is this app's surprise.
-    if (!(error instanceof FabOrchRequestError)) reportError("auth/login", error);
-    return NextResponse.json({ error: message }, { status: 503 });
-  }
-
   if (!fo) {
+    // FabOrchestrator refuses a wrong password, and a suspended or deleted
+    // account, before it checks the password. All of them read as a wrong
+    // password here (RP2-D1): anything else would let a caller learn an
+    // account's status by posting any password.
     recordLoginFailure(address);
-    return NextResponse.json({ error: "Incorrect email or password" }, { status: 401 });
+    return NextResponse.json({ code: "invalid_credentials", error: "Incorrect email or password" }, { status: 401 });
   }
 
-  // One extra FO call, `/api/auth/me` with the new token (plan RP2, login
-  // step 2; `foMe` ported from the chetan branch). FO's login has just set its
-  // idle clock, so this extends nothing. It yields the real role, and two
-  // answers that change the outcome:
-  //
+  try {
+    const res = await completeSignIn(req, fo);
+    if (res.status === 200) clearLoginFailures(address);
+    return res;
+  } catch (error) {
+    // Nothing below is expected to throw. If something does, FabOrchestrator
+    // is holding a session this app will never use: revoke it before answering.
+    reportError("auth/login-after-fo", error);
+    await revokeFoSession(fo.token, "login_failed");
+    return NextResponse.json(
+      { code: "upstream_error", error: "Sign-in could not be completed. Try again." },
+      { status: 500, headers: NO_STORE },
+    );
+  }
+}
+
+/** Steps 2 to 5, once FabOrchestrator has accepted the password. */
+async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResponse> {
+  // ── Step 2: the `/me` probe, with the token FO just issued ────────────────
+  // FO's login has just set its idle clock, so this extends nothing.
   //  - 403 "no longer active" after a correct password: a coded failure, not
-  //    "wrong password", and the token FO just minted is revoked before we
-  //    answer so no session row is left behind. Not counted as a failed guess.
+  //    "wrong password", and the token just minted is revoked before the answer.
   //  - 401 for a token FO issued a moment ago: 502 `upstream_error`, and the
   //    token is revoked the same way.
-  //
-  // A forced password change (403 FORCE_PASSWORD_CHANGE) signs in as before:
-  // FabOrchestrator's own pages hold the operator at /force-password-change,
-  // which is in the gateway's document catalogue. Any other failure (timeout,
-  // unreachable, 5xx) costs only the label.
+  //  - 403 FORCE_PASSWORD_CHANGE: signed in, and sent to FO's change page.
+  //    If this user already changed the password on this browser and FO still
+  //    asks, FO has not cleared its flag (§9 question 44): refused with that
+  //    explanation rather than sent round the loop again.
+  //  - Anything else (timeout, unreachable, 5xx) costs only the role label.
   let roleName: string | null = null;
+  let forcedChange = false;
   try {
     const me = await foMe(fo.token);
     if (me.kind === "inactive") {
-      await foLogout(fo.token);
-      return NextResponse.json(
-        {
-          code: "account_inactive",
-          error: "This account is no longer active. Contact your administrator.",
-        },
-        { status: 403 },
-      );
+      return await refuseAndRevoke(fo.token, "probe_inactive", 403, {
+        code: "account_inactive",
+        error: "This account is no longer active. Contact your administrator.",
+      });
     }
     if (me.kind === "unauthorized") {
-      await foLogout(fo.token);
-      return NextResponse.json(
-        {
-          code: "upstream_error",
-          error: "FabOrchestrator did not confirm the new session. Try signing in again.",
-        },
-        { status: 502 },
-      );
+      return await refuseAndRevoke(fo.token, "probe_unexpected", 502, {
+        code: "upstream_error",
+        error: "FabOrchestrator did not confirm the new session. Try signing in again.",
+      });
+    }
+    if (me.kind === "force_password_change") {
+      if (passwordChangeMarkedFor(req, fo.user.id)) {
+        return await refuseAndRevoke(fo.token, "password_change_required", 403, {
+          code: "password_change_required",
+          error:
+            "Your password was changed, but FabOrchestrator is still asking for a new one. " +
+            "Ask your administrator to clear the password-change requirement on your account.",
+        });
+      }
+      forcedChange = true;
     }
     if (me.kind === "ok") roleName = me.roleName;
   } catch (error) {
@@ -170,11 +249,14 @@ export async function POST(req: NextRequest) {
     if (!(error instanceof FabOrchRequestError)) reportError("auth/me-probe", error);
   }
 
-  // This app's own session, for an operator FO has vouched for.
-  //
-  // `fo.expiresAt` caps this session at FabOrchestrator's own expiry, so the
-  // PWA can never hold a session that outlives the token behind it — see
-  // `sessionFor`.
+  // ── Step 3: a new sign-in ends the session it replaces ─────────────────────
+  // Before this one is answered, and whether or not FabOrchestrator is quick
+  // about it (the revoke has its own short limit, and never fails the login).
+  const replaced = foTokenFrom(req);
+  if (replaced && replaced !== fo.token) await revokeFoSession(replaced, "replaced");
+
+  // ── Step 4: this app's own session, for an operator FO has vouched for ────
+  // `fo.expiresAt` caps it at FabOrchestrator's own expiry — see `sessionFor`.
   const session = sessionFor(
     {
       id: fo.user.id,
@@ -186,8 +268,56 @@ export async function POST(req: NextRequest) {
     fo.token,
   );
 
-  clearLoginFailures(address);
-  const res = NextResponse.json({ ...session, faborch: true });
-  setFoTokenCookie(req, res, fo.token, fo.expiresAt);
+  // ── Step 5: the answer ─────────────────────────────────────────────────────
+  // FabOrchestrator's change page is named only where this origin serves it
+  // (`whole` mode, or `surfaces` listing it); anywhere else it would be a 404.
+  const next =
+    forcedChange && classify(FORCED_CHANGE_PAGE, readRegistry()) === "fo-document" ? FORCED_CHANGE_PAGE : null;
+
+  const res = NextResponse.json(
+    {
+      token: session.token,
+      expiresAt: session.expiresAt,
+      // FabOrchestrator's own user fields, as its login page stores them (G30):
+      // its sidebar reads the name and its dashboard controls read
+      // `canCreateDashboards` from the session blob the login page writes.
+      user: {
+        id: fo.user.id,
+        email: fo.user.email,
+        name: fo.user.name ?? null,
+        ...(typeof fo.user.canCreateDashboards === "boolean"
+          ? { canCreateDashboards: fo.user.canCreateDashboards }
+          : {}),
+        roleName: session.user.roleName,
+      },
+      next,
+      faborch: true,
+    },
+    { headers: NO_STORE },
+  );
+  setFoTokenCookie(req, res, fo.token, session.expiresAt);
+  // FabOrchestrator no longer holds this user for a change: the mark from an
+  // earlier change has done its job.
+  if (!forcedChange && passwordChangeMarkedFor(req, fo.user.id)) clearPasswordChangeMark(res);
   return res;
+}
+
+function notConfigured(
+  error = "Sign-in is not configured on this server: FabOrchestrator is not reachable.",
+): NextResponse {
+  return NextResponse.json({ code: "not_configured", error }, { status: 503, headers: NO_STORE });
+}
+
+/**
+ * Refuse this sign-in and revoke the token FabOrchestrator just issued, before
+ * answering, so no session row is left behind. No cookie is set.
+ */
+async function refuseAndRevoke(
+  foToken: string,
+  reason: SessionEndReason,
+  status: number,
+  body: { code: string; error: string },
+): Promise<NextResponse> {
+  await revokeFoSession(foToken, reason);
+  return NextResponse.json(body, { status, headers: NO_STORE });
 }

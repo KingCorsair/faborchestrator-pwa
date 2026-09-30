@@ -19,17 +19,20 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { LogOut, Menu, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandLockup } from "./brand";
 import { NavDrawer, type DrawerHistory } from "./nav-drawer";
 import { navItems } from "./nav-items";
-import { logout, type SessionUser } from "./use-session";
+import { endClientSession } from "@/lib/end-client-session";
+import type { SessionUser } from "./use-session";
 
 export function AppShell({
   user,
-  token,
+  // Kept in the props for the screens that pass it; sign-out no longer needs
+  // it, because the server reads only the cookie.
+  token: _token,
   sessionExpiresAt,
   onRefresh,
   onNewChat,
@@ -53,7 +56,6 @@ export function AppShell({
   history?: DrawerHistory;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const minutesLeft = useSessionMinutes(sessionExpiresAt ?? null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
@@ -279,9 +281,10 @@ export function AppShell({
           <button
             type="button"
             aria-label="Log out"
-            onClick={async () => {
-              await logout(token);
-              router.replace("/login");
+            onClick={() => {
+              // The plan's client order, document navigation included
+              // (`lib/end-client-session.ts`).
+              endClientSession("user");
             }}
             className="grid flex-none cursor-pointer place-items-center transition-colors hover:bg-[var(--status-red-bg)]"
             style={{

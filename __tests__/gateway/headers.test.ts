@@ -26,6 +26,7 @@ describe("upstream request headers", () => {
     "x-forwarded-for": "203.0.113.9, 10.0.0.1",
     connection: "keep-alive",
     "content-type": "application/json",
+    "content-length": "999999",
   });
   const out = upstreamRequestHeaders(incoming, { ip: "203.0.113.9", proto: "https" });
 
@@ -50,6 +51,11 @@ describe("upstream request headers", () => {
   test("the phone's address and scheme reach FO's audit", () => {
     assert.equal(out.get("x-forwarded-for"), "203.0.113.9");
     assert.equal(out.get("x-forwarded-proto"), "https");
+  });
+  test("the phone's own content-length is never forwarded (plan RP1 part 3)", () => {
+    // The gateway sets it from the bytes it actually read; forwarding the
+    // phone's claim is what made a cut-off body a length-mismatch 502 (G2).
+    assert.equal(out.get("content-length"), null);
   });
 });
 
@@ -109,4 +115,17 @@ describe("rewriteLocation", () => {
   test("another host passes through untouched", () => assert.equal(rewriteLocation("https://example.com/x", FO), "https://example.com/x"));
   test("a host that merely starts with the origin is not rewritten", () =>
     assert.equal(rewriteLocation(`${FO}.evil.example/x`, FO), `${FO}.evil.example/x`));
+});
+
+describe("redirects from either FabOrchestrator origin stay on this app (RP1, G17)", () => {
+  const UI = "http://faborch-fo-ui-preview.internal:3000";
+  test("a Location naming the other origin is rewritten too", () => {
+    assert.equal(rewriteLocation(`${UI}/chat`, [FO, UI]), "/chat");
+    assert.equal(rewriteLocation(`${FO}/home`, [FO, UI]), "/home");
+    assert.equal(rewriteLocation("https://example.com/x", [FO, UI]), "https://example.com/x");
+  });
+  test("the response headers use every origin given", () => {
+    const out = downstreamResponseHeaders(new Headers({ location: `${UI}/force-password-change` }), [FO, UI]);
+    assert.equal(out.get("location"), "/force-password-change");
+  });
 });

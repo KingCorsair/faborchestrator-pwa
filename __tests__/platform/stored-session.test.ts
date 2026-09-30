@@ -18,6 +18,7 @@ import {
   clearStoredSession,
   readStored,
   readStoredSession,
+  sessionBlob,
   storeSession,
 } from "../../lib/stored-session";
 
@@ -92,6 +93,28 @@ describe("writing a new session", () => {
     assert.equal(storeSession("t", "2026-10-01T00:00:00.000Z"), true);
     assert.equal(fake.store.get(AUTH_TOKEN_KEY), "t");
     assert.equal(fake.store.get(AUTH_SESSION_KEY), JSON.stringify({ expiresAt: "2026-10-01T00:00:00.000Z" }));
+  });
+
+  test("with the user, the blob is FabOrchestrator's own shape, which its pages read (plan RP2, G30)", () => {
+    const fake: Fake = { store: new Map() };
+    install(fake);
+    const user = { id: "u1", email: "op@plant.example", name: "A. Operator", canCreateDashboards: true };
+    assert.equal(storeSession("t", "2026-10-01T00:00:00.000Z", user), true);
+    const blob = JSON.parse(fake.store.get(AUTH_SESSION_KEY)!) as {
+      user: typeof user;
+      signedInAt: string;
+      expiresAt: string;
+    };
+    assert.deepEqual(blob.user, user, "FabOrchestrator's sidebar reads user.name; its chat reads canCreateDashboards");
+    assert.equal(blob.expiresAt, "2026-10-01T00:00:00.000Z");
+    assert.ok(!Number.isNaN(new Date(blob.signedInAt).getTime()));
+  });
+
+  test("dashboard rights FabOrchestrator did not state are left out, for its pages to ask", () => {
+    assert.deepEqual(
+      (sessionBlob("x", { id: "u1", email: "e", name: null }) as { user: object }).user,
+      { id: "u1", email: "e", name: null },
+    );
   });
 
   test("a store that refuses writes says so", () => {

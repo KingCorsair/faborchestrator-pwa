@@ -16,13 +16,14 @@ import { test, describe, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL = "https://fo.test";
 process.env.FO_EMBED_MODE = "whole";
 
 import { NextRequest } from "next/server";
 import { sessionFor } from "@/lib/auth";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
-import { resetOwnershipCache } from "@/lib/gateway/ownership";
+import { rememberFromList, resetOwnershipCache } from "@/lib/gateway/ownership";
 import { GATEWAY_MARKER_HEADER } from "@/lib/gateway/registry";
 import {
   budgetProblems,
@@ -283,9 +284,10 @@ describe("after the headers", () => {
 
 describe("the phone leaving", () => {
   test("aborts FabOrchestrator's call, and is not reported as an incident", async () => {
+    // An ordinary call. A chat answer is the exception, below.
     scriptFo({ headersAfterMs: null });
     const phone = new AbortController();
-    const pending = chat(phone.signal);
+    const pending = call(GET, "GET", "/api/conversations", undefined, phone.signal);
     await fetched();
     phone.abort();
     await advance(0);
@@ -293,5 +295,125 @@ describe("the phone leaving", () => {
     assert.equal(res.status, 499);
     assert.equal(upstreamSignal?.aborted, true);
     assert.ok(!logs.some((l) => /upstream_timeout|gateway\/unreachable/.test(l)), logs.join("\n"));
+  });
+});
+
+/**
+ * The stopgap (`lib/gateway/keep-reading.ts`, 2026-09-30): FabOrchestrator
+ * saves an answer only when its stream is read to the end, so a chat answer
+ * the phone walks away from is read to the end here. The deadlines above still
+ * apply to it.
+ */
+describe("a chat answer the phone leaves is still read to the end (stopgap)", () => {
+  const realInfo = console.info;
+  let infos: string[] = [];
+  beforeEach(() => {
+    infos = [];
+    console.info = (...a: unknown[]) => infos.push(a.map(String).join(" "));
+  });
+  afterEach(() => {
+    console.info = realInfo;
+    delete process.env.KEEP_READING_MAX_STREAMS;
+  });
+  const keptLine = () => infos.find((l) => l.includes('"event":"answer_kept_reading"'));
+
+  test("FabOrchestrator's call is not aborted, and the answer is read to its end", async () => {
+    scriptFo({ headersAfterMs: 0, chunksAt: [0, 5000, 10_000] });
+    const phone = new AbortController();
+    const res = await answered(chat(phone.signal));
+    assert.equal(res.status, 200);
+    // The phone reads the start of the answer, then is minimised: its
+    // connection closes and Next cancels its side of the body.
+    const reader = res.body!.getReader();
+    const first = reader.read();
+    await advance(1000); // the scripted chunks arrive on the test clock
+    assert.equal(new TextDecoder().decode((await first).value), "c0;");
+    phone.abort();
+    // Not awaited: one half of a tee finishes cancelling only when the other
+    // half is done too, which here needs the clock to move.
+    void reader.cancel();
+    await advance(15_000);
+    assert.equal(upstreamSignal?.aborted, false, "the phone leaving did not end FabOrchestrator's call");
+    const line = keptLine();
+    assert.ok(line, infos.join("\n"));
+    assert.match(line!, /"outcome":"completed"/);
+    assert.ok(!line!.includes("fo.test"), "never the FabOrchestrator address");
+  });
+
+  test("the phone leaving before the answer starts does not end it either", async () => {
+    scriptFo({ headersAfterMs: 3000, chunksAt: [0] });
+    const phone = new AbortController();
+    const pending = chat(phone.signal);
+    await fetched();
+    phone.abort();
+    const res = await answered(pending);
+    assert.equal(res.status, 200, "the answer still arrives, to be read here");
+    void res.body!.cancel();
+    await advance(2000);
+    assert.equal(upstreamSignal?.aborted, false);
+    assert.match(keptLine() ?? "", /"outcome":"completed"/);
+  });
+
+  test("the deadlines still end it: FabOrchestrator going silent after the phone left", async () => {
+    scriptFo({ headersAfterMs: 0, chunksAt: [0], close: false });
+    const phone = new AbortController();
+    const res = await answered(chat(phone.signal));
+    const reader = res.body!.getReader();
+    const first = reader.read();
+    await advance(1000);
+    await first;
+    phone.abort();
+    // Not awaited: one half of a tee finishes cancelling only when the other
+    // half is done too, which here needs the clock to move.
+    void reader.cancel();
+    await advance(B.stream.idleMs + 5000);
+    assert.equal(upstreamSignal?.aborted, true, "the idle deadline ended the call");
+    assert.ok(logs.some((l) => l.includes('"reason":"idle"')), logs.join("\n"));
+    assert.match(keptLine() ?? "", /"outcome":"errored"/);
+  });
+
+  test("while the phone stays, it gets exactly what it got before", async () => {
+    scriptFo({ headersAfterMs: 0, chunksAt: [0, 1000, 2000] });
+    const { text, error } = await readAll(await answered(chat()), 5000);
+    assert.equal(error, null);
+    assert.equal(text, "c0;c1;c2;");
+    assert.equal(keptLine(), undefined, "nothing to report when the phone stayed");
+  });
+
+  test("a new question in the same conversation stops the read of the previous answer", async () => {
+    // A stopped (or abandoned) answer must not be saved after the next
+    // question: FabOrchestrator writes it when it finishes (review, 30 Sep).
+    const CONVO = "33333333-3333-4333-8333-333333333333";
+    rememberFromList(FO_TOKEN, JSON.stringify([{ id: CONVO }]));
+    scriptFo({ headersAfterMs: 0, chunksAt: [0, 30_000] });
+    const phone = new AbortController();
+    const first = await answered(call(POST, "POST", "/api/chat", { conversationId: CONVO, messages: [] }, phone.signal));
+    const firstUpstream = upstreamSignal!;
+    const reader = first.body!.getReader();
+    const chunk = reader.read();
+    await advance(1000);
+    await chunk;
+    phone.abort(); // Stop, or the phone minimised
+    void reader.cancel();
+    await advance(1000);
+    assert.equal(firstUpstream.aborted, false, "still being read on the phone's behalf");
+
+    const second = await answered(call(POST, "POST", "/api/chat", { conversationId: CONVO, messages: [] }));
+    await flush();
+    assert.equal(firstUpstream.aborted, true, "the previous answer is no longer read to its end");
+    assert.match(keptLine() ?? "", /"outcome":"superseded"/);
+    await readAll(second, 40_000);
+  });
+
+  test("with every slot taken, a chat falls back to ending when the phone leaves", async () => {
+    process.env.KEEP_READING_MAX_STREAMS = "0";
+    scriptFo({ headersAfterMs: null });
+    const phone = new AbortController();
+    const pending = chat(phone.signal);
+    await fetched();
+    phone.abort();
+    await advance(0);
+    assert.equal((await pending).status, 499);
+    assert.equal(upstreamSignal?.aborted, true);
   });
 });

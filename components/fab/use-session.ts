@@ -14,7 +14,7 @@
  */
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { endClientSession } from "@/lib/end-client-session";
 import { loginHref } from "@/lib/return-path";
 import { clearStoredSession, readStoredSession } from "@/lib/stored-session";
 
@@ -49,7 +49,6 @@ export function clearAuthStorage() {
 }
 
 export function useSession(): Session {
-  const router = useRouter();
   const [session, setSession] = React.useState<Session>({
     user: null,
     token: null,
@@ -64,10 +63,10 @@ export function useSession(): Session {
     // to throw here, outside any guard, and take the screen down.
     const stored = readStoredSession();
     if (!stored) {
-      clearAuthStorage();
-      // Carries where they were headed, so sign-in returns them to it rather
-      // than to `/orders` — see lib/return-path.ts.
-      router.replace(loginHref());
+      // The bearer is gone but the cookie may not be: end the session on the
+      // server too (plan RP2, m3), then sign-in, carrying where they were
+      // headed so sign-in returns them to it — see lib/return-path.ts.
+      endClientSession("token_missing", { to: loginHref() });
       return;
     }
 
@@ -95,8 +94,13 @@ export function useSession(): Session {
         });
         if (cancelled) return;
         if (res.status === 401) {
-          clearAuthStorage();
-          router.replace(loginHref());
+          // Expired or refused. This used to clear localStorage and stop,
+          // leaving the FabOrchestrator session behind the cookie alive for
+          // up to 30 days (plan RP2, m3); it now ends that too — unless a new
+          // sign-in (in another tab) has replaced the token checked here, in
+          // which case the session to end is not this one.
+          if (readStoredSession()?.token !== token) return;
+          endClientSession("pwa_expired", { to: loginHref() });
           return;
         }
         const data = await res.json();
@@ -129,29 +133,17 @@ export function useSession(): Session {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, []);
 
   return session;
 }
 
-/** Clears the client session. The token is a stateless HMAC — see lib/auth.ts. */
-export async function logout(token: string | null) {
-  // The plan's client order (RP2, `endClientSession`): ask the server, clear
-  // this device, and let the caller navigate. The request is `keepalive`, so
-  // it survives that navigation and nothing here waits on the network. Until
-  // 2026-09-29 this awaited the server first, which waited on FabOrchestrator,
-  // so a slow FO held the button on "Signing out…" (the chetan branch bounded
-  // that wait; here there is no wait at all). The server is asked even with no
-  // token in hand: the cookie may still be there, and the route reads only it.
-  try {
-    void fetch("/api/pwa/auth/logout", {
-      method: "POST",
-      keepalive: true,
-      credentials: "same-origin",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }).catch(() => {});
-  } catch {
-    /* A fetch that throws synchronously changes nothing below. */
-  }
-  clearAuthStorage();
+/**
+ * Sign out without navigating, for a caller that navigates itself: the plan's
+ * client order (`lib/end-client-session.ts`) up to step 3. Nothing here waits on
+ * the network: until 2026-09-29 this awaited the server, which waited on
+ * FabOrchestrator, so a slow FO held the button on "Signing out…".
+ */
+export async function logout(): Promise<void> {
+  endClientSession("user", { navigate: false });
 }

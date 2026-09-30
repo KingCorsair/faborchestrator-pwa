@@ -1,11 +1,128 @@
 # Where this project stands
 
-**As of 11 September 2026.** Code at `585aa00` on `main`, in sync with `KingCorsair/faborchestrator-pwa` (private); WP0 files below are uncommitted until reviewed.
+**As of 30 September 2026.** Code on branch `pwa/amay-embed-fo-production-hardening` of `KingCorsair/faborchestrator-pwa` (**public** on GitHub as of 30 September; see "Open" below). The embedding baseline and the 29–30 September production-hardening commits are described in their commit messages; the section directly below records the corrections made on top of them on 30 September.
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
 test, a probe report, or a browser run behind it. When the two disagree, this
 file is wrong and should be corrected.
+
+---
+
+## Corrections on the hardening branch — 30 September 2026 (Chetan)
+
+**Asked for:** (1) FabOrchestrator's frontend and backend both from the real
+FabOrchestrator; (2) proper error handling and session management.
+**Decided with Chetan the same day:** real FabOrchestrator screens only (no
+separate UI build unless a preview switches it on deliberately); the frozen RP2
+session design in full, plus only the clear-cut error fixes; and a stopgap for
+answers lost when the phone disconnects.
+
+**Against the plan's process** (`CLAUDE.md`, "the RP process"): RP1 and RP2 are
+frozen, and this implements RP1 part 3 (body policy) and part 6 (the preview
+split), and RP2 stages 3–7, with the RP2 design approved for implementation by
+Chetan on 30 September (CP2). CP2's other items are unchanged and still open:
+the revoke deadline value (5 s today; 3 s proposed) and the FO-owner questions.
+RP5 and RP6 are **not** frozen; only these pieces of them were built, on
+Chetan's instruction: coded JSON 404s for API paths and no FabOrchestrator
+address in error bodies (RP5); the per-conversation proof with refusal instead
+of stripping (RP6 parts 2–3). The keep-reading stopgap **departs from RP4**,
+whose rule is that the phone's disconnect aborts the upstream call; it is
+recorded here and is to be deleted once FabOrchestrator saves an answer on
+disconnect (§9 question 47). The plan document itself was not edited.
+
+### What changed
+
+| Area | Change | Plan | Where | Tests |
+|---|---|---|---|---|
+| Real FO screens | `FO_UI_BASE_URL` is honoured only beside `FO_UI_SPLIT_ALLOWED=1`; without it every FO page fails closed (`503 not_configured`, detail in the log only). `fly.preview.toml` no longer sets it. A `Location` naming either FO origin is kept on this app | RP1 part 6, G17, G18 | `lib/gateway/upstream.ts`, `headers.ts`, the gateway route | `upstream.test.ts`, `headers.test.ts` |
+| Signing keys | Every token names its key (`kid`) and carries `iat`, `iss`, `aud`; previous keys verify-only; secret at least 32 characters; tokens minted before this change (no `kid`) still verify with the current secret, so the deploy signs nobody out | RP2 part 5, m2 | `lib/auth.ts` | `session-keys.test.ts` |
+| One session check | `requireAuth` and the gateway bridge share `checkSession`; every refusal is the same `401 session_invalid` | RP2 | `lib/auth/verify-session.ts`, `auth-middleware.ts`, `auth-bridge.ts` | `injection.test.ts`, `route-gate.test.ts` |
+| A refused session is ended | An expired bearer, or one beside a cookie that is not its own: 401 at once, cookie cleared, FabOrchestrator's token revoked after the response (once, however many calls were refused together); a malformed bearer changes nothing | RP2 G5 | the gateway route, `lib/faborch/end-session.ts` | `session-end.test.ts` |
+| Ending a session | Server: clear the cookie and answer, revoke after, log `session_end` with the reason. Browser: tell the server, forget both keys, whole-document navigation to sign-in. Every expiry path now revokes: `/me` 401, a missing bearer, the sign-in page's own check, sign-out, and `fo-shell.js` (which now also returns the operator to the page they were on) | RP2 m3 | `end-session.ts`, `lib/end-client-session.ts`, `use-session.ts`, `login-page.tsx`, `sign-out-link.tsx`, `app-shell.tsx`, `public/fo-shell.js` | `session-storage-guards.test.ts`, `fo-native-parity.test.ts` |
+| Sign-out only from this app | A request whose headers say cross-site is refused `403 cross_site_request`, cookie kept; no header, allowed | RP2 G26 | the logout route, `lib/same-origin.ts` | `login.test.ts`, `same-origin.test.ts` |
+| Sign-in | Only from this app's pages and only JSON (`403 cross_site_request`, `415 unsupported_media_type`); this app's session settings checked **before** FabOrchestrator is asked anything, and a failure after FabOrchestrator issued a token revokes it; a new sign-in revokes the session it replaces; `next=/force-password-change` for a forced change, where this origin serves that page; FabOrchestrator's own user fields in the answer and **FabOrchestrator's session-blob shape** in localStorage (its sidebar showed "User" instead of the name); the FO cookie lives the session plus 5 minutes (`SESSION_COOKIE_GRACE_S`), not FabOrchestrator's 30 days; coded errors, never FabOrchestrator's address; FabOrchestrator still demanding a change after the same user made one on this browser gives an explained `403 password_change_required` (the gateway marks the browser, for that user only, on a successful change) | RP2 steps 1–6, G20, G30; RP3 part 5 (gate only); RP5 m4 | the login route, `lib/faborch/session.ts`, `lib/faborch/password-mark.ts`, `lib/stored-session.ts`, `login-page.tsx` | `login.test.ts`, `login-me.test.ts`, `session.test.ts`, `stored-session.test.ts` |
+| Request size | Policy 20 MiB with a coded 413; Next hands the app 25 MiB (it cut every body at 10 MB, so long chats reached FabOrchestrator truncated); every body is read, measured and forwarded exactly, with its own length; the phone's `content-length` is never forwarded | RP1 part 3, G2, B5 | `lib/gateway/body-limit.ts`, `next.config.ts`, `headers.ts`, the route | `body-limit.test.ts` |
+| Conversation ownership | Proved per conversation (`GET /api/conversations/{id}`, FabOrchestrator's own check), so it also works past FabOrchestrator's 1,000-row list cap; an unproved id is **refused**, never stripped into a turn that is silently not saved: 403 `conversation_forbidden`, 503 `ownership_unavailable` with `Retry-After`, 400 `invalid_request`, 401 `faborch_session_expired`; a change FabOrchestrator refuses (a 403 `PATCH`) is forgotten like a delete | RP6 parts 1–3 (not frozen) | `lib/gateway/ownership.ts`, `lib/faborch/client.ts` | `ownership.test.ts`, `route-ownership.test.ts` |
+| Not found, and pages that cannot load | An unknown `/api` path is a coded JSON 404 (front door and gateway); one of FabOrchestrator's pages the gateway cannot deliver (not configured, unreachable, too slow) gets a small HTML page with the same status and code instead of raw JSON in the app's window | RP5 G8, part 3b (not frozen) | `proxy.ts`, the route, `lib/gateway/error-page.ts`, `lib/gateway/destinations.ts` | `route-gate.test.ts`, `native-routes.test.ts`, `document-errors.test.ts` |
+| Lost answers (stopgap) | A chat answer is split: the phone gets its half as before, the gateway reads the other to the end, so FabOrchestrator saves it even when the phone is minimised mid-answer; **a new question in the same conversation stops that read**, so an old answer is never saved after a newer question; a turn whose phone has already left is not forwarded; the stream deadlines still apply; at most `KEEP_READING_MAX_STREAMS` (50) at once | departs from RP4 | `lib/gateway/keep-reading.ts`, `deadline.ts`, the route | `deadline.test.ts`, `keep-reading.test.ts` |
+| Sign-in page | No longer describes the retired production-order workflow | — | `login-page.tsx` | — |
+
+### Verified
+
+* `npm run typecheck` clean; `npm run lint` clean; `npm test` **774 tests, 0
+  failing** (platform 207, faborch 303, gateway 264; 674 before); `npm run
+  build` exit 0, reporting `proxyClientMaxBodySize: 26214400`.
+* **End to end against the built server** (`next start`) and a stand-in
+  FabOrchestrator that, like the real one, saves an answer only when its stream
+  is read to the end: **18/18** — the sign-in page; sign-in with the cookie at
+  the session plus 5 minutes (`Max-Age` 43500) and FabOrchestrator's user
+  fields; a JSON 404 for an unknown API path; **a chat whose phone disconnected
+  after two frames was read to the end and saved**; **Stop followed at once by
+  the next question left the thread in order** (question, question, answer —
+  the stopped answer dropped, as on FabOrchestrator's own site); somebody
+  else's conversation refused 403; a 12 MB chat reaching FabOrchestrator whole
+  (12,582,978 bytes; Next used to cut at 10 MB) and a 21 MB one refused 413; an
+  expired session answered 401 with the cookie cleared and FabOrchestrator's
+  token revoked; a cross-site sign-out refused; sign-out and re-sign-in both
+  revoking. The server log carried only fingerprint and id prefixes.
+
+### What a deploy now needs
+
+* **`SESSION_SIGNING_KEY_ID`** — `fly.toml` and `fly.preview.toml` set
+  `2026-09`; any other app (for example `faborch-pwa-amay-hardening`) must set
+  it, or sign-in and every gateway call fail loudly.
+* **`SESSION_SIGNING_SECRET` of at least 32 characters** (the old minimum was 16).
+* To show FabOrchestrator's real screens, **remove `FO_UI_BASE_URL`** from the
+  app's settings; left alone without `FO_UI_SPLIT_ALLOWED=1`, every
+  FabOrchestrator page answers 503.
+* Nothing else: existing sessions survive (their tokens verify with the same
+  secret), and no database or store is added.
+
+### Independent review
+
+A separate review agent read the whole change adversarially (a general-purpose
+subagent given the plan and the diff; not the plan's charter review). Found:
+0 blocking, 3 should-fix, 6 minor. Fixed: the password-change mark was per
+browser, not per user (now an HMAC of the user id); unusable session settings
+were found only after FabOrchestrator had issued a token (now checked first,
+reported when the routes load, answered 503 `not_configured` rather than 500,
+and anything failing after `foLogin` revokes its token); Stop and the next
+question (above); `next` naming a page this origin does not serve; a late
+answer on the sign-in page or the screens ending a newer sign-in; a test that
+did not prove "revoked before the answer"; tokens without a key id tried only
+against the current key; no JSON-only or cross-site rule on sign-in; a 403
+`PATCH` not forgetting its conversation; JSON errors on FabOrchestrator's pages;
+one revoke per refused call; an unguarded navigation in `fo-shell.js`. Left as
+they are, with the reason: secrets are used exactly as set (`.env.example` says
+they must not start or end with spaces); `PUBLIC_ORIGIN` is not set in the Fly
+configs, because an app deployed under another name from the same file would
+get a wrong value, and `Sec-Fetch-Site`, which every supported browser sends,
+decides first; an unknown `/api/pwa/*` path, and any path in `off` mode, still
+gets Next's own HTML 404.
+
+### Open, and why
+
+* **FabOrchestrator's chat shows a gateway refusal's body as text** (a 403 or
+  413 on a chat turn appears as a JSON line). The plan's interim rule, §9
+  question 57; the fix is FabOrchestrator rendering `error`.
+* **Below 768 px FabOrchestrator's sidebar has no opener** until FabOrchestrator
+  merges its phone-navigation fix; with the preview now on the real screens,
+  the preview shows that too.
+* **The stopgap only saves the answer**: the phone sees it after reopening the
+  conversation. Remove it once FabOrchestrator saves on disconnect (§9 q47).
+* **Stop means something slightly different here**: the gateway cannot tell
+  FabOrchestrator's Stop button from the phone being minimised, so a stopped
+  answer is read to the end and saved whole — unless the operator asks the
+  next question in that conversation first, which drops it, as FabOrchestrator's
+  own site always does. The screen shows what was streamed before Stop.
+* Not in this change: RP1 per-route methods and `clientIdentity`; RP3's
+  limiter; RP4's stream slots, shutdown and the abandoned-login revoke (site v);
+  RP5's envelope and `requestId` everywhere; RP7's security headers; RP10.
+* **The GitHub repository is public.** It holds the production FabOrchestrator
+  address, detailed write-ups of FabOrchestrator's security gaps and probe
+  screenshots of production data. It should be made private (owner:
+  KingCorsair).
 
 ---
 

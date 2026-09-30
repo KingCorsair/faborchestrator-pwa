@@ -25,12 +25,14 @@ import assert from "node:assert/strict";
 // it before the imports run is not required — but it must be set before any
 // test calls it.
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 
 import { NextRequest, NextResponse } from "next/server";
 
 import { foFingerprint, sessionFor, verifyToken } from "@/lib/auth";
 import {
   FO_TOKEN_COOKIE,
+  sessionCookieGraceSeconds,
   setFoTokenCookie,
   clearFoTokenCookie,
   foTokenFrom,
@@ -66,21 +68,36 @@ describe("the token is written as an httpOnly cookie", () => {
     assert.match(setCookieOf(res), /SameSite=lax/i);
   });
 
-  test("the cookie expiry follows FO's own, so it cannot outlive the session", () => {
+  // Plan RP2 login step 5: the cookie lives as long as this app's session plus
+  // a short grace `G`, as `Max-Age` so a phone's wrong clock cannot stretch it.
+  // Until 2026-09-30 it expired with FabOrchestrator's own 30-day session, so a
+  // phone kept opening FO's pages for weeks after its 12-hour session ended.
+  const NOW = Date.UTC(2026, 8, 30, 12, 0, 0);
+  const IN_12_HOURS = new Date(NOW + 12 * 3600_000).toISOString();
+  const maxAgeOf = (line: string) => Number(line.match(/Max-Age=(\d+)/i)?.[1]);
+
+  test("the cookie lives as long as this app's session plus five minutes, never FO's 30 days", () => {
     const res = NextResponse.json({ ok: true });
-    setFoTokenCookie(reqWith(), res, TOKEN, IN_30_DAYS);
+    setFoTokenCookie(reqWith(), res, TOKEN, IN_12_HOURS, NOW);
     const line = setCookieOf(res);
-    assert.match(line, /Expires=/i);
-    const expires = new Date(line.match(/Expires=([^;]+)/i)![1]!);
-    // within a minute of what FO said
-    assert.ok(Math.abs(expires.getTime() - new Date(IN_30_DAYS).getTime()) < 60_000, line);
+    assert.equal(maxAgeOf(line), 12 * 3600 + 300, line);
   });
 
-  test("an unparseable expiry produces a session cookie rather than a bad date", () => {
+  test("an unreadable expiry keeps only the grace: short is the safe mistake", () => {
     const res = NextResponse.json({ ok: true });
-    setFoTokenCookie(reqWith(), res, TOKEN, "not a date");
+    setFoTokenCookie(reqWith(), res, TOKEN, "not a date", NOW);
     const line = setCookieOf(res);
     assert.ok(!/Invalid Date/i.test(line), line);
+    assert.equal(maxAgeOf(line), 300, line);
+  });
+
+  test("SESSION_COOKIE_GRACE_S sets the grace, and only within (0, 900] seconds", () => {
+    assert.equal(sessionCookieGraceSeconds({}), 300);
+    assert.equal(sessionCookieGraceSeconds({ SESSION_COOKIE_GRACE_S: "60" }), 60);
+    assert.equal(sessionCookieGraceSeconds({ SESSION_COOKIE_GRACE_S: "900" }), 900);
+    for (const bad of ["0", "-5", "901", "1.5", "soon"]) {
+      assert.throws(() => sessionCookieGraceSeconds({ SESSION_COOKIE_GRACE_S: bad }), bad);
+    }
   });
 });
 

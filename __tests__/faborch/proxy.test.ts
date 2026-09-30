@@ -25,6 +25,7 @@ import assert from "node:assert/strict";
 // Set before anything reads it. Both modules below read `process.env` lazily,
 // inside the functions that need it, so plain imports are safe here.
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
 import { NextRequest } from "next/server";

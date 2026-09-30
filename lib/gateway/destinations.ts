@@ -83,6 +83,17 @@ export function retiredScreenRedirect(
   return RETIRED_CHAT_SCREENS.includes(pathname) ? "/chat" : null;
 }
 
+/**
+ * Is this one of this app's own native API routes, closed in `whole` mode
+ * (plan RP8)? In `whole` mode no screen that calls `/api/faborch/*` can be
+ * reached, so those routes answer a `no-store` 404 for the whole soak;
+ * `surfaces` and `off` keep them open. Segment-bounded: `/api/faborchestra` is
+ * not one of them.
+ */
+export function closedNativeApi(pathname: string, registry: Registry = readRegistry()): boolean {
+  return registry.mode === "whole" && (pathname === "/api/faborch" || pathname.startsWith("/api/faborch/"));
+}
+
 /** FabOrchestrator's own cockpit — the product's real landing page. */
 export const FO_COCKPIT_PATH = "/home";
 

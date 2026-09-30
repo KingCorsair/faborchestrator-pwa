@@ -11,6 +11,7 @@ import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 
 import { NextRequest } from "next/server";
 import { readJsonBody } from "../../lib/request-body";

@@ -18,19 +18,34 @@
  * an id from a browser reaches FabOrchestrator only once it has been proved to
  * belong to the caller.
  *
- * ── Nulled, not refused ─────────────────────────────────────────────────────
- * An unproved id is stripped and the turn is forwarded without it. The
- * operator still gets their answer; it simply is not written into a
- * conversation. Refusing outright would punish somebody for a stale tab, and
- * `app/api/faborch/[agent]/chat/route.ts` already made exactly this choice.
+ * ── Refused, not stripped (plan RP6, 2026-09-30) ────────────────────────────
+ * Until 2026-09-30 an unproved id was stripped and the turn forwarded without
+ * it: the operator saw an answer that was never saved, and found the
+ * conversation missing it later. That silently turned one request into a
+ * different one. Now an unproved id is refused with a coded error the operator
+ * can act on:
+ *
+ *   not a conversation id at all              400 invalid_request
+ *   FabOrchestrator says not theirs, or gone  403 conversation_forbidden
+ *   FabOrchestrator says the token is dead    401 faborch_session_expired
+ *   FabOrchestrator could not be asked        503 ownership_unavailable
+ *
+ * **Fail closed**: forwarding an unproved id could write into somebody else's
+ * thread, and stripping it would write into a different one. The cost of an
+ * outage is a refused turn with `Retry-After`, not a misfiled one.
+ *
+ * The proof is FabOrchestrator's own per-conversation answer
+ * (`foConversationProof`, `GET /api/conversations/{id}`), which checks
+ * `userId` itself. The earlier proof read the caller's whole conversation
+ * list, which FabOrchestrator caps at 1,000 rows (`applyRowCap`): past that,
+ * a user's own older conversations could not be proved at all.
  *
  * ── Why positive results are cached and negative ones never are ─────────────
- * Proving ownership costs a list read from FabOrchestrator, and a chat turn
- * cannot afford one serially on every message. But a cache that can answer
- * "no" from memory would break the ordinary flow: FabOrchestrator's client
- * creates a conversation and immediately posts the first turn into it, and a
- * list cached from a moment earlier would not contain it — the turn would be
- * silently unpersisted and the thread would stay empty.
+ * Proving ownership costs a read from FabOrchestrator, and a chat turn cannot
+ * afford one serially on every message. But a cache that can answer "no" from
+ * memory would break the ordinary flow: FabOrchestrator's client creates a
+ * conversation and immediately posts the first turn into it, and a "no" cached
+ * a moment earlier would refuse it.
  *
  * So only "yes" is remembered, per token and id. A miss always costs a fresh
  * read, which is what makes a brand-new conversation work; a forged id is a
@@ -38,24 +53,22 @@
  *
  * A module-level Map, like `lib/rate-limit.ts`, for the same reason: this app
  * runs one machine (`fly.toml`), and a cache that vanishes on restart costs
- * one extra list read rather than correctness.
+ * one extra read rather than correctness.
  *
  * ── What WP8 measured, and the two things it changed ────────────────────────
  * This check is **the only work the gateway does that costs an upstream round
  * trip**, and against the preview it cost one: a chat turn carrying a
  * conversation id answered its first byte in 1,276 ms where the same turn
- * without an id answered in 708 ms. The read is this account's conversation
- * list — 208 rows, 55 KB on 9 September — and it grows with the account's
- * history. Two changes take that round trip off every turn but the first, and
- * neither weakens what is being proved:
+ * without an id answered in 708 ms. Two changes take that round trip off every
+ * turn but the first, and neither weakens what is being proved:
  *
  *  1. **The list the client already fetches warms the cache.**
  *     FabOrchestrator's own sidebar calls `GET /api/conversations` before
- *     anybody can pick a thread to type into, and that response is the same
- *     list this check would go and fetch a moment later. So the gateway reads
- *     the ids out of it as it streams past and remembers them. Nothing extra
- *     is requested, nothing is delayed, and the ids remembered are exactly the
- *     ids FabOrchestrator has just said belong to this token.
+ *     anybody can pick a thread to type into. The gateway reads the ids out of
+ *     that answer as it streams past and remembers them. Nothing extra is
+ *     requested, nothing is delayed, and the ids remembered are exactly the
+ *     ids FabOrchestrator has just said belong to this token. A per-id read
+ *     (up to 1.3 MB for a long thread) is therefore paid only on a cold cache.
  *
  *  2. **A positive lasts as long as the session that earned it.** The old TTL
  *     was 60 seconds — shorter than the gap between opening a thread and
@@ -93,30 +106,29 @@
  *  - **A real bound**: least-recently-used eviction at `MAX_ENTRIES`, where
  *    the old threshold only swept expired entries.
  *
- * Not done here, and still RP6's own work: the per-conversation proof in place
- * of the list read, refusing (403) instead of stripping an unproved id, and
- * failing closed (503) when FabOrchestrator cannot be asked.
+ * The per-conversation proof, the refusals and failing closed followed on
+ * 2026-09-30 (above).
  */
 
+import { z } from "zod";
 import { foFingerprint } from "@/lib/auth";
-import { ownsConversation } from "@/lib/faborch/owns";
+import { foConversationProof } from "@/lib/faborch/client";
+import { MAX_REQUEST_BODY_BYTES } from "@/lib/gateway/body-limit";
+import { idPrefix, logEvent, reportError } from "@/lib/report-error";
 
 /** The two FabOrchestrator endpoints that accept a `conversationId` in a body. */
-const CHAT_PATHS = new Map<string, string>([
-  // path → the conversation bucket FabOrchestrator files it under
-  ["/api/chat", "chat"],
-  ["/api/modeling-agent/chat", "modeling"],
-]);
+const CHAT_PATHS = new Set<string>(["/api/chat", "/api/modeling-agent/chat"]);
 
 /**
- * The largest chat body this will buffer in order to inspect it.
- *
- * A long thread is resent whole on every turn — 1.3 MB measured on a 104-turn
- * conversation — so this has to be generous. It is far above anything real and
- * well under the 50 MB FabOrchestrator's own nginx accepts, so the only body
- * that meets it is one that has gone wrong.
+ * A conversation id, validated exactly as FabOrchestrator's own
+ * `ChatRequestSchema` validates it (Zod 4 `uuid()`, RFC-strict). The modeling
+ * route has no schema of its own, so the gateway must not rely on
+ * FabOrchestrator's database layer to refuse anything else (RP6 part 2).
  */
-export const MAX_INSPECTABLE_BODY_BYTES = 20 * 1024 * 1024;
+const ConversationId = z.string().uuid();
+
+/** How long to ask a phone to wait after FabOrchestrator could not be asked (RP6 part 3). */
+const OWNERSHIP_RETRY_AFTER_S = 15;
 
 /**
  * How long a proved "yes" is kept: RP6's `T_own` (WP8 set it to 30 minutes).
@@ -230,24 +242,66 @@ export type OwnershipOutcome =
   | { action: "forward-unchanged" }
   /** The id is the caller's. Forward unchanged. */
   | { action: "forward-owned"; conversationId: string }
-  /** The id is not proved. Forward this body instead, with the id removed. */
-  | { action: "forward-stripped"; body: string; conversationId: string }
-  /** The body could not be inspected at all. */
-  | { action: "refuse"; reason: string };
+  /** FabOrchestrator no longer honours the token: the session is over. */
+  | { action: "session-expired" }
+  /** Refuse the turn with this coded answer; FabOrchestrator is sent nothing. */
+  | {
+      action: "refuse";
+      status: 400 | 403 | 413 | 503;
+      code: "invalid_request" | "conversation_forbidden" | "body_too_large" | "ownership_unavailable";
+      error: string;
+      retryAfterSeconds?: number;
+    };
+
+const REFUSE_INVALID: OwnershipOutcome = {
+  action: "refuse",
+  status: 400,
+  code: "invalid_request",
+  error: "That conversation reference is not valid. Start a new conversation.",
+};
+
+const REFUSE_FORBIDDEN: OwnershipOutcome = {
+  action: "refuse",
+  status: 403,
+  code: "conversation_forbidden",
+  error: "This conversation is no longer available or is not yours to continue. Start a new conversation.",
+};
+
+const REFUSE_UNAVAILABLE: OwnershipOutcome = {
+  action: "refuse",
+  status: 503,
+  code: "ownership_unavailable",
+  error: "FabOrchestrator could not confirm this conversation just now. Try again in a moment.",
+  retryAfterSeconds: OWNERSHIP_RETRY_AFTER_S,
+};
 
 /**
- * Inspect a chat body and decide what FabOrchestrator may be told.
+ * Inspect a chat body and decide what FabOrchestrator may be told
+ * (plan RP6 parts 2 and 3).
  *
- * `raw` is the request body as sent. The returned body, when present, is what
- * should be forwarded in its place.
+ *   not JSON, not an object          forward unchanged (FabOrchestrator refuses it)
+ *   `conversationId` absent or null  forward unchanged (FO starts or keeps its own)
+ *   anything but a UUID string       400 invalid_request, FabOrchestrator not asked
+ *   a remembered "yes"               forward
+ *   FO 200 naming the same id        remember, forward
+ *   FO 401                           the session is over
+ *   FO 403 or 404                    403 conversation_forbidden
+ *   anything else                    503 ownership_unavailable, fail closed
  */
 export async function checkChatBody(
   pathname: string,
   raw: string,
   foToken: string,
 ): Promise<OwnershipOutcome> {
-  if (raw.length > MAX_INSPECTABLE_BODY_BYTES) {
-    return { action: "refuse", reason: "Request body too large" };
+  // The route has already held the body to the policy; this is defence in
+  // depth for any other caller.
+  if (Buffer.byteLength(raw) > MAX_REQUEST_BODY_BYTES) {
+    return {
+      action: "refuse",
+      status: 413,
+      code: "body_too_large",
+      error: "That is more than this app can send in one go.",
+    };
   }
 
   let parsed: unknown;
@@ -263,25 +317,45 @@ export async function checkChatBody(
     return { action: "forward-unchanged" };
   }
 
-  const body = parsed as Record<string, unknown>;
-  const id = body.conversationId;
-  if (typeof id !== "string" || id === "") return { action: "forward-unchanged" };
+  const id = (parsed as Record<string, unknown>).conversationId;
+  if (id === undefined || id === null) return { action: "forward-unchanged" };
+  if (typeof id !== "string" || !ConversationId.safeParse(id).success) {
+    logEvent("warn", "ownership_invalid_id", { path: pathname });
+    return REFUSE_INVALID;
+  }
 
-  const agent = CHAT_PATHS.get(pathname) ?? "chat";
   if (remembered(foToken, id)) return { action: "forward-owned", conversationId: id };
 
   const askedAt = Date.now();
-  if (await ownsConversation(foToken, id, agent)) {
-    remember(foToken, id, askedAt);
-    return { action: "forward-owned", conversationId: id };
-  }
+  const proof = await foConversationProof(foToken, id);
+  const elapsedMs = Date.now() - askedAt;
 
-  // Unproved. Strip it and let the answer through unpersisted. `delete` rather
-  // than setting null: `/api/chat` gates every write on `if (!conversationId)`,
-  // and a field that is absent is the clearest possible way to say "do not
-  // persist this turn" — the same reasoning `lib/faborch/client.ts` records.
-  delete body.conversationId;
-  return { action: "forward-stripped", body: JSON.stringify(body), conversationId: id };
+  switch (proof.kind) {
+    case "owned":
+      remember(foToken, id, askedAt);
+      logEvent("info", "ownership_lookup", { path: pathname, idPrefix: idPrefix(id), elapsedMs });
+      return { action: "forward-owned", conversationId: id };
+    case "session-expired":
+      return { action: "session-expired" };
+    case "not-owned":
+      // RP10-A: an 8-character prefix only; a conversation id is access-bearing
+      // at FO. `foStatus` separates a deleted conversation of the caller's own
+      // (404) from somebody else's (403) in the log, never in the answer.
+      logEvent("warn", "ownership_refused", {
+        path: pathname,
+        idPrefix: idPrefix(id),
+        foStatus: proof.status,
+        elapsedMs,
+      });
+      return REFUSE_FORBIDDEN;
+    case "unavailable":
+      reportError("gateway/ownership-unavailable", new Error("conversation ownership could not be proved"), {
+        path: pathname,
+        foStatus: proof.status,
+        elapsedMs,
+      });
+      return REFUSE_UNAVAILABLE;
+  }
 }
 
 // ── Warming the cache from the list the client already asked for (WP8) ───────
@@ -304,9 +378,8 @@ export function isConversationList(pathname: string, method: string): boolean {
  * Remember every conversation id in a list FabOrchestrator just returned.
  *
  * `body` is the raw JSON of a **successful** list read made with `token`.
- * FabOrchestrator answers that call with only the caller's own conversations —
- * it is the same call `ownsConversation` makes to decide the question — so
- * every id in it is, by FabOrchestrator's own account, this token's.
+ * FabOrchestrator answers that call with only the caller's own conversations,
+ * so every id in it is, by FabOrchestrator's own account, this token's.
  *
  * Anything unexpected is ignored rather than guessed at: a body that is not
  * JSON, or not a list of objects with string `id`s, warms nothing and leaves
@@ -393,11 +466,29 @@ export function isConversationCreate(pathname: string, method: string): boolean 
   return method.toUpperCase() === "POST" && LIST_PATHS.has(pathname);
 }
 
+/** The conversation id a `/api/conversations/{id}` path names, or null. */
+function conversationIdIn(pathname: string): string | null {
+  const match = /^\/api\/conversations\/([^/]+)$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]!);
+  } catch {
+    return null; // malformed percent-encoding names no conversation
+  }
+}
+
 /** The id a `DELETE /api/conversations/{id}` names, or null for anything else. */
 export function deletedConversationId(pathname: string, method: string): string | null {
-  if (method.toUpperCase() !== "DELETE") return null;
-  const match = /^\/api\/conversations\/([^/]+)$/.exec(pathname);
-  return match ? decodeURIComponent(match[1]!) : null;
+  return method.toUpperCase() === "DELETE" ? conversationIdIn(pathname) : null;
+}
+
+/**
+ * The id a `PATCH /api/conversations/{id}` names when FabOrchestrator refused
+ * it with 403: not this caller's, or no longer anyone's (RP6 part 1). Null for
+ * anything else.
+ */
+export function refusedConversationId(pathname: string, method: string, status: number): string | null {
+  return method.toUpperCase() === "PATCH" && status === 403 ? conversationIdIn(pathname) : null;
 }
 
 /** A create's answer is one small object; anything past this is not one. */

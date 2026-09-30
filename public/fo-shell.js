@@ -54,6 +54,7 @@
    * a counter.
    */
   var FO_TOKEN_KEY = "llmatscale_auth_token";
+  var FO_SESSION_KEY = "llmatscale_auth_session";
   var signingOut = false;
 
   function foTokenPresent() {
@@ -66,18 +67,50 @@
     }
   }
 
+  /* Sign-in, returning to this page afterwards: FabOrchestrator's idle expiry
+   * lands the operator back where they were once they sign in again. Only a
+   * plain path on this origin is carried; the sign-in page validates it too. */
+  function signInTarget() {
+    try {
+      var path = window.location.pathname;
+      var search = window.location.search || "";
+      if (typeof path === "string" && path.charAt(0) === "/" && path.charAt(1) !== "/" && path !== "/") {
+        return "/login?next=" + encodeURIComponent(path + search);
+      }
+    } catch (_error) {
+      /* fall through */
+    }
+    return "/login";
+  }
+
+  /* The plan's client order (RP2 `endClientSession`, mirrored from
+   * `lib/end-client-session.ts`): tell the server, forget this device's
+   * session, then a whole-document navigation to sign-in. Nothing waits on the
+   * network: the request is `keepalive`, so it survives the navigation. */
   function endSession() {
     if (signingOut) return;
     signingOut = true;
-    // `keepalive` so the request survives the navigation that follows it.
     try {
-      fetch("/api/pwa/auth/logout", { method: "POST", keepalive: true, credentials: "same-origin" })
-        .catch(function () {})
-        .finally(function () {
-          window.location.replace("/login");
-        });
+      fetch("/api/pwa/auth/logout", {
+        method: "POST",
+        keepalive: true,
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "fo_signed_out" }),
+      }).catch(function () {});
     } catch (_error) {
-      window.location.replace("/login");
+      /* the navigation below still happens */
+    }
+    try {
+      window.localStorage.removeItem(FO_TOKEN_KEY);
+      window.localStorage.removeItem(FO_SESSION_KEY);
+    } catch (_error) {
+      /* nothing to remove, or nothing can be removed */
+    }
+    try {
+      window.location.replace(signInTarget());
+    } catch (_error) {
+      /* Never worth an error on FabOrchestrator's page. */
     }
   }
 

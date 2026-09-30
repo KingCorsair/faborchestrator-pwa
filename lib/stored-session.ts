@@ -56,17 +56,49 @@ export function readStoredSession(): { token: string; raw: string } | null {
   return token && raw ? { token, raw } : null;
 }
 
+/** The user fields FabOrchestrator's own login page keeps, exactly as its login answered them. */
+export interface StoredUser {
+  id: string;
+  email: string;
+  name: string | null;
+  canCreateDashboards?: boolean;
+}
+
+/**
+ * The session blob, in **FabOrchestrator's own shape** (plan RP2, finding G30).
+ *
+ * FabOrchestrator's login page writes `{user, signedInAt, expiresAt}` under
+ * this key ([FO-clone] `components/login-page.tsx:62-68`), and its embedded
+ * pages read from it: the sidebar shows `user.name` and the chat decides its
+ * dashboard controls from `user.canCreateDashboards`. This app used to write
+ * `{expiresAt}` only, so every embedded page greeted the operator as "User".
+ * Without a user (an older caller) the old shape is kept.
+ */
+export function sessionBlob(expiresAt: string, user?: StoredUser | null, now: Date = new Date()): object {
+  if (!user) return { expiresAt };
+  return {
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      ...(typeof user.canCreateDashboards === "boolean" ? { canCreateDashboards: user.canCreateDashboards } : {}),
+    },
+    signedInAt: now.toISOString(),
+    expiresAt,
+  };
+}
+
 /**
  * Keep a new session on this device. False when storage refused it, in which
  * case **nothing is left behind**: half a session (a token with no expiry, or
  * the reverse) is worse than none, because the next screen would act on it.
  */
-export function storeSession(token: string, expiresAt: string): boolean {
+export function storeSession(token: string, expiresAt: string, user?: StoredUser | null): boolean {
   const s = storage();
   if (!s) return false;
   try {
     s.setItem(AUTH_TOKEN_KEY, token);
-    s.setItem(AUTH_SESSION_KEY, JSON.stringify({ expiresAt }));
+    s.setItem(AUTH_SESSION_KEY, JSON.stringify(sessionBlob(expiresAt, user)));
     return true;
   } catch {
     clearStoredSession();

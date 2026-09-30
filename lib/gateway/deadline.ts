@@ -138,15 +138,19 @@ export type Lifecycle = {
 /**
  * One upstream call's timers (RP4 `startLifecycle`). Every timer is cleared on
  * every exit: completion, timeout, the phone leaving, or an upstream error.
+ *
+ * `callerSignal` is the phone's connection. Null means the call must not end
+ * when the phone leaves — only a deadline ends it: a chat answer the gateway
+ * keeps reading so that FabOrchestrator saves it (`lib/gateway/keep-reading.ts`).
  */
 export function startLifecycle(
   cls: CallClass,
   budget: Budget,
-  callerSignal: AbortSignal,
+  callerSignal: AbortSignal | null,
   context: { pathname: string },
 ): Lifecycle {
   const controller = new AbortController();
-  const signal = AbortSignal.any([callerSignal, controller.signal]);
+  const signal = callerSignal ? AbortSignal.any([callerSignal, controller.signal]) : controller.signal;
   let ended: TimeoutReason | "cancelled" | null = null;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let lifeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -169,7 +173,7 @@ export function startLifecycle(
     logStreamEnd(cls, reason, context.pathname, startedAt);
   };
 
-  callerSignal.addEventListener("abort", () => {
+  callerSignal?.addEventListener("abort", () => {
     if (ended) return;
     ended = "cancelled";
     clearAll();

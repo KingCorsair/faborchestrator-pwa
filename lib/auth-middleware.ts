@@ -13,45 +13,39 @@
  *
  * ── Two things must agree, not one ──────────────────────────────────────────
  * A bearer token alone is not enough: it must arrive with the FabOrchestrator
- * cookie whose fingerprint it carries. See `lib/auth.ts` for why that replaces
- * the server-side session store this app was otherwise going to need.
+ * cookie whose fingerprint it carries. The check itself lives in
+ * `lib/auth/verify-session.ts`, shared with the gateway so the two cannot
+ * drift (plan RP2).
+ *
+ * Every refusal is the same coded 401 (`session_invalid`), whichever check
+ * failed: saying which tells an attacker which half to work on, and the
+ * client's answer to all of them is the same — sign in again (RP5 part 5b).
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { foFingerprint, verifyToken, type SessionPayload } from "./auth";
+import { SessionConfigError, type SessionPayload } from "./auth";
+import { checkSession, SESSION_INVALID } from "./auth/verify-session";
 import { foTokenFrom } from "./faborch/session";
+import { reportError } from "./report-error";
 
 export async function requireAuth(
   req: NextRequest,
 ): Promise<{ user: SessionPayload } | NextResponse> {
-  const header = req.headers.get("Authorization");
-  if (!header?.startsWith("Bearer ")) {
-    return unauthorized("Missing bearer token");
+  let check: ReturnType<typeof checkSession>;
+  try {
+    check = checkSession(req.headers.get("authorization"), foTokenFrom(req));
+  } catch (error) {
+    // Unusable signing keys: no session can be checked, so none is honoured,
+    // and the answer says the server is misconfigured rather than a bare 500.
+    if (error instanceof SessionConfigError) {
+      reportError("auth/session-config", error, { setting: error.setting });
+      return NextResponse.json(
+        { code: "not_configured", error: "Sign-in is not configured on this server." },
+        { status: 503 },
+      );
+    }
+    throw error;
   }
-
-  const user = verifyToken(header.slice(7));
-  if (!user) {
-    // One message for malformed, mis-signed and expired alike: telling a caller
-    // which of the three it was tells an attacker which to work on.
-    return unauthorized("Invalid or expired session");
-  }
-
-  // ── The session is only valid beside the FabOrchestrator token it was minted
-  // with ────────────────────────────────────────────────────────────────────
-  // This is what makes sign-out a revocation without a session store. Signing
-  // out deletes the httpOnly FO cookie; the bearer token left in `localStorage`
-  // then matches nothing and authenticates nothing. It also means a token
-  // copied off a device is inert on its own.
-  //
-  // Same message as above, for the same reason.
-  const foToken = foTokenFrom(req);
-  if (!foToken || !user.fp || user.fp !== foFingerprint(foToken)) {
-    return unauthorized("Invalid or expired session");
-  }
-
-  return { user };
-}
-
-function unauthorized(message: string): NextResponse {
-  return NextResponse.json({ error: message }, { status: 401 });
+  if (!check.ok) return NextResponse.json(SESSION_INVALID, { status: 401 });
+  return { user: check.session };
 }

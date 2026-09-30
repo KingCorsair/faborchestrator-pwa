@@ -29,20 +29,54 @@ import type { NextRequest, NextResponse } from "next/server";
 /** Named for what it is. Not `session` — this app already has one of those. */
 export const FO_TOKEN_COOKIE = "faborch_token";
 
+/** The default for `SESSION_COOKIE_GRACE_S`: five minutes. */
+const DEFAULT_COOKIE_GRACE_S = 300;
+
+/**
+ * How long the FO cookie outlives this app's session, in seconds (plan RP2,
+ * login step 5: `G`, default 5 minutes, `0 < G ≤ 15 min`).
+ *
+ * An unsound value throws rather than being corrected: a cookie that lives far
+ * past the session admits a phone to FabOrchestrator's pages long after sign-in
+ * has ended, and a silently "fixed" setting hides that somebody set it wrong.
+ */
+export function sessionCookieGraceSeconds(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.SESSION_COOKIE_GRACE_S?.trim();
+  if (!raw) return DEFAULT_COOKIE_GRACE_S;
+  const seconds = Number(raw);
+  if (!Number.isInteger(seconds) || seconds <= 0 || seconds > 900) {
+    throw new Error("SESSION_COOKIE_GRACE_S must be a whole number of seconds, above 0 and at most 900.");
+  }
+  return seconds;
+}
+
 /**
  * Attach an FO session to the response.
  *
- * `expiresAt` is FO's own — its sessions last 30 days
- * (`claudeai_athena/app/api/auth/login/route.ts:54`) and this app must not
- * outlive it, or the cookie would keep sending a token FO has already dropped.
+ * ── It lives as long as this app's session, plus a short grace (plan RP2) ───
+ * Until 2026-09-30 the cookie expired with FabOrchestrator's own session, 30
+ * days away, while the bearer beside it lasts 12 hours. The sign-in gate only
+ * checks that the cookie is present, so a phone kept opening FabOrchestrator's
+ * pages for weeks after its session had ended. Now `Max-Age` is this app's
+ * session lifetime plus `SESSION_COOKIE_GRACE_S`. `Max-Age` rather than an
+ * absolute `Expires`, so a phone whose clock is wrong still drops it on time.
+ *
+ * The grace is what lets an expiry still revoke: a phone used within it sends
+ * the expired bearer beside the cookie, and the gateway clears the cookie and
+ * revokes FabOrchestrator's token (G5). A phone left overnight simply drops the
+ * cookie; FabOrchestrator's idle rule then refuses the token if it is ever
+ * presented again.
  */
 export function setFoTokenCookie(
   req: NextRequest,
   res: NextResponse,
   token: string,
-  expiresAt: string,
+  sessionExpiresAt: string,
+  now: number = Date.now(),
 ): void {
-  const expires = new Date(expiresAt);
+  const exp = new Date(sessionExpiresAt).getTime();
+  // An unreadable expiry keeps only the grace: short is the safe mistake.
+  const lifetime = Number.isFinite(exp) ? Math.max(0, Math.ceil((exp - now) / 1000)) : 0;
   res.cookies.set({
     name: FO_TOKEN_COOKIE,
     value: token,
@@ -50,7 +84,7 @@ export function setFoTokenCookie(
     secure: isHttps(req),
     sameSite: "lax",
     path: "/",
-    expires: Number.isNaN(expires.getTime()) ? undefined : expires,
+    maxAge: lifetime + sessionCookieGraceSeconds(),
   });
 }
 
@@ -74,7 +108,7 @@ export function setFoTokenCookie(
  * the cookie is `Secure`, which is the property that matters in the place it
  * matters.
  */
-function isHttps(req: NextRequest): boolean {
+export function isHttps(req: NextRequest): boolean {
   const forwarded = req.headers.get("x-forwarded-proto");
   if (forwarded) return forwarded.split(",")[0]!.trim() === "https";
   return req.nextUrl.protocol === "https:";

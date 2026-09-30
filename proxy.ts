@@ -7,7 +7,7 @@ import {
   readRegistry,
   type Owner,
 } from "@/lib/gateway/registry";
-import { frontDoorRedirect, retiredScreenRedirect } from "@/lib/gateway/destinations";
+import { closedNativeApi, frontDoorRedirect, retiredScreenRedirect } from "@/lib/gateway/destinations";
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { safeReturnPath } from "@/lib/return-path";
 
@@ -136,7 +136,7 @@ export function proxy(req: NextRequest): NextResponse {
   // and `off` keep them open, because there the native screens still render
   // (with only `/chat` embedded, the native `/reports` page still calls its
   // API). Turning the flag back restores them immediately, like the redirects.
-  if (registry.mode === "whole" && (pathname === "/api/faborch" || pathname.startsWith("/api/faborch/"))) {
+  if (closedNativeApi(pathname, registry)) {
     return NextResponse.json(
       { code: "not_found", error: "Not found." },
       { status: 404, headers: { "Cache-Control": "no-store" } },
@@ -276,11 +276,22 @@ function toGateway(req: NextRequest): NextResponse {
 }
 
 /**
- * Next's own not-found page, at 404, by rewriting to a path nothing serves.
- * A bare `new NextResponse(null, { status: 404 })` would also work, but a
- * document request deserves the app's 404 page rather than an empty body.
+ * A 404 in the shape the caller can use (plan RP5 part 3b, finding G8).
+ *
+ * An API path gets a coded JSON body: a script reading `error` gets a sentence,
+ * never an HTML page it cannot parse. Anything else gets Next's own not-found
+ * page, by rewriting to a path nothing serves: a document request deserves the
+ * app's 404 page rather than an empty body, and a phone must never see raw JSON
+ * in a standalone window.
  */
 function notFound(req: NextRequest): NextResponse {
+  const { pathname } = req.nextUrl;
+  if (pathname === "/api" || pathname.startsWith("/api/")) {
+    return NextResponse.json(
+      { code: "not_found", error: "Not found." },
+      { status: 404, headers: { "Cache-Control": "no-store" } },
+    );
+  }
   const url = req.nextUrl.clone();
   url.pathname = "/__gateway-not-found";
   url.search = "";

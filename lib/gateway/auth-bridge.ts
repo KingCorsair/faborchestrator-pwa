@@ -37,41 +37,50 @@
  * therefore passed through untouched and FabOrchestrator decides; a request
  * with a bearer that does not verify is refused here, because that is a claim
  * to a session this app can see is not real.
+ *
+ * ── A refusal that ends a session (plan RP2, finding G5) ────────────────────
+ * When the bearer is a real session that has ended — expired, or paired with
+ * an FO cookie that is not its own — the refusal also carries the cookie's FO
+ * token, so the gateway can clear the cookie and revoke that token after the
+ * response. Clearing alone is not enough: the client's follow-up sign-out then
+ * arrives with no cookie and cannot revoke, and FabOrchestrator keeps the
+ * session row until its own 30-day expiry. A malformed bearer ends nothing; it
+ * may be a stray header.
  */
 
 import type { NextRequest } from "next/server";
-import { foFingerprint, verifyToken } from "@/lib/auth";
+import { checkSession } from "@/lib/auth/verify-session";
 import { foTokenFrom } from "@/lib/faborch/session";
 
 export type BridgeVerdict =
   /** No bearer was offered. Forward as-is; FabOrchestrator answers for itself. */
   | { action: "forward-anonymous" }
-  /** A live session of this app, holding the matching cookie. Use this token. */
-  | { action: "inject"; foToken: string }
-  /** A bearer that does not verify, or verifies without its cookie. Refuse. */
-  | { action: "refuse"; reason: string };
+  /**
+   * A live session of this app, holding the matching cookie. Use this token.
+   * `userId` is the verified session's FabOrchestrator user id.
+   */
+  | { action: "inject"; foToken: string; userId: string }
+  /**
+   * A bearer that does not verify, or verifies without its cookie. Refuse.
+   * `endSession` names the FO token to revoke when a real session has ended.
+   */
+  | { action: "refuse"; reason: string; endSession: { foToken: string } | null };
 
 /** Decide what Authorization, if any, FabOrchestrator should see. */
 export function bridgeAuthorization(req: NextRequest): BridgeVerdict {
-  const header = req.headers.get("authorization");
-  if (!header) return { action: "forward-anonymous" };
-
-  if (!header.startsWith("Bearer ")) {
-    return { action: "refuse", reason: "Invalid authorization format" };
-  }
-
-  const session = verifyToken(header.slice(7));
-  // One message for malformed, mis-signed and expired alike: saying which of
-  // the three it was tells an attacker which to work on. Same rule as
-  // `lib/auth-middleware.ts`.
-  if (!session) return { action: "refuse", reason: "Invalid or expired session" };
-
   const foToken = foTokenFrom(req);
-  if (!foToken || !session.fp || session.fp !== foFingerprint(foToken)) {
-    return { action: "refuse", reason: "Invalid or expired session" };
-  }
+  const check = checkSession(req.headers.get("authorization"), foToken);
+  if (check.ok) return { action: "inject", foToken: check.foToken, userId: check.session.id };
+  if (check.why === "no-bearer") return { action: "forward-anonymous" };
 
-  return { action: "inject", foToken };
+  // One reason for every failure: saying which check failed tells an attacker
+  // which to work on. Same rule as `lib/auth-middleware.ts`.
+  const ended = check.why === "expired" || check.why === "mismatch";
+  return {
+    action: "refuse",
+    reason: "Invalid or expired session",
+    endSession: ended && foToken ? { foToken } : null,
+  };
 }
 
 /**

@@ -1,91 +1,118 @@
 /**
- * A ceiling on what the gateway will carry upstream (WP5).
+ * How large a request may be, and how the gateway makes sure (plan RP1 part 3,
+ * findings G2 and B5).
  *
- * ── Why the gateway needs one at all ────────────────────────────────────────
- * The embedded Master Data Load agent posts workbooks to
- * `/api/modeling-agent/chat/parse-upload`, and FabOrchestrator's own nginx
- * stops at `client_max_body_size 50m`. Without a ceiling here, a larger upload
- * streams all the way across the network before FabOrchestrator's proxy cuts
- * it off — the operator waits through the whole transfer to be told no, and
- * the 413 arrives from nginx rather than from anything that can explain
- * itself. Refusing at the same size, before a byte leaves, is the same answer
- * sooner and in this app's own words.
+ * ── The defect this replaces (verified 23 September, re-measured on 16.3.6) ─
+ * Next reads the whole body of every request that passes `proxy.ts` before any
+ * route runs, and keeps only `proxyClientMaxBodySize` of it — **10 MB by
+ * default**. The gateway's own ceiling was 50 MB, so it could never apply:
+ * a declared-length upload over 10 MB became a misleading 502, and a chunked
+ * one reached FabOrchestrator cut short, as if complete. In practice the one
+ * that bit was chat: FabOrchestrator's client sends the whole conversation on
+ * every turn, so a long thread with dashboards in it simply stopped working.
  *
- * ── Two checks, because one is not enough ───────────────────────────────────
- * `Content-Length` is the cheap check and covers every ordinary upload, but a
- * chunked request has no length to read. So the body is also counted as it
- * streams, and the stream errors the moment it passes the ceiling. Without the
- * second check the first is a suggestion: anything sent chunked would sail
- * past it.
+ * ── Two limits, deliberately different ──────────────────────────────────────
+ *   policy   `MAX_REQUEST_BODY_BYTES`, 20 MiB: the largest request this app
+ *            supports. The gateway refuses anything larger with a coded 413.
+ *   ceiling  `REQUEST_BODY_CEILING_BYTES`, 25 MiB: what Next hands the app
+ *            (`next.config.ts` sets `proxyClientMaxBodySize` from it).
  *
- * Chat bodies do not come through here. Those are buffered whole so their
- * `conversationId` can be proved (`lib/gateway/ownership.ts`), and carry their
- * own, larger ceiling — a long conversation is resent in full on every turn.
+ * The ceiling must be above the policy, or the gateway cannot *see* that a
+ * body is too large: with both at 20 MiB, a 20 MiB + 1 body arrives cut to
+ * exactly 20 MiB and passes (measured, plan Appendix B). With the ceiling
+ * above, anything over the policy is measured as over it and refused.
+ *
+ * ── Buffer, measure, then forward ───────────────────────────────────────────
+ * Next has already buffered the body by the time the route runs, so streaming
+ * it onwards saves no memory and would let a partial body reach
+ * FabOrchestrator on an abort. The gateway therefore reads it (at most the
+ * ceiling), refuses it past the policy, and otherwise forwards exactly the
+ * bytes it holds with `content-length` set from them. **No partial or
+ * truncated body can reach FabOrchestrator.**
+ *
+ * 20 MiB is provisional (RP1: FabOrchestrator's own nginx allows 50 MB; the
+ * largest realistic phone request is about 15 MB). Chat attachments are sent
+ * inline as base64, so files up to about 14 MB fit.
  */
 
-/**
- * The largest body forwarded upstream.
- *
- * 50 MB, matching `client_max_body_size` in FabOrchestrator's own
- * `.platform/nginx/conf.d/proxy.conf`. Raising this without raising that would
- * only move where the refusal comes from.
- */
-export const MAX_UPSTREAM_BODY_BYTES = 50 * 1024 * 1024;
+/** The largest request body this app supports: 20 MiB (RP1 part 3, tier A). */
+export const MAX_REQUEST_BODY_BYTES = 20 * 1024 * 1024;
 
-/** Thrown into the stream when a body outgrows the ceiling mid-flight. */
-export class BodyTooLargeError extends Error {
-  constructor(readonly bytes: number) {
-    super(`Request body exceeded ${MAX_UPSTREAM_BODY_BYTES} bytes`);
-    this.name = "BodyTooLargeError";
-  }
-}
+/** What Next hands the app: the policy plus headroom (RP1 part 3, tier B). */
+export const REQUEST_BODY_CEILING_BYTES = 25 * 1024 * 1024;
 
 /**
  * Read `Content-Length`, if the request declared one.
  *
  * A header that is not a number is treated as absent rather than as zero: the
- * counting stream will catch whatever actually arrives, and guessing here
- * would be the wrong kind of confident.
+ * read below measures whatever actually arrives, and guessing here would be
+ * the wrong kind of confident.
  */
 export function declaredLength(headers: Headers): number | null {
   const raw = headers.get("content-length")?.trim();
   // `Number("")` is 0, not NaN, so an empty header would otherwise read as a
   // declared length of zero — a malformed request claiming to be an empty one.
-  // Absent is the honest answer; the counting stream measures what arrives.
   if (!raw) return null;
   const n = Number(raw);
   return Number.isInteger(n) && n >= 0 ? n : null;
 }
 
-/** True when the request said upfront that it is too big. */
-export function declaredTooLarge(headers: Headers): boolean {
+/** True when the request said upfront that it is larger than `limit`. */
+export function declaredTooLarge(headers: Headers, limit: number = MAX_REQUEST_BODY_BYTES): boolean {
   const length = declaredLength(headers);
-  return length !== null && length > MAX_UPSTREAM_BODY_BYTES;
+  return length !== null && length > limit;
 }
 
+export type BufferedBody = { tooLarge: true } | { tooLarge: false; bytes: Uint8Array<ArrayBuffer> };
+
 /**
- * Pass a body through unchanged while counting it, and error the stream if it
- * outgrows the ceiling.
+ * Read a request body whole, stopping as soon as it passes `limit`.
  *
- * The bytes are forwarded as they arrive — this is not a buffer, and an upload
- * is never held in memory here. What it adds is a running total and the
- * willingness to stop.
+ * Refuses on the declared length before reading anything, then measures what
+ * actually arrives: the declared length is only the caller's claim, and a
+ * chunked body makes none.
  */
-export function limitBody(
-  body: ReadableStream<Uint8Array>,
-  max: number = MAX_UPSTREAM_BODY_BYTES,
-): ReadableStream<Uint8Array> {
-  let seen = 0;
-  return body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        seen += chunk.byteLength;
-        if (seen > max) {
-          controller.error(new BodyTooLargeError(seen));
-          return;
-        }
-        controller.enqueue(chunk);
-      },
-    }),
-  );
+export async function readBodyWithinLimit(
+  req: Request,
+  limit: number = MAX_REQUEST_BODY_BYTES,
+): Promise<BufferedBody> {
+  if (declaredTooLarge(req.headers, limit)) return { tooLarge: true };
+  if (!req.body) return { tooLarge: false, bytes: new Uint8Array(new ArrayBuffer(0)) };
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel().catch(() => {});
+        return { tooLarge: true };
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(new ArrayBuffer(total));
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { tooLarge: false, bytes };
+}
+
+/** The coded refusal for a body over the policy (plan RP5: 413 `body_too_large`). */
+export function bodyTooLargeBody(limit: number = MAX_REQUEST_BODY_BYTES) {
+  return {
+    code: "body_too_large",
+    error:
+      "That is more than this app can send in one go (about 20 MB, attachments included). " +
+      "Send smaller files, or start a new conversation.",
+    details: { limit },
+  } as const;
 }

@@ -1,7 +1,28 @@
 import type { NextConfig } from "next";
+import { MAX_REQUEST_BODY_BYTES, REQUEST_BODY_CEILING_BYTES } from "./lib/gateway/body-limit";
 import { PWA_ASSET_PREFIX, revalidateSourcePattern } from "./lib/gateway/registry";
 
+// The ceiling must sit above the policy, or a body one byte over the policy
+// arrives cut to exactly the policy and passes as whole (plan RP1 part 3).
+if (REQUEST_BODY_CEILING_BYTES <= MAX_REQUEST_BODY_BYTES) {
+  throw new Error("REQUEST_BODY_CEILING_BYTES must be larger than MAX_REQUEST_BODY_BYTES.");
+}
+
 const nextConfig: NextConfig = {
+  experimental: {
+    /**
+     * How much of a request body Next hands this app (plan RP1 part 3, G2).
+     *
+     * Next reads every body that passes `proxy.ts` before any route runs, and
+     * by default keeps only the first 10 MB. FabOrchestrator's chat sends the
+     * whole conversation on every turn, so a long thread went past that and
+     * reached FabOrchestrator cut short. 25 MiB is the policy (20 MiB, which
+     * the gateway enforces with a coded 413) plus headroom, so an oversized
+     * body is *seen* as oversized. See `lib/gateway/body-limit.ts`.
+     */
+    proxyClientMaxBodySize: REQUEST_BODY_CEILING_BYTES,
+  },
+
   // Next 16's Turbopack infers its workspace root from the nearest lockfiles.
   // This tree sits under several ancestor lockfiles (see the root CLAUDE.md
   // entry for 2026-07-29), and without pinning the root it can pick a

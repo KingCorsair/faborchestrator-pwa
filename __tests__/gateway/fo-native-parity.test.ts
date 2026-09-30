@@ -27,6 +27,7 @@ import { join } from "node:path";
 import vm from "node:vm";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL = "https://fo.test";
 process.env.FO_EMBED_MODE = "whole";
 
@@ -40,12 +41,15 @@ import { GET } from "@/app/fo-gateway/[...path]/route";
 
 const SHELL = readFileSync(join(process.cwd(), "public", "fo-shell.js"), "utf8");
 
-function loadShell({ tokenPresent = true, storageThrows = false } = {}) {
+function loadShell({ tokenPresent = true, storageThrows = false, path = undefined as string | undefined } = {}) {
   let now = 0;
   const timers: { at: number; every?: number; fn: () => void }[] = [];
   const listeners: Record<string, ((e: { key?: string; newValue?: string | null }) => void)[]> = {};
-  const store = new Map<string, string>(tokenPresent ? [["llmatscale_auth_token", "pwa-bearer"]] : []);
+  const store = new Map<string, string>(
+    tokenPresent ? [["llmatscale_auth_token", "pwa-bearer"], ["llmatscale_auth_session", "{}"]] : [],
+  );
   const posts: string[] = [];
+  const bodies: string[] = [];
   const navigations: string[] = [];
 
   const window = {
@@ -54,8 +58,15 @@ function loadShell({ tokenPresent = true, storageThrows = false } = {}) {
         if (storageThrows) throw new Error("SecurityError");
         return store.get(k) ?? null;
       },
+      removeItem: (k: string) => {
+        if (storageThrows) throw new Error("SecurityError");
+        store.delete(k);
+      },
     },
-    location: { replace: (to: string) => navigations.push(to) },
+    location: {
+      replace: (to: string) => navigations.push(to),
+      ...(path === undefined ? {} : { pathname: path, search: "" }),
+    },
     addEventListener: (type: string, fn: (e: { key?: string; newValue?: string | null }) => void) => {
       (listeners[type] ??= []).push(fn);
     },
@@ -66,8 +77,9 @@ function loadShell({ tokenPresent = true, storageThrows = false } = {}) {
     navigator: {},
     setTimeout: (fn: () => void, ms: number) => timers.push({ at: now + ms, fn }),
     setInterval: (fn: () => void, ms: number) => timers.push({ at: now + ms, every: ms, fn }),
-    fetch: (url: string) => {
+    fetch: (url: string, init: { body?: string } = {}) => {
       posts.push(url);
+      if (init.body) bodies.push(init.body);
       return Promise.resolve(new Response("{}"));
     },
   });
@@ -91,7 +103,9 @@ function loadShell({ tokenPresent = true, storageThrows = false } = {}) {
   return {
     advance,
     posts,
+    bodies,
     navigations,
+    store,
     foClearsItsToken: () => store.delete("llmatscale_auth_token"),
     storageEvent: (e: { key: string; newValue: string | null }) => listeners.storage?.forEach((fn) => fn(e)),
   };
@@ -127,6 +141,17 @@ describe("FO's idle expiry ends this app's session (fo-shell.js)", () => {
     const page = loadShell({ tokenPresent: false });
     await page.advance(20_000);
     assert.deepEqual(page.posts, ["/api/pwa/auth/logout"]);
+  });
+
+  test("the plan's client order: the server told, both keys forgotten, sign-in returns to the page (RP2)", async () => {
+    const page = loadShell({ path: "/chat" });
+    await page.advance(10_000);
+    page.foClearsItsToken();
+    await page.advance(1_500);
+    assert.deepEqual(page.posts, ["/api/pwa/auth/logout"]);
+    assert.deepEqual(JSON.parse(page.bodies[0]!), { reason: "fo_signed_out" });
+    assert.equal(page.store.size, 0, "the session blob goes with the token");
+    assert.deepEqual(page.navigations, ["/login?next=%2Fchat"]);
   });
 });
 

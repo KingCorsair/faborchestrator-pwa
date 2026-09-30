@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { MAX_REQUEST_BODY_BYTES } from "./gateway/body-limit";
 
 export const LoginSchema = z.object({
   email: z.string().min(1, "Email is required").max(255),
@@ -25,12 +26,13 @@ export const LOGIN_BODY_LIMIT = 16 * 1024;
 export const SMALL_JSON_BODY_LIMIT = 16 * 1024;
 
 /**
- * The native chat route's body limit: the plan's `chat` policy, 20 MiB
- * (provisional, RP1). The route is B5's containment until it retires (RP8);
- * note that Next's own `proxyClientMaxBodySize` (10 MB by default) cuts a
- * larger body before this route sees it.
+ * The native chat route's body limit: the plan's one request policy, 20 MiB
+ * (provisional, RP1), shared with the gateway so the two cannot drift. The
+ * route is B5's containment until it retires (RP8). Next hands the app up to
+ * `REQUEST_BODY_CEILING_BYTES` (`next.config.ts`), above this, so a larger
+ * body is measured and refused rather than arriving cut short.
  */
-export const CHAT_BODY_LIMIT = 20 * 1024 * 1024;
+export const CHAT_BODY_LIMIT = MAX_REQUEST_BODY_BYTES;
 
 /**
  * Creating a conversation: derived from `CreateConversationSchema`, so the

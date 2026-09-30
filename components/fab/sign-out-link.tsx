@@ -50,7 +50,7 @@
 
 import * as React from "react";
 import { LogOut } from "lucide-react";
-import { logout } from "./use-session";
+import { endClientSession } from "@/lib/end-client-session";
 import { loginHref } from "@/lib/return-path";
 import { AUTH_TOKEN_KEY, readStored } from "@/lib/stored-session";
 
@@ -64,11 +64,12 @@ export function SignOutLink() {
     const stored = readStored(AUTH_TOKEN_KEY);
 
     if (!stored) {
-      // `location.replace`, not `router.replace`: the same document navigation
-      // the sign-out button uses, and for the same two reasons — it leaves no
-      // React tree holding a stale user, and it keeps `useRouter` out of a
-      // component that has to render without one.
-      window.location.replace(loginHref());
+      // The bearer is gone and the cookie is not: end the session on the
+      // server too (plan RP2, m3) and go to sign-in. A document navigation,
+      // not `router.replace`: it leaves no React tree holding a stale user,
+      // and it keeps `useRouter` out of a component that has to render
+      // without one.
+      endClientSession("token_missing", { to: loginHref() });
       return;
     }
 
@@ -81,34 +82,23 @@ export function SignOutLink() {
     <button
       type="button"
       disabled={busy}
-      onClick={async () => {
+      onClick={() => {
         setBusy(true);
-        // Clears the stateless token locally and tells the server, which drops
-        // the FabOrchestrator cookie — see `lib/auth.ts` on why that is a
-        // revocation rather than a tidy-up.
-        await logout(token);
-        // A whole-document navigation rather than `router.replace`, changed
-        // 2026-08-23 for two reasons that point the same way.
+        // The plan's client order (`lib/end-client-session.ts`): the server
+        // drops the FabOrchestrator cookie and revokes that session, this
+        // device forgets its own, and a whole-document navigation to sign-in
+        // follows. A document navigation rather than `router.replace`, for two
+        // reasons that point the same way:
         //
         // **It is the more correct sign-out.** A client-side replace keeps the
-        // React tree, so any component still holding a decision list, an order
-        // or a user object keeps holding it. Signing out should leave nothing
-        // behind, and a document navigation is the only thing that guarantees
-        // that.
+        // React tree, so any component still holding a user object keeps
+        // holding it. Signing out should leave nothing behind.
         //
         // **And `useRouter` made this component unrenderable outside Next.**
         // `design-review/render.tsx` draws every screen through
         // `renderToStaticMarkup` with no router mounted, and this leaf is on
-        // the landing page — so the harness threw *"invariant expected app
-        // router to be mounted"* and produced no landing export at all. That
-        // harness is the only way any screen in this app has ever been looked
-        // at (CLAUDE.md, thin-ice item 3), and the front door is the screen it
-        // matters most for.
-        //
-        // Next 16.3's lint asks for `router.push` here (with the upgrade from
-        // 16.1.4, as on the chetan branch). Both reasons above are why not.
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.assign("/login");
+        // the landing page.
+        endClientSession("user");
       }}
       className="inline-flex cursor-pointer items-center gap-[6px] border-0 bg-transparent p-0 text-[12px] font-bold underline decoration-1 underline-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
       style={{ color: "var(--text-subtle)" }}

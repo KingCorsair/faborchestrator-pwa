@@ -191,7 +191,12 @@ export function isFabOrchConfigured(): boolean {
 export interface FoSession {
   token: string;
   expiresAt: string;
-  user: { id: string; email: string; name: string | null };
+  /**
+   * `canCreateDashboards` is part of FabOrchestrator's own login answer
+   * ([FO-clone] `app/api/auth/login/route.ts:84-93`) and of the session blob
+   * its pages read (plan RP2, G30); it is passed through, never computed here.
+   */
+  user: { id: string; email: string; name: string | null; canCreateDashboards?: boolean };
 }
 
 /**
@@ -490,6 +495,47 @@ export async function foConversation(token: string, id: string): Promise<unknown
 }
 
 /**
+ * Does this token own that conversation? FabOrchestrator's own answer, per id
+ * (plan RP6 part 3), for the gateway's ownership check.
+ *
+ * `GET /api/conversations/{id}` compares `conversation.userId` with the caller
+ * and refuses anybody else ([FO-clone] `app/api/conversations/[id]/route.ts:31`),
+ * so a 200 whose body names the same id is the one answer that proves
+ * ownership. Everything else is told apart so the caller can refuse correctly:
+ *
+ *   owned            200 and the body's `id` is the one asked about
+ *   not-owned        403 or 404: somebody else's, or gone
+ *   session-expired  401: FabOrchestrator no longer honours the token
+ *   unavailable      anything else — another status, a body that does not
+ *                    name the id, a timeout, FabOrchestrator unreachable
+ *
+ * The answer carries the whole thread (1.3 MB measured for a long one), which
+ * is why the gateway asks only on a cache miss. Never throws: `fetchFo` has
+ * already reported a timeout or an outage.
+ */
+export type ConversationProof =
+  | { kind: "owned" }
+  | { kind: "not-owned"; status: number }
+  | { kind: "session-expired" }
+  | { kind: "unavailable"; status: number | null };
+
+export async function foConversationProof(token: string, id: string): Promise<ConversationProof> {
+  let res: Response;
+  try {
+    res = await fetchFo(`/api/conversations/${encodeURIComponent(id)}`, { headers: authHeader(token) });
+  } catch {
+    return { kind: "unavailable", status: null };
+  }
+  if (res.status === 401) return { kind: "session-expired" };
+  if (res.status === 403 || res.status === 404) return { kind: "not-owned", status: res.status };
+  if (res.status !== 200) return { kind: "unavailable", status: res.status };
+  const body = (await res.json().catch(() => null)) as { id?: unknown } | null;
+  return body && typeof body === "object" && body.id === id
+    ? { kind: "owned" }
+    : { kind: "unavailable", status: res.status };
+}
+
+/**
  * Start a conversation in FabOrchestrator and return its id.
  *
  * Called on the **first send**, never when New chat is pressed — which is what
@@ -683,12 +729,9 @@ async function fetchFo(
       });
     }
     // The common one by far: FO is not running. Say so, rather than leaking
-    // `fetch failed` to the screen.
-    const error = new FabOrchRequestError(
-      `Could not reach FabOrchestrator at ${foBaseUrl()}. Is it running?`,
-      503,
-      { cause },
-    );
+    // `fetch failed` to the screen — and without FabOrchestrator's address,
+    // which this message used to carry to the phone (plan RP5, finding m4).
+    const error = new FabOrchRequestError("Could not reach FabOrchestrator. Is it running?", 503, { cause });
     reportError("faborch/unreachable", error, { path });
     throw error;
   } finally {

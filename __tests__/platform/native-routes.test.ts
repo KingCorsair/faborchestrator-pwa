@@ -13,12 +13,15 @@ import { test, describe, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
 import { NextRequest } from "next/server";
 import { proxy } from "@/proxy";
 import { sessionFor } from "@/lib/auth";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
+import { closedNativeApi } from "@/lib/gateway/destinations";
+import { readRegistry } from "@/lib/gateway/registry";
 import {
   CHAT_BODY_LIMIT,
   CREATE_CONVERSATION_BODY_LIMIT,
@@ -72,9 +75,13 @@ describe("closed in whole mode (RP8)", () => {
   });
 
   test("a path that only starts with the same letters is not caught", () => {
-    process.env.FO_EMBED_MODE = "whole";
-    const res = proxy(apiRequest("/api/faborchestra"));
-    assert.notEqual(res.headers.get("cache-control"), "no-store");
+    // Every unknown API path is now a coded JSON 404 too (plan RP5, G8), so
+    // the closure's segment boundary is pinned on the rule itself.
+    const whole = readRegistry({ FO_EMBED_MODE: "whole" });
+    assert.equal(closedNativeApi("/api/faborchestra", whole), false);
+    assert.equal(closedNativeApi("/api/faborch/insight/chat", whole), true);
+    assert.equal(closedNativeApi("/api/faborch", whole), true);
+    assert.equal(closedNativeApi("/api/faborch/reports", readRegistry({ FO_EMBED_SURFACES: "/chat" })), false);
   });
 
   test("surfaces with only /chat: the native reports API still reaches its handler", () => {

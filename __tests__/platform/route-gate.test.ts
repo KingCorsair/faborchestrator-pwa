@@ -26,6 +26,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -257,6 +258,37 @@ describe("the API refuses what the gate only redirects", () => {
     const res = await me(withBearer(`${FO_TOKEN_COOKIE}=${FO_TOKEN}`));
     assert.equal(res.status, 200);
     assert.equal((await res.json()).user.email, USER.email);
+  });
+
+  test("every refusal is the same coded 401, whichever half was missing (plan RP5)", async () => {
+    const bodies = new Set<string>();
+    for (const res of [await me(withBearer()), await me(withBearer(`${FO_TOKEN_COOKIE}=a-different-fo-token`))]) {
+      assert.equal(res.status, 401);
+      bodies.add(await res.text());
+    }
+    assert.equal(bodies.size, 1);
+    assert.equal((JSON.parse([...bodies][0]!) as { code: string }).code, "session_invalid");
+  });
+});
+
+describe("not found, in the shape the caller can use (plan RP5, G8)", () => {
+  test("an unknown API path is a coded JSON 404, never an HTML page", async () => {
+    const before = process.env.FO_EMBED_MODE;
+    process.env.FO_EMBED_MODE = "whole";
+    try {
+      const res = proxy(signedIn("/api/no-such-thing"));
+      assert.equal(res.status, 404);
+      assert.equal(res.headers.get("cache-control"), "no-store");
+      assert.equal(((await res.json()) as { code: string }).code, "not_found");
+    } finally {
+      if (before === undefined) delete process.env.FO_EMBED_MODE;
+      else process.env.FO_EMBED_MODE = before;
+    }
+  });
+
+  test("an unreachable document still gets the app's own 404 page", () => {
+    const res = proxy(signedIn("/fo-gateway/chat"));
+    assert.ok(res.headers.get("x-middleware-rewrite")?.includes("/__gateway-not-found"), "rewritten to the page");
   });
 });
 

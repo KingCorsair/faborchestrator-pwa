@@ -22,6 +22,7 @@ import { test, describe, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL = "https://fo.test";
 
 import { FO_CALL_TIMEOUTS, FabOrchRequestError, foChat, foLogout, foPinnedReports } from "@/lib/faborch/client";

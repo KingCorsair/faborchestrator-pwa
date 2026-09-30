@@ -45,11 +45,14 @@
  * the app does not silently leave its own origin.
  */
 
+// `content-length` is deliberately absent (plan RP1 part 3): the gateway reads
+// and measures every body before forwarding it, and sets the length from the
+// bytes it actually holds. Forwarding the phone's own claim is what produced
+// the length-mismatch 502 when Next had cut the body short (G2).
 const UPSTREAM_ALLOW = new Set([
   "accept",
   "accept-language",
   "content-type",
-  "content-length",
   "user-agent",
   "range",
   "if-none-match",
@@ -97,21 +100,29 @@ export function isStreamContentType(contentType: string | null): boolean {
   return !!contentType && contentType.toLowerCase().startsWith("text/event-stream");
 }
 
-/** A `Location` on the FO origin becomes a path on this one; anything else passes through. */
-export function rewriteLocation(location: string, foOrigin: string): string {
-  const origin = foOrigin.replace(/\/+$/, "");
-  if (location === origin) return "/";
-  if (location.startsWith(`${origin}/`)) return location.slice(origin.length);
+/**
+ * A `Location` on a FabOrchestrator origin becomes a path on this one; anything
+ * else passes through. Every FO origin in use is checked, not only the one the
+ * request went to (plan RP1, G17): with the preview's UI build answering pages
+ * and `FABORCH_BASE_URL` answering the API, a redirect naming the other origin
+ * would otherwise carry the phone off this app.
+ */
+export function rewriteLocation(location: string, foOrigins: string | readonly string[]): string {
+  for (const candidate of typeof foOrigins === "string" ? [foOrigins] : foOrigins) {
+    const origin = candidate.replace(/\/+$/, "");
+    if (location === origin) return "/";
+    if (location.startsWith(`${origin}/`)) return location.slice(origin.length);
+  }
   return location;
 }
 
 /** The headers the browser will see. */
-export function downstreamResponseHeaders(upstream: Headers, foOrigin: string): Headers {
+export function downstreamResponseHeaders(upstream: Headers, foOrigins: string | readonly string[]): Headers {
   const out = new Headers();
   upstream.forEach((value, key) => {
     const k = key.toLowerCase();
     if (!DOWNSTREAM_ALLOW.has(k)) return;
-    out.set(k, k === "location" ? rewriteLocation(value, foOrigin) : value);
+    out.set(k, k === "location" ? rewriteLocation(value, foOrigins) : value);
   });
 
   const contentType = out.get("content-type");

@@ -13,6 +13,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
 import { NextRequest } from "next/server";
@@ -48,6 +49,7 @@ describe("what FabOrchestrator is told to trust", () => {
     );
     assert.equal(verdict.action, "inject");
     assert.equal(verdict.action === "inject" && verdict.foToken, FO_TOKEN);
+    assert.equal(verdict.action === "inject" && verdict.userId, "u1", "the verified session's user");
   });
 
   test("no bearer at all is forwarded anonymously — FabOrchestrator answers for itself", () => {
@@ -115,6 +117,37 @@ describe("what is refused, and never forwarded", () => {
       noCookie.action === "refuse" && noCookie.reason,
       forged.action === "refuse" && forged.reason,
     );
+  });
+});
+
+describe("which refusals end a session (plan RP2, G5)", () => {
+  // A real session that has ended carries the cookie's FO token, so the
+  // gateway can clear the cookie and revoke that token. A malformed bearer, or
+  // one with no cookie beside it, ends nothing.
+  const refuse = (headers: Record<string, string>) => {
+    const verdict = bridgeAuthorization(request(headers));
+    assert.equal(verdict.action, "refuse");
+    return verdict.action === "refuse" ? verdict.endSession : undefined;
+  };
+
+  test("an expired bearer beside its cookie: the cookie's token is to be revoked", () => {
+    const expired = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), FO_TOKEN).token;
+    assert.deepEqual(refuse({ authorization: `Bearer ${expired}`, cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}` }), {
+      foToken: FO_TOKEN,
+    });
+  });
+
+  test("a bearer paired with a cookie that is not its own: that cookie's token", () => {
+    assert.deepEqual(
+      refuse({ authorization: `Bearer ${PWA_TOKEN_OTHER}`, cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}` }),
+      { foToken: FO_TOKEN },
+    );
+  });
+
+  test("a malformed bearer, or no cookie at all, ends nothing", () => {
+    assert.equal(refuse({ authorization: "Bearer nonsense", cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}` }), null);
+    assert.equal(refuse({ authorization: `Basic ${PWA_TOKEN}`, cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}` }), null);
+    assert.equal(refuse({ authorization: `Bearer ${PWA_TOKEN}` }), null);
   });
 });
 

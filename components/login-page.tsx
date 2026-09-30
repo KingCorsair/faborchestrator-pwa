@@ -19,8 +19,9 @@ import { Eye, EyeOff } from "lucide-react";
 import { BrandLockup } from "@/components/fab/brand";
 import { Button, Label } from "@/components/fab/primitives";
 import { submittedCredentials } from "@/lib/credentials";
+import { endClientSession } from "@/lib/end-client-session";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
-import { AUTH_TOKEN_KEY, clearStoredSession, readStored, storeSession } from "@/lib/stored-session";
+import { AUTH_TOKEN_KEY, readStored, storeSession, type StoredUser } from "@/lib/stored-session";
 
 export interface LoginPageProps {
   /**
@@ -108,13 +109,24 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
           cache: "no-store",
         });
         if (cancelled) return;
-        if (!res.ok) {
+        if (res.status === 401) {
           // Stale or expired — including a token left by a different app on
-          // this origin. Clear it rather than reasoning about it, so the form
-          // below is the clean sign-in it looks like.
-          clearStoredSession();
+          // this origin. End it rather than reasoning about it, so the form
+          // below is the clean sign-in it looks like. Ending, not only
+          // clearing: the cookie beside it holds a FabOrchestrator session
+          // that would otherwise stay alive (plan RP2, m3). No navigation;
+          // this is already the sign-in page.
+          //
+          // Unless a sign-in has already replaced it: a quick (autofilled)
+          // sign-in can finish before this answer arrives, and ending "the
+          // session" now would end the new one.
+          if (readStored(AUTH_TOKEN_KEY) !== token) return;
+          endClientSession("pwa_expired", { navigate: false });
           return;
         }
+        // Anything else (the server unwell) says nothing about the session:
+        // show no notice, and keep what is stored.
+        if (!res.ok) return;
         const data = (await res.json()) as {
           user?: { email?: string };
           faborch?: boolean;
@@ -192,19 +204,23 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
       }
 
       // Signed in at FabOrchestrator, but the session has to be kept on this
-      // device too: the bearer beside the cookie is what every request needs.
-      // If storage refuses it, drop the cookie the server just set (and with
-      // it the FO session) rather than leave half a session behind, and say
-      // what is actually wrong instead of "could not reach the server".
-      if (!storeSession(data.token, data.expiresAt)) {
-        void fetch("/api/pwa/auth/logout", { method: "POST", keepalive: true }).catch(() => {});
+      // device too: the bearer beside the cookie is what every request needs,
+      // and FabOrchestrator's own pages read the user from the blob beside it
+      // (plan RP2, G30). If storage refuses it, end the session the server
+      // just started rather than leave half of one behind, and say what is
+      // actually wrong instead of "could not reach the server".
+      if (!storeSession(data.token, data.expiresAt, data.user as StoredUser | undefined)) {
+        endClientSession("storage_unavailable", { navigate: false });
         setError(
           "This browser is blocking the storage sign-in needs. Allow this site to store data " +
             "(or leave private browsing) and try again.",
         );
         return;
       }
-      router.replace(next);
+      // `next` from the server wins: FabOrchestrator's change page when the
+      // account must change its password (plan RP2, G20). Anything else goes
+      // where the operator was headed.
+      router.replace(data.next === "/force-password-change" ? data.next : next);
     } catch {
       setError("Could not reach the server");
     } finally {
@@ -226,31 +242,22 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
 
         <div className="flex max-w-[420px] flex-col gap-4">
           {/*
-            Widened on 2026-08-24, for the same reason as the sign-in copy
-            opposite: this screen described the production order workflow alone,
-            so it read as a production-order demo and people signed in with the
-            credential that opens only that. The PWA is FabOrchestrator's
-            cockpit — four agents and the order workflow — and the door should
-            say so.
+            Rewritten 2026-09-30. It described a production order workflow on
+            mock data, which the embedded app no longer has: behind this door is
+            FabOrchestrator itself, its agents, chats and dashboards.
           */}
           <h2 className="text-[30px] leading-[1.15] text-white">
             Ask your agents. Decide on the floor.
           </h2>
           <p className="m-0 text-[16px]" style={{ color: "var(--on-navy-body)" }}>
-            Put a question to FabOrchestrator, or find a production order, see what the
-            MES actually recorded against it, and decide what happens next.
+            FabOrchestrator on your phone: put a question to its agents, open a dashboard, or
+            carry on a conversation you started at your desk.
           </p>
         </div>
 
-        {/*
-          Was "Demo environment · mock MES data", which stopped being true when
-          the agents started answering from the running FabOrchestrator. The
-          order workflow is mock; the agents are not, and a visitor is entitled
-          to know which half of the screen is real before they read an answer
-          off it.
-        */}
+        {/* Everything behind this door is the running FabOrchestrator. */}
         <p className="m-0 text-[12px]" style={{ color: "var(--on-navy-label)" }}>
-          Demo environment · mock order data · live FabOrchestrator agents
+          Live FabOrchestrator · your own account
         </p>
       </aside>
 
@@ -345,21 +352,18 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
           {/*
             Says which credential to use, on the screen where it is typed.
 
-            There is only one now (WP2, 2026-09-01): a FabOrchestrator account,
-            which opens the agents and the production order workflow alike. The
-            line stays because the app is not FabOrchestrator and the field does
-            not say whose password it wants — and because the demo credential
-            that used to be accepted here produced a session that met a second
-            sign-in the moment an agent was opened. That credential is gone;
-            this sentence is what stops somebody looking for it.
+            There is only one (WP2, 2026-09-01): a FabOrchestrator account. The
+            line stays because the field does not say whose password it wants,
+            and because the demo credential that used to be accepted here is
+            gone; this sentence is what stops somebody looking for it.
           */}
           <p
             className="m-0 -mt-[6px] max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
             style={{ color: "var(--text-muted-cool)" }}
           >
-            Use your FabOrchestrator account to access the PWA. It opens the agents
-            and the production order workflow, and the agents answer with your tools,
-            your role and your data.
+            Use your FabOrchestrator account. You get FabOrchestrator itself: the same
+            agents, chats and dashboards, answering with your tools, your role and your
+            data.
           </p>
 
           <label className="flex flex-col gap-[7px]">

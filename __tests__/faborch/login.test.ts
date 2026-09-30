@@ -16,10 +16,12 @@ import { test, describe, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
+process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 
 import { NextRequest } from "next/server";
 import { sessionFor, verifyToken } from "@/lib/auth";
 import { FO_CALL_TIMEOUTS } from "@/lib/faborch/client";
+import { resetRecentRevokes } from "@/lib/faborch/end-session";
 import { POST } from "@/app/api/pwa/auth/login/route";
 import { POST as LOGOUT } from "@/app/api/pwa/auth/logout/route";
 
@@ -56,6 +58,8 @@ const login = (email: string, password: string) => {
 
 beforeEach(() => {
   calls = [];
+  // Every sign-out below revokes the same test token; each test must see its own.
+  resetRecentRevokes();
   process.env.FABORCH_BASE_URL = "https://fo.test";
   // Deliberately present. The point of the suite is that they do nothing.
   process.env.DEMO_USER_EMAIL = "supervisor@athenatech.example";
@@ -259,5 +263,288 @@ describe("sign-out ends the FabOrchestrator session, and never waits on it", () 
     assert.equal(res.status, 200);
     assert.equal(calls.length, 0);
     assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);
+  });
+});
+
+/* ── Plan RP2, the rest of the login flow (2026-09-30) ────────────────────── */
+
+/** A FabOrchestrator that records method, path and bearer for every call. */
+function recordingFo(options: { canCreateDashboards?: boolean } = {}) {
+  const seen: { method: string; path: string; bearer: string | null }[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+    const url = new URL(String(input));
+    const bearer = new Headers(init.headers).get("authorization");
+    seen.push({ method: (init.method ?? "GET").toUpperCase(), path: url.pathname, bearer });
+    if (url.pathname === "/api/auth/login") {
+      return Response.json({
+        token: "fo-session-token",
+        expiresAt: new Date(Date.now() + 30 * 864e5).toISOString(),
+        user: {
+          id: "fo-user-1",
+          email: "operator@plant.example",
+          name: "A. Operator",
+          ...(options.canCreateDashboards === undefined ? {} : { canCreateDashboards: options.canCreateDashboards }),
+        },
+      });
+    }
+    if (url.pathname === "/api/auth/me") return Response.json({ user: { id: "fo-user-1", role: { name: "Business User" } } });
+    if (url.pathname === "/api/auth/logout") return new Response(null, { status: 204 });
+    return new Response("unexpected", { status: 500 });
+  }) as typeof fetch;
+  return seen;
+}
+
+let m = 0;
+const loginWith = (headers: Record<string, string> = {}) => {
+  m += 1;
+  return POST(
+    new NextRequest("https://pwa.test/api/pwa/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "fly-client-ip": `10.9.0.${m}`, ...headers },
+      body: JSON.stringify({ email: "operator@plant.example", password: "correct-horse" }),
+    }),
+  );
+};
+
+describe("a new sign-in ends the session it replaces (RP2 login step 3)", () => {
+  test("the older FabOrchestrator token in the cookie is revoked before the new session is answered", async () => {
+    const seen = recordingFo();
+    // FabOrchestrator's logout is held until released: the sign-in must still
+    // be waiting on it, which is what "before it is answered" means.
+    const record = globalThis.fetch;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let logoutStarted = false;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (new URL(String(input)).pathname === "/api/auth/logout") {
+        logoutStarted = true;
+        await held;
+      }
+      return record(input, init);
+    }) as typeof fetch;
+
+    let answered = false;
+    const pending = loginWith({ cookie: "faborch_token=an-older-fo-token" }).then((res) => {
+      answered = true;
+      return res;
+    });
+    for (let i = 0; i < 50 && !logoutStarted; i++) await new Promise<void>((r) => setImmediate(r));
+    assert.ok(logoutStarted, "the replaced token's revoke was asked for");
+    await new Promise<void>((r) => setImmediate(r));
+    assert.equal(answered, false, "the sign-in waits for the revoke of the session it replaces");
+
+    release();
+    const res = await pending;
+    assert.equal(res.status, 200);
+    const revoke = seen.find((c) => c.path === "/api/auth/logout");
+    assert.equal(revoke!.bearer, "Bearer an-older-fo-token");
+    assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=fo-session-token/);
+  });
+
+  test("a first sign-in revokes nothing", async () => {
+    const seen = recordingFo();
+    await loginWith();
+    assert.ok(!seen.some((c) => c.path === "/api/auth/logout"));
+  });
+});
+
+describe("what a successful sign-in answers", () => {
+  test("FabOrchestrator's own user fields, for the session blob its pages read (G30)", async () => {
+    recordingFo({ canCreateDashboards: true });
+    const body = (await (await loginWith()).json()) as {
+      user: { id: string; email: string; name: string | null; canCreateDashboards?: boolean; roleName: string };
+      next: string | null;
+    };
+    assert.deepEqual(
+      { id: body.user.id, email: body.user.email, name: body.user.name, canCreateDashboards: body.user.canCreateDashboards },
+      { id: "fo-user-1", email: "operator@plant.example", name: "A. Operator", canCreateDashboards: true },
+    );
+    assert.equal(body.user.roleName, "Business User");
+    assert.equal(body.next, null, "an ordinary sign-in goes where the operator was headed");
+  });
+
+  test("when FabOrchestrator does not say, dashboard rights are left for its pages to ask", async () => {
+    recordingFo();
+    const body = (await (await loginWith()).json()) as { user: Record<string, unknown> };
+    assert.equal("canCreateDashboards" in body.user, false);
+  });
+
+  test("the cookie lives as long as this app's session plus the grace, not FO's 30 days", async () => {
+    recordingFo();
+    const res = await loginWith();
+    const { expiresAt } = (await res.json()) as { expiresAt: string };
+    const maxAge = Number((res.headers.get("set-cookie") ?? "").match(/Max-Age=(\d+)/i)?.[1]);
+    const expected = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000) + 300;
+    assert.ok(Math.abs(maxAge - expected) <= 2, `Max-Age ${maxAge}, expected about ${expected}`);
+    assert.ok(maxAge < 13 * 3600, "never FabOrchestrator's 30-day expiry");
+  });
+});
+
+describe("failures are coded, and never carry FabOrchestrator's address (RP5, m4)", () => {
+  test("a wrong password is invalid_credentials", async () => {
+    stubFo(() => new Response("", { status: 401 }));
+    const res = await login("operator@plant.example", "wrong");
+    assert.equal(((await res.json()) as { code: string }).code, "invalid_credentials");
+  });
+
+  test("FabOrchestrator unreachable: 503 faborch_unavailable, no address", async () => {
+    const realError = console.error;
+    console.error = () => {};
+    try {
+      globalThis.fetch = (async () => {
+        throw new TypeError("fetch failed");
+      }) as typeof fetch;
+      const res = await login("operator@plant.example", "correct-horse");
+      const text = await res.text();
+      assert.equal(res.status, 503);
+      assert.equal((JSON.parse(text) as { code: string }).code, "faborch_unavailable");
+      assert.ok(!text.includes("fo.test"), text);
+    } finally {
+      console.error = realError;
+    }
+  });
+
+  test("FabOrchestrator too slow: 504 upstream_timeout, no address", async () => {
+    const realError = console.error;
+    console.error = () => {};
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      globalThis.fetch = ((_input: RequestInfo | URL, init: RequestInit = {}) =>
+        new Promise<Response>((_, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+        })) as typeof fetch;
+      const pending = login("operator@plant.example", "correct-horse");
+      for (let i = 0; i < 20; i++) await new Promise<void>((r) => setImmediate(r));
+      mock.timers.tick(FO_CALL_TIMEOUTS.bounded);
+      const res = await pending;
+      const text = await res.text();
+      assert.equal(res.status, 504);
+      assert.equal((JSON.parse(text) as { code: string }).code, "upstream_timeout");
+      assert.ok(!text.includes("fo.test"), text);
+    } finally {
+      mock.timers.reset();
+      console.error = realError;
+    }
+  });
+});
+
+describe("sign-out comes only from this app's own pages (RP2, G26)", () => {
+  const realConsoleInfo = console.info;
+  let info: string[] = [];
+  beforeEach(() => {
+    info = [];
+    console.info = (...args: unknown[]) => {
+      info.push(args.map(String).join(" "));
+    };
+  });
+  afterEach(() => {
+    console.info = realConsoleInfo;
+  });
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+  const signOut = (headers: Record<string, string>, body?: unknown, foToken = "fo-session-token") =>
+    LOGOUT(
+      new NextRequest("https://pwa.test/api/pwa/auth/logout", {
+        method: "POST",
+        headers: { cookie: `faborch_token=${foToken}`, ...headers },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+    );
+
+  test("a cross-site sign-out is refused, the cookie kept and FabOrchestrator not called", async () => {
+    stubFo(() => Response.json({ success: true }));
+    const crossSite: Record<string, string>[] = [
+      { "sec-fetch-site": "cross-site" },
+      { "sec-fetch-site": "same-site" },
+      { origin: "null" },
+    ];
+    for (const headers of crossSite) {
+      const res = await signOut(headers);
+      assert.equal(res.status, 403, JSON.stringify(headers));
+      assert.equal(((await res.json()) as { code: string }).code, "cross_site_request");
+      assert.equal(res.headers.get("set-cookie"), null, "the cookie survives");
+    }
+    await settle();
+    assert.equal(calls.length, 0);
+  });
+
+  test("this app's own page, and a client that sends neither header, sign out", async () => {
+    stubFo(() => Response.json({ success: true }));
+    const ownPages: Record<string, string>[] = [{ "sec-fetch-site": "same-origin" }, {}];
+    for (const headers of ownPages) {
+      const res = await signOut(headers);
+      assert.equal(res.status, 200, JSON.stringify(headers));
+      assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);
+    }
+  });
+
+  test("the reason a page gives is what the log records, and only a client-side reason", async () => {
+    stubFo(() => Response.json({ success: true }));
+    await signOut({ "sec-fetch-site": "same-origin" }, { reason: "pwa_expired" }, "fo-token-one");
+    await signOut({ "sec-fetch-site": "same-origin" }, { reason: "gateway_refusal" }, "fo-token-two");
+    await settle();
+    await settle();
+    const reasons = info
+      .filter((l) => l.includes('"event":"session_end"'))
+      .map((l) => (JSON.parse(l) as { reason: string }).reason)
+      .sort();
+    assert.deepEqual(reasons, ["pwa_expired", "user"]);
+  });
+});
+
+describe("sign-in comes only from this app's own pages, as JSON (RP2 step 1, RP3 part 5)", () => {
+  const post = (headers: Record<string, string>, body = JSON.stringify({ email: "a@b.c", password: "x" })) =>
+    POST(new NextRequest("https://pwa.test/api/pwa/auth/login", { method: "POST", headers, body }));
+
+  test("a cross-site sign-in is refused before FabOrchestrator is asked", async () => {
+    stubFo(() => Response.json({}));
+    const res = await post({ "Content-Type": "application/json", "sec-fetch-site": "cross-site" });
+    assert.equal(res.status, 403);
+    assert.equal(((await res.json()) as { code: string }).code, "cross_site_request");
+    assert.equal(calls.length, 0);
+  });
+
+  test("a form post (not JSON) is refused: a form on another site can send nothing else", async () => {
+    stubFo(() => Response.json({}));
+    for (const type of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"]) {
+      const res = await post({ "Content-Type": type }, '{"email":"a@b.c","password":"x","z":"="}');
+      assert.equal(res.status, 415, type);
+      assert.equal(((await res.json()) as { code: string }).code, "unsupported_media_type");
+    }
+    assert.equal(calls.length, 0);
+  });
+});
+
+describe("this app's own session settings are checked before FabOrchestrator is asked", () => {
+  test("no signing key id: 503 not_configured, and FabOrchestrator never sees the password", async () => {
+    stubFo(() => Response.json({}));
+    const saved = process.env.SESSION_SIGNING_KEY_ID;
+    const realError = console.error;
+    console.error = () => {};
+    delete process.env.SESSION_SIGNING_KEY_ID;
+    try {
+      const res = await login("operator@plant.example", "correct-horse");
+      assert.equal(res.status, 503);
+      assert.equal(((await res.json()) as { code: string }).code, "not_configured");
+      assert.equal(calls.length, 0, "no FabOrchestrator session was created that nobody could use");
+    } finally {
+      process.env.SESSION_SIGNING_KEY_ID = saved;
+      console.error = realError;
+    }
+  });
+
+  test("an unusable cookie grace: the same", async () => {
+    stubFo(() => Response.json({}));
+    const realError = console.error;
+    console.error = () => {};
+    process.env.SESSION_COOKIE_GRACE_S = "1800";
+    try {
+      const res = await login("operator@plant.example", "correct-horse");
+      assert.equal(res.status, 503);
+      assert.equal(calls.length, 0);
+    } finally {
+      delete process.env.SESSION_COOKIE_GRACE_S;
+      console.error = realError;
+    }
   });
 });

@@ -79,6 +79,15 @@ export async function readBodyWithinLimit(
   if (declaredTooLarge(req.headers, limit)) return { tooLarge: true };
   if (!req.body) return { tooLarge: false, bytes: new Uint8Array(new ArrayBuffer(0)) };
 
+  // One copy, not two (review of c193e9e, blocking issue 2). A browser always
+  // declares the length of a JSON, form or file body, so the buffer is sized
+  // from it up front and each chunk is written straight in; the chunk is then
+  // garbage the moment it is read. Only a chunked body, which declares
+  // nothing, is collected and joined once at the end. Neither path trusts the
+  // declared length: what is measured is what arrives.
+  const declared = declaredLength(req.headers);
+  let single: Uint8Array<ArrayBuffer> | null =
+    declared !== null && declared <= limit ? new Uint8Array(new ArrayBuffer(declared)) : null;
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
@@ -86,16 +95,29 @@ export async function readBodyWithinLimit(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      const start = total;
       total += value.byteLength;
       if (total > limit) {
         await reader.cancel().catch(() => {});
         return { tooLarge: true };
+      }
+      if (single && total <= single.byteLength) {
+        single.set(value, start);
+        continue;
+      }
+      if (single) {
+        // More arrived than was declared: keep what was written and fall back
+        // to collecting the rest.
+        chunks.push(single.subarray(0, start));
+        single = null;
       }
       chunks.push(value);
     }
   } finally {
     reader.releaseLock();
   }
+
+  if (single) return { tooLarge: false, bytes: total === single.byteLength ? single : single.subarray(0, total) };
 
   const bytes = new Uint8Array(new ArrayBuffer(total));
   let offset = 0;

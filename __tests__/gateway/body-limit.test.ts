@@ -34,7 +34,7 @@ import {
   REQUEST_BODY_CEILING_BYTES,
 } from "@/lib/gateway/body-limit";
 import { GATEWAY_MARKER_HEADER } from "@/lib/gateway/registry";
-import { POST } from "@/app/fo-gateway/[...path]/route";
+import { GET, POST } from "@/app/fo-gateway/[...path]/route";
 
 const MiB = 1024 * 1024;
 
@@ -117,6 +117,33 @@ describe("reading a body within the limit", () => {
     const read = await readBodyWithinLimit(new Request("https://pwa.test/x", { method: "DELETE" }));
     assert.equal(read.tooLarge === false && read.bytes.byteLength, 0);
   });
+
+  // One copy, sized from the declared length (review of c193e9e, issue 2).
+  test("a declared length sizes the buffer once, and the bytes are exact", async () => {
+    const read = await readBodyWithinLimit(requestWith(chunked(4, 1024), { "content-length": String(4 * 1024) }), 8 * 1024);
+    assert.equal(read.tooLarge, false);
+    if (read.tooLarge) return;
+    assert.equal(read.bytes.byteLength, 4 * 1024);
+    assert.equal(read.bytes.buffer.byteLength, 4 * 1024, "the buffer is exactly the declared size, not a joined copy");
+    assert.ok(read.bytes.every((b) => b === 0x61));
+  });
+
+  test("a declared length larger than what arrives yields what arrived", async () => {
+    const read = await readBodyWithinLimit(requestWith(chunked(2, 1024), { "content-length": String(4 * 1024) }), 8 * 1024);
+    assert.equal(read.tooLarge === false && read.bytes.byteLength, 2 * 1024);
+  });
+
+  test("a declared length smaller than what arrives still yields every byte, within the limit", async () => {
+    const read = await readBodyWithinLimit(requestWith(chunked(4, 1024), { "content-length": String(1024) }), 8 * 1024);
+    assert.equal(read.tooLarge === false && read.bytes.byteLength, 4 * 1024);
+    if (read.tooLarge) return;
+    assert.ok(read.bytes.every((b) => b === 0x61));
+  });
+
+  test("a declared length under the limit does not exempt a body that outgrows the limit", async () => {
+    const read = await readBodyWithinLimit(requestWith(chunked(100, 1024), { "content-length": String(1024) }), 4 * 1024);
+    assert.equal(read.tooLarge, true);
+  });
 });
 
 describe("through the gateway route", () => {
@@ -183,5 +210,64 @@ describe("through the gateway route", () => {
     assert.equal(res.status, 413);
     await res.text();
     assert.deepEqual(received, []);
+  });
+
+  // Review of c193e9e, blocking issue 2: an anonymous body to an API row was
+  // read whole and forwarded before FabOrchestrator answered its own 401.
+  describe("an anonymous body to an API row (no session)", () => {
+    const realWarnNow = console.warn;
+    let warned: string[] = [];
+    beforeEach(() => {
+      warned = [];
+      console.warn = (...a: unknown[]) => warned.push(a.map(String).join(" "));
+    });
+    afterEach(() => {
+      console.warn = realWarnNow;
+    });
+
+    const anonymous = (method: string, path: string, body?: ReadableStream<Uint8Array>, headers: Record<string, string> = {}) =>
+      (method === "GET" ? GET : POST)(
+        new NextRequest(new URL(`/fo-gateway${path}`, "https://pwa.test"), {
+          method,
+          headers: { [GATEWAY_MARKER_HEADER]: "1", ...headers },
+          body,
+          duplex: "half",
+        } as ConstructorParameters<typeof NextRequest>[1]),
+        { params: Promise.resolve({ path: path.slice(1).split("/") }) },
+      );
+
+    test("is refused before a byte of the body is read, and FabOrchestrator never sees it", async () => {
+      let pulls = 0;
+      const res = await anonymous("POST", "/api/chat", chunked(20, MiB, () => (pulls += 1)), {
+        "content-type": "application/json",
+        "content-length": String(20 * MiB),
+      });
+      assert.equal(res.status, 401);
+      assert.equal(((await res.json()) as { code: string }).code, "session_invalid");
+      assert.equal(res.headers.get("set-cookie"), null, "no session to end");
+      // A ReadableStream pulls once by itself to fill its queue; the route
+      // must add nothing to that (compare the declared-length test above).
+      assert.ok(pulls <= 1, `the route never read the body (${pulls} pulls)`);
+      assert.deepEqual(received, [], "nothing forwarded");
+      assert.ok(warned.some((l) => l.includes('"reason":"anonymous_body"')), warned.join("\n"));
+    });
+
+    test("a chunked one, declaring nothing, the same", async () => {
+      let pulls = 0;
+      const res = await anonymous("POST", "/api/modeling-agent/chat/parse-upload", chunked(5, 1024, () => (pulls += 1)), {
+        "content-type": "multipart/form-data; boundary=x",
+      });
+      assert.equal(res.status, 401);
+      await res.text();
+      assert.ok(pulls <= 1, `${pulls} pulls`);
+      assert.deepEqual(received, []);
+    });
+
+    test("an anonymous GET to a public row is still forwarded (RP1 G31's two rows)", async () => {
+      const res = await anonymous("GET", "/api/platform-theme");
+      assert.equal(res.status, 200);
+      await res.text();
+      assert.equal(received.length, 1, "FabOrchestrator answers for itself");
+    });
   });
 });

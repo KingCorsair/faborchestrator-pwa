@@ -192,6 +192,22 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   // The conversation a chat turn has proved it belongs to, if any.
   let provedConversationId: string | null = null;
   if (hasBody) {
+    // ── No session, a body, an API row: refused before a byte is read ──────
+    //
+    // No API row takes an unauthenticated POST, PUT, PATCH or DELETE: the two
+    // public rows are GETs and FabOrchestrator's own login is denied here. So
+    // an anonymous body to `fo-api` is never legitimate, and until 30 September
+    // 2026 it was read whole (twice) and forwarded to FabOrchestrator before
+    // FO answered its own 401: eight 20 MiB uploads took one 512 MB machine
+    // past its memory (review of c193e9e, blocking issue 2). Refusing here
+    // saves the gateway's copies and the forward. It does **not** save Next's
+    // own buffer, which fills before any route runs: that is RP10-B's thin
+    // server entry, still to be built.
+    if (owner === "fo-api" && verdict.action === "forward-anonymous") {
+      logEvent("warn", "gateway_refused", { path: pathname, reason: "anonymous_body", method });
+      return coded(401, SESSION_INVALID.code, SESSION_INVALID.error);
+    }
+
     const read = await readBodyWithinLimit(req, MAX_REQUEST_BODY_BYTES);
     if (read.tooLarge) {
       logEvent("warn", "body_too_large", { path: pathname, limit: MAX_REQUEST_BODY_BYTES });

@@ -69,7 +69,7 @@ import {
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { classify, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
 import { upstreamOrigin } from "@/lib/gateway/upstream";
-import { reportError } from "@/lib/report-error";
+import { idPrefix, logEvent, reportError } from "@/lib/report-error";
 
 // RP4 part 5: the budgets must be sound. There is no startup hook to refuse
 // to start from yet (that is RP10-B's server entry), so an unsound
@@ -158,7 +158,8 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
       return NextResponse.json({ error: outcome.reason }, { status: 413 });
     }
     if (outcome.action === "forward-stripped") {
-      console.warn(`[gateway] conversationId ${outcome.conversationId} is not this caller's; forwarding the turn unpersisted`);
+      // RP10-A: an 8-character prefix only; a conversation id is access-bearing at FO.
+      logEvent("warn", "ownership_stripped", { path: pathname, idPrefix: idPrefix(outcome.conversationId) });
       init.body = outcome.body;
       headersOut.set("content-length", String(Buffer.byteLength(outcome.body)));
     } else {

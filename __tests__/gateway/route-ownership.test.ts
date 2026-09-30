@@ -113,3 +113,22 @@ describe("through the gateway route", () => {
     assert.equal(lookups(), 2, "the deleted id was forgotten, so the turn asked FabOrchestrator");
   });
 });
+
+describe("what the gateway writes to the log (RP10-A)", () => {
+  const realWarn = console.warn;
+  afterEach(() => {
+    console.warn = realWarn;
+  });
+
+  test("a refused conversation id is logged as an eight-character prefix, never whole", async () => {
+    const lines: string[] = [];
+    console.warn = (...a: unknown[]) => lines.push(a.map(String).join(" "));
+    const THEIRS = "22222222-2222-4222-8222-222222222222";
+    const turn = await call(POST, "POST", "/api/chat", { conversationId: THEIRS, messages: [] });
+    await turn.text();
+    const line = lines.find((l) => l.includes('"event":"ownership_stripped"'));
+    assert.ok(line, lines.join(" | "));
+    assert.match(line!, /"idPrefix":"22222222"/);
+    assert.ok(!line!.includes(THEIRS), "the whole id is access-bearing at FO");
+  });
+});

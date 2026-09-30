@@ -15,6 +15,7 @@
  * taken so nobody mistakes it for live.
  */
 
+import { reportError } from "@/lib/report-error";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth-middleware";
 import {
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         { status: error.status === 503 ? 503 : 502 },
       );
     }
-    console.error("[faborch/reports/[id]] unexpected failure:", error);
+    reportError("faborch/report", error);
     return NextResponse.json(
       { code: "faborch_unavailable", error: "That report is unavailable right now." },
       { status: 502 },

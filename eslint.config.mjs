@@ -39,6 +39,16 @@ const eslintConfig = defineConfig([
       "react-hooks/set-state-in-effect": "off",
     },
   },
+  {
+    // Server code logs through `lib/report-error.ts` only (plan RP10-A part 2):
+    // one JSON shape, paths masked, never a token, an FO URL or a full id. A
+    // raw `console.*` is how the URL-bearing lines got in before, so it is an
+    // error here rather than a convention. Client components are not server
+    // logs and are not covered.
+    files: ["app/**/*.{ts,tsx}", "lib/**/*.ts", "proxy.ts"],
+    ignores: ["lib/report-error.ts"],
+    rules: { "no-console": "error" },
+  },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);
 

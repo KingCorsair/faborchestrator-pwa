@@ -42,7 +42,7 @@
  * and an explicit connect timeout on the fetch dispatcher.
  */
 
-import { maskPath } from "@/lib/report-error";
+import { logEvent } from "@/lib/report-error";
 
 export type CallClass = "bounded" | "stream" | "upload" | "document";
 export type Budget = { headersMs: number; idleMs: number; lifeMs: number };
@@ -148,7 +148,6 @@ export function startLifecycle(
   const controller = new AbortController();
   const signal = AbortSignal.any([callerSignal, controller.signal]);
   let ended: TimeoutReason | "cancelled" | null = null;
-  let headersTimer: ReturnType<typeof setTimeout> | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let lifeTimer: ReturnType<typeof setTimeout> | undefined;
   const startedAt = Date.now();
@@ -176,7 +175,7 @@ export function startLifecycle(
     clearAll();
   });
 
-  headersTimer = setTimeout(() => fire("headers"), budget.headersMs);
+  const headersTimer = setTimeout(() => fire("headers"), budget.headersMs);
 
   return {
     signal,
@@ -239,15 +238,5 @@ export function startLifecycle(
 }
 
 function logStreamEnd(cls: CallClass, reason: TimeoutReason, pathname: string, startedAt: number): void {
-  console.warn(
-    JSON.stringify({
-      level: "warn",
-      at: new Date().toISOString(),
-      event: "upstream_timeout",
-      class: cls,
-      reason,
-      path: maskPath(pathname),
-      elapsedMs: Date.now() - startedAt,
-    }),
-  );
+  logEvent("warn", "upstream_timeout", { class: cls, reason, path: pathname, elapsedMs: Date.now() - startedAt });
 }

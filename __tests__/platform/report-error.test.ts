@@ -9,7 +9,7 @@
 
 import { describe, test, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { maskPath, reportError } from "../../lib/report-error";
+import { idPrefix, logEvent, maskPath, reportError } from "../../lib/report-error";
 
 const realConsoleError = console.error;
 let logged: string[] = [];
@@ -96,5 +96,38 @@ describe("maskPath", () => {
     assert.equal(maskPath("/api/auth/login"), "/api/auth/login");
     assert.equal(maskPath("/api/files/file_011CUabcdefghijklmnop/download"), "/api/files/:id/download");
     assert.equal(maskPath("/api/chat#frag"), "/api/chat");
+  });
+});
+
+describe("logEvent: events that are not failures", () => {
+  const realInfo = console.info;
+  const realWarn = console.warn;
+  let info: string[] = [];
+  let warn: string[] = [];
+  beforeEach(() => {
+    info = [];
+    warn = [];
+    console.info = (...a: unknown[]) => info.push(a.map(String).join(" "));
+    console.warn = (...a: unknown[]) => warn.push(a.map(String).join(" "));
+  });
+  afterEach(() => {
+    console.info = realInfo;
+    console.warn = realWarn;
+  });
+
+  test("one JSON line, at the level asked for, with the same value rules", () => {
+    logEvent("info", "session_end", { reason: "user", revoked: true });
+    logEvent("warn", "upstream_timeout", { path: "/api/conversations/3f2b8c1e-9a4d-4c7e-8b1a-2d3e4f5a6b7c?x=1" });
+    const i = JSON.parse(info[0]!) as Record<string, unknown>;
+    assert.equal(i.level, "info");
+    assert.equal(i.event, "session_end");
+    assert.equal(i.revoked, true);
+    const w = JSON.parse(warn[0]!) as Record<string, unknown>;
+    assert.equal(w.level, "warn");
+    assert.equal(w.path, "/api/conversations/:id", "paths are patterns here too");
+  });
+
+  test("idPrefix keeps eight characters, enough to correlate and not to use", () => {
+    assert.equal(idPrefix("3f2b8c1e-9a4d-4c7e-8b1a-2d3e4f5a6b7c"), "3f2b8c1e");
   });
 });

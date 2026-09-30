@@ -40,6 +40,7 @@
  * would break the 15s keep-alive frames that exist to hold the connection open.
  */
 
+import { reportError } from "@/lib/report-error";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth-middleware";
 import { foAgent } from "@/lib/faborch/agents";
@@ -229,7 +230,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ age
     if (error instanceof FabOrchRequestError) {
       return fail("faborch_unavailable", error.message, error.status === 503 ? 503 : 502);
     }
-    console.error(`[faborch/${agent.id}/chat] unexpected failure:`, error);
+    reportError("faborch/chat", error, { agent: agent.id });
     return fail("faborch_unavailable", `${agent.name} is unavailable right now.`, 502);
   }
 }

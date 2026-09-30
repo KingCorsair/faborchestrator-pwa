@@ -2,6 +2,7 @@ import { after, NextResponse, type NextRequest } from "next/server";
 import { foFingerprint } from "@/lib/auth";
 import { foLogout } from "@/lib/faborch/client";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
+import { logEvent } from "@/lib/report-error";
 
 /**
  * Sign out — **ends the FabOrchestrator session, not just this app's copy**,
@@ -44,17 +45,8 @@ export async function POST(req: NextRequest) {
 
 async function revokeFoSession(foToken: string, reason: string): Promise<void> {
   const revoked = await foLogout(foToken);
-  console.info(
-    JSON.stringify({
-      level: "info",
-      at: new Date().toISOString(),
-      event: "session_end",
-      reason,
-      revoked,
-      // RP10-A: the first 8 characters of the fingerprint, for correlation only.
-      sessionFp: foFingerprint(foToken).slice(0, 8),
-    }),
-  );
+  // RP10-A: the first 8 characters of the fingerprint, for correlation only.
+  logEvent("info", "session_end", { reason, revoked, sessionFp: foFingerprint(foToken).slice(0, 8) });
 }
 
 /**

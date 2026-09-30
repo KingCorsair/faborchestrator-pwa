@@ -130,3 +130,29 @@ function oneLine(text: string): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > 300 ? `${flat.slice(0, 299)}…` : flat;
 }
+
+// ── Events that are not failures (RP10-A part 3) ────────────────────────────
+
+type Level = "info" | "warn";
+
+/**
+ * One JSON line for an event worth recording that is not an unexpected
+ * failure: a session ending, a deadline firing, an id refused. Same shape and
+ * the same value rules as `reportError`: a `path` is masked to a pattern, long
+ * strings are cut, and callers pass codes, counts, patterns and id *prefixes*
+ * (`idPrefix`), never a token, a URL or a full access-bearing id.
+ */
+export function logEvent(level: Level, event: string, detail: Detail = {}): void {
+  try {
+    const line = JSON.stringify({ level, at: new Date().toISOString(), event, ...cleanDetail(detail) });
+    if (level === "warn") console.warn(line);
+    else console.info(line);
+  } catch {
+    /* logging must never become a failure of its own */
+  }
+}
+
+/** The first 8 characters of an identifier: enough to correlate, not to use (RP10-A). */
+export function idPrefix(id: string): string {
+  return id.slice(0, 8);
+}

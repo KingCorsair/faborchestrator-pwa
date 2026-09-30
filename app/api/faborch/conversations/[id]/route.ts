@@ -21,6 +21,7 @@
  * "not yours", which `foConversation` already collapses to null.
  */
 
+import { reportError } from "@/lib/report-error";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth-middleware";
 import {
@@ -76,7 +77,7 @@ function failed(error: unknown, what: string): NextResponse {
       { status: error.status === 503 ? 503 : 502 },
     );
   }
-  console.error("[faborch/conversations/[id]] unexpected failure:", error);
+  reportError("faborch/conversation", error);
   return NextResponse.json({ code: "faborch_unavailable", error: what }, { status: 502 });
 }
 

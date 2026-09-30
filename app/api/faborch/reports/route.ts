@@ -17,6 +17,7 @@
  * non-admin cannot invoke an admin action even by crafting a request.
  */
 
+import { reportError } from "@/lib/report-error";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireAuth } from "@/lib/auth-middleware";
 import {
@@ -72,7 +73,7 @@ export async function GET(req: NextRequest) {
         { status: error.status === 503 ? 503 : 502 },
       );
     }
-    console.error("[faborch/reports] unexpected failure:", error);
+    reportError("faborch/reports", error);
     return NextResponse.json(
       { code: "faborch_unavailable", error: "Reports are unavailable right now." },
       { status: 502 },

@@ -13,6 +13,14 @@ export const LoginSchema = z.object({
   password: z.string().min(1, "Password is required").max(128),
 });
 
+/**
+ * The most `/api/pwa/auth/login` will read: 16 KiB, the plan's value for every
+ * `/api/pwa/auth/*` body (RP1 body classes, RP10-B part 1). The longest legal
+ * credentials are about 3 KB even with every character JSON-escaped, so nothing
+ * a real sign-in sends comes near it.
+ */
+export const LOGIN_BODY_LIMIT = 16 * 1024;
+
 export const OrderStatusSchema = z.enum([
   "RELEASED",
   "IN_PROGRESS",

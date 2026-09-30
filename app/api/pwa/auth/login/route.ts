@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sessionFor } from "@/lib/auth";
 import { foLogin, isFabOrchConfigured, FabOrchRequestError } from "@/lib/faborch/client";
 import { setFoTokenCookie } from "@/lib/faborch/session";
-import { LoginSchema } from "@/lib/validation";
+import { readJsonBody } from "@/lib/request-body";
+import { LOGIN_BODY_LIMIT, LoginSchema } from "@/lib/validation";
 import {
   checkLoginAllowed,
   clearLoginFailures,
@@ -63,8 +64,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const body = await req.json().catch(() => null);
-  const parsed = LoginSchema.safeParse(body);
+  // Size before content: this is the one route anybody can reach without a
+  // session. The code and `details.limit` are the plan's (RP5 part 1).
+  const body = await readJsonBody(req, LOGIN_BODY_LIMIT);
+  if (body.tooLarge) {
+    return NextResponse.json(
+      {
+        code: "body_too_large",
+        error: "That sign-in request is larger than this app accepts.",
+        details: { limit: LOGIN_BODY_LIMIT },
+      },
+      { status: 413 },
+    );
+  }
+  const parsed = LoginSchema.safeParse(body.value);
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? "Invalid request" },

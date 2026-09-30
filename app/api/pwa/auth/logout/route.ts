@@ -1,47 +1,71 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
+import { foFingerprint } from "@/lib/auth";
 import { foLogout } from "@/lib/faborch/client";
 import { clearFoTokenCookie, foTokenFrom } from "@/lib/faborch/session";
 
 /**
- * Sign out — **ends the FabOrchestrator session, not just this app's copy.**
+ * Sign out — **ends the FabOrchestrator session, not just this app's copy**,
+ * and never waits on FabOrchestrator to do it.
  *
- * Two things happen, in this order of importance:
+ * ── The order is the rule (plan RP2, `endServerSession`) ────────────────────
+ *  1. **Clear local state first.** The cleared cookie is written onto the
+ *     response and the response goes back at once. This is what protects the
+ *     handset in the room: without the cookie the browser holds nothing, and
+ *     this app's bearer is inert too, because it is only accepted beside the
+ *     matching FO cookie (`lib/auth.ts`). This half cannot fail and cannot be
+ *     slowed down by FabOrchestrator.
+ *  2. **Then tell FabOrchestrator**, after the response (Next's `after()`),
+ *     under the `revoke` time limit (`FO_CALL_TIMEOUTS.revoke`). Its
+ *     `/api/auth/logout` deletes the session row, so the token stops working
+ *     everywhere and FO's audit records a sign-out.
+ *  3. **Record the outcome** as a `session_end` line with the token's
+ *     fingerprint, never the token. The response no longer reports whether
+ *     FO was told; the log does. A failed revoke is not retried: FO's own
+ *     idle rule refuses the token on any later use.
  *
- *  1. **The cookie is dropped.** This is what protects the handset in the room:
- *     without it the browser holds nothing, and this app's own bearer token is
- *     inert too, because it is only accepted beside the matching FO cookie
- *     (`lib/auth.ts`). This half cannot fail.
- *  2. **FabOrchestrator is told.** Its `/api/auth/logout` closes the audit row
- *     and deletes the session record, so the token stops working everywhere —
- *     and FO's own logs record a sign-out rather than a session that went quiet.
+ * Until 2026-09-29 this route awaited FabOrchestrator first, so a slow or
+ * unreachable FO held the sign-out for as long as the call hung. The chetan
+ * branch (`e843b9c`) bounded that wait at five seconds; the plan's order
+ * removes it from the response altogether.
  *
- * ── The earlier decision, and why it was wrong ─────────────────────────────
- * This route used to skip step 2 deliberately, so as not to sign the operator
- * out of a FabOrchestrator tab they might have open. **That objection does not
- * hold, and the mechanics say so** (verified against upstream `e5a5abd`):
- *
- *  - FO's logout is **per token**: `deleteSession(token)` is
- *    `prisma.session.delete({ where: { token } })`, one row. The `deleteMany`
- *    variants exist but only the admin force-logout path calls them.
- *  - Every login **mints a new token**: `generateToken()` then a plain
- *    `session.create`, with no delete-first and no reuse. One person can hold
- *    many concurrent sessions.
- *
- * So a desktop tab holds a *different* token from a *different* login, and this
- * call cannot reach it. Ending the session the PWA was given is not a
- * trade-off against anything — it is simply the correct scope.
- *
- * ── Order matters ──────────────────────────────────────────────────────────
- * FO is told first, because that call needs the token; the cookie is dropped on
- * the response regardless of what FO answered. If FO is unreachable the user is
- * still signed out here, and FO's own expiry closes the session later.
+ * ── Why revoking is the correct scope ──────────────────────────────────────
+ * FO's logout is **per token** (`deleteSession(token)`, one row), and every
+ * login mints a new token, so a FabOrchestrator tab on a desktop holds a
+ * different token and this call cannot reach it (verified against upstream
+ * `e5a5abd`).
  */
 export async function POST(req: NextRequest) {
   const foToken = foTokenFrom(req);
-
-  const revoked = foToken ? await foLogout(foToken) : null;
-
-  const res = NextResponse.json({ ok: true, faborchRevoked: revoked });
+  const res = NextResponse.json({ ok: true });
   clearFoTokenCookie(res);
+  if (foToken) afterResponse(() => revokeFoSession(foToken, "user"));
   return res;
+}
+
+async function revokeFoSession(foToken: string, reason: string): Promise<void> {
+  const revoked = await foLogout(foToken);
+  console.info(
+    JSON.stringify({
+      level: "info",
+      at: new Date().toISOString(),
+      event: "session_end",
+      reason,
+      revoked,
+      // RP10-A: the first 8 characters of the fingerprint, for correlation only.
+      sessionFp: foFingerprint(foToken).slice(0, 8),
+    }),
+  );
+}
+
+/**
+ * `after()` exists only inside a Next request. A route called directly (the
+ * unit tests do) has no request scope and `after` throws, so the task runs
+ * detached instead: still after the response is built, still never awaited.
+ */
+function afterResponse(task: () => Promise<void>): void {
+  try {
+    after(task);
+  } catch {
+    void task().catch(() => {});
+  }
 }

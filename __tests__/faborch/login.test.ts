@@ -12,13 +12,14 @@
  * no network, which is WP11's rule for every layer below the live smoke test.
  */
 
-import { test, describe, beforeEach, afterEach } from "node:test";
+import { test, describe, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
 
 import { NextRequest } from "next/server";
 import { sessionFor, verifyToken } from "@/lib/auth";
+import { FO_CALL_TIMEOUTS } from "@/lib/faborch/client";
 import { POST } from "@/app/api/pwa/auth/login/route";
 import { POST as LOGOUT } from "@/app/api/pwa/auth/logout/route";
 
@@ -171,47 +172,90 @@ describe("the two expiry clocks are reconciled", () => {
   });
 });
 
-describe("sign-out ends the FabOrchestrator session, not just the cookie", () => {
+describe("sign-out ends the FabOrchestrator session, and never waits on it", () => {
+  // Plan RP2 `endServerSession`: the cleared cookie goes back at once; FO is
+  // told after the response under the revoke limit, and the outcome is a
+  // `session_end` log line, not a field in the response. (Until 2026-09-29 the
+  // response carried `faborchRevoked` and waited for FO to produce it.)
   const withCookie = () =>
-    new NextRequest("https://pwa.test/api/auth/logout", {
+    new NextRequest("https://pwa.test/api/pwa/auth/logout", {
       method: "POST",
       headers: { cookie: "faborch_token=fo-session-token" },
     });
 
-  test("FabOrchestrator's own logout is called with the token", async () => {
+  const realConsoleInfo = console.info;
+  let info: string[] = [];
+  beforeEach(() => {
+    info = [];
+    console.info = (...args: unknown[]) => {
+      info.push(args.map(String).join(" "));
+    };
+  });
+  afterEach(() => {
+    console.info = realConsoleInfo;
+    mock.timers.reset();
+  });
+
+  /** Let the post-response revoke run to completion. */
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+  const sessionEnd = () => {
+    const line = info.find((l) => l.includes('"event":"session_end"'));
+    return line ? (JSON.parse(line) as { reason: string; revoked: boolean; sessionFp: string }) : null;
+  };
+
+  test("FabOrchestrator's own logout is called with the token, and the outcome logged", async () => {
     stubFo(() => Response.json({ success: true }));
     const res = await LOGOUT(withCookie());
-
     assert.equal(res.status, 200);
+    assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);
+
+    await settle();
+    await settle();
     assert.ok(
       calls.some((u) => u.endsWith("/api/auth/logout")),
       "FO must be told, or its session outlives the sign-out",
     );
-    assert.equal((await res.json()).faborchRevoked, true);
+    const end = sessionEnd();
+    assert.equal(end?.reason, "user");
+    assert.equal(end?.revoked, true);
+    assert.ok(!info.join("\n").includes("fo-session-token"), "never the token itself");
   });
 
-  test("the cookie is dropped even when FabOrchestrator is unreachable", async () => {
-    globalThis.fetch = (async () => {
-      throw new TypeError("fetch failed");
+  test("the answer comes back while FabOrchestrator is still hanging", async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    globalThis.fetch = ((_input: RequestInfo | URL, init: RequestInit = {}) => {
+      calls.push("/api/auth/logout");
+      return new Promise<Response>((_, reject) => {
+        init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      });
     }) as typeof fetch;
 
     const res = await LOGOUT(withCookie());
-    assert.equal(res.status, 200, "sign-out must not fail because a server is down");
+    assert.equal(res.status, 200, "sign-out must not wait for a server that is down");
     assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);
-    assert.equal((await res.json()).faborchRevoked, false, "and it says so honestly");
+    assert.equal(sessionEnd(), null, "FO has not answered yet");
+
+    // The revoke gives up at its own limit and says so in the log.
+    mock.timers.tick(FO_CALL_TIMEOUTS.revoke);
+    await settle();
+    await settle();
+    assert.equal(sessionEnd()?.revoked, false);
   });
 
-  test("a 404 from FabOrchestrator counts as revoked — the session was already gone", async () => {
+  test("a 404 from FabOrchestrator counts as revoked: the session was already gone", async () => {
     stubFo(() => new Response("", { status: 404 }));
-    const res = await LOGOUT(withCookie());
-    assert.equal((await res.json()).faborchRevoked, true);
+    await LOGOUT(withCookie());
+    await settle();
+    await settle();
+    assert.equal(sessionEnd()?.revoked, true);
   });
 
   test("signing out with no cookie still clears and does not call FO", async () => {
     stubFo(() => Response.json({ success: true }));
     const res = await LOGOUT(
-      new NextRequest("https://pwa.test/api/auth/logout", { method: "POST" }),
+      new NextRequest("https://pwa.test/api/pwa/auth/logout", { method: "POST" }),
     );
+    await settle();
     assert.equal(res.status, 200);
     assert.equal(calls.length, 0);
     assert.match(res.headers.get("set-cookie") ?? "", /faborch_token=;/);

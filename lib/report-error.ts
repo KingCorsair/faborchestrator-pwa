@@ -67,7 +67,11 @@ function describe(error: unknown): { errorName: string; errorCode?: string } {
   let code: unknown;
   let link: unknown = error;
   for (let depth = 0; depth < 5 && link instanceof Error && code === undefined; depth++) {
-    code = (link as { code?: unknown }).code;
+    // A DOMException's `code` is a legacy number (20 for an abort) that says
+    // nothing its name does not.
+    if (!(typeof DOMException !== "undefined" && link instanceof DOMException)) {
+      code = (link as { code?: unknown }).code;
+    }
     link = link.cause;
   }
   return typeof code === "string" || typeof code === "number"

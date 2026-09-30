@@ -139,15 +139,22 @@ export function useSession(): Session {
 
 /** Clears the client session. The token is a stateless HMAC — see lib/auth.ts. */
 export async function logout(token: string | null) {
-  if (token) {
-    try {
-      await fetch("/api/pwa/auth/logout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch {
-      /* still clear locally */
-    }
+  // The plan's client order (RP2, `endClientSession`): ask the server, clear
+  // this device, and let the caller navigate. The request is `keepalive`, so
+  // it survives that navigation and nothing here waits on the network. Until
+  // 2026-09-29 this awaited the server first, which waited on FabOrchestrator,
+  // so a slow FO held the button on "Signing out…" (the chetan branch bounded
+  // that wait; here there is no wait at all). The server is asked even with no
+  // token in hand: the cookie may still be there, and the route reads only it.
+  try {
+    void fetch("/api/pwa/auth/logout", {
+      method: "POST",
+      keepalive: true,
+      credentials: "same-origin",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }).catch(() => {});
+  } catch {
+    /* A fetch that throws synchronously changes nothing below. */
   }
   clearAuthStorage();
 }

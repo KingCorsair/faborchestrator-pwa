@@ -39,13 +39,20 @@
  * to a session this app can see is not real.
  *
  * ── A refusal that ends a session (plan RP2, finding G5) ────────────────────
- * When the bearer is a real session that has ended — expired, or paired with
- * an FO cookie that is not its own — the refusal also carries the cookie's FO
- * token, so the gateway can clear the cookie and revoke that token after the
- * response. Clearing alone is not enough: the client's follow-up sign-out then
- * arrives with no cookie and cannot revoke, and FabOrchestrator keeps the
- * session row until its own 30-day expiry. A malformed bearer ends nothing; it
- * may be a stray header.
+ * When the bearer is a real session that has ended — expired — **and the FO
+ * cookie on the request is that session's own**, the refusal also carries the
+ * cookie's FO token, so the gateway can clear the cookie and revoke that token
+ * after the response. Clearing alone is not enough: the client's follow-up
+ * sign-out then arrives with no cookie and cannot revoke, and FabOrchestrator
+ * keeps the session row until its own 30-day expiry.
+ *
+ * Nothing else ends anything. A malformed bearer may be a stray header. A
+ * bearer beside a cookie that is not its own — expired or not — is refused and
+ * the cookie is **left alone**: that cookie belongs to some other session,
+ * most often a newer sign-in on the same browser (FabOrchestrator's chat page
+ * keeps the bearer it loaded with, so a tab left open across a re-sign-in sends
+ * the old bearer with the new cookie). Until 30 September 2026 that case
+ * revoked the new session; review of c193e9e, blocking issue 1.
  */
 
 import type { NextRequest } from "next/server";
@@ -62,7 +69,8 @@ export type BridgeVerdict =
   | { action: "inject"; foToken: string; userId: string }
   /**
    * A bearer that does not verify, or verifies without its cookie. Refuse.
-   * `endSession` names the FO token to revoke when a real session has ended.
+   * `endSession` names the FO token to revoke when a real session has ended
+   * and the cookie is that session's own; null leaves the cookie untouched.
    */
   | { action: "refuse"; reason: string; endSession: { foToken: string } | null };
 
@@ -75,11 +83,15 @@ export function bridgeAuthorization(req: NextRequest): BridgeVerdict {
 
   // One reason for every failure: saying which check failed tells an attacker
   // which to work on. Same rule as `lib/auth-middleware.ts`.
-  const ended = check.why === "expired" || check.why === "mismatch";
+  //
+  // The cookie's session is ended only when the cookie is provably this
+  // bearer's own (an expired session whose cookie outlived it by the grace).
+  // A `mismatch` never qualifies: the cookie is somebody's live session.
+  const endsOwnSession = check.why === "expired" && check.cookieIsOwn;
   return {
     action: "refuse",
     reason: "Invalid or expired session",
-    endSession: ended && foToken ? { foToken } : null,
+    endSession: endsOwnSession && foToken ? { foToken } : null,
   };
 }
 

@@ -133,10 +133,13 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     // real is a claim about a session, and FabOrchestrator should never be
     // asked to adjudicate it.
     const res = coded(401, SESSION_INVALID.code, SESSION_INVALID.error);
-    // A real session that has ended (expired, or a bearer paired with a cookie
-    // that is not its own): clear the cookie now and revoke FabOrchestrator's
-    // token after the response (plan RP2, G5). FabOrchestrator's own client
-    // signs itself out on this 401 either way.
+    // A real session that has ended, whose cookie is its own (an expired
+    // bearer within the cookie grace): clear the cookie now and revoke
+    // FabOrchestrator's token after the response (plan RP2, G5). Any other
+    // refusal leaves the cookie alone: it may belong to a newer sign-in that
+    // another tab is using (review of c193e9e, issue 1). FabOrchestrator's own
+    // client signs itself out on this 401 either way; `public/fo-shell.js`
+    // reloads a stale page before it can send an old bearer at all.
     if (verdict.endSession) endServerSession(res, verdict.endSession.foToken, "gateway_refusal");
     return res;
   }

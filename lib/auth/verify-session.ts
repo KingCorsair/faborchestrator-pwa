@@ -14,18 +14,32 @@
  *
  * The verdict says *why* a check failed because one caller must act on it: the
  * gateway ends the session (clears the cookie and revokes FO's token) when a
- * real session has ended — `expired`, or a bearer paired with a cookie that is
- * not its own (`mismatch`) — and changes nothing for a malformed bearer, which
- * may be a stray header. **The reason is never shown to the caller**: every
- * failure answers with the same status and wording, so an attacker learns
- * nothing about which half to work on.
+ * real session has ended and **the cookie on the request is that session's
+ * own** — an `expired` bearer whose fingerprint matches the cookie — and
+ * changes nothing otherwise. A malformed bearer may be a stray header; a
+ * bearer beside a cookie that is not its own (`mismatch`) says nothing about
+ * the cookie's session, which may be a newer sign-in on the same browser that
+ * is still in use in another tab (review of c193e9e, 30 September 2026: the
+ * old rule revoked exactly that session). **The reason is never shown to the
+ * caller**: every failure answers with the same status and wording, so an
+ * attacker learns nothing about which half to work on.
  */
 
 import { foFingerprint, inspectToken, type SessionPayload } from "@/lib/auth";
 
 export type SessionCheck =
   | { ok: true; session: SessionPayload; foToken: string }
-  | { ok: false; why: "no-bearer" | "invalid" | "expired" | "mismatch" };
+  | { ok: false; why: "no-bearer" | "invalid" }
+  | {
+      ok: false;
+      why: "expired" | "mismatch";
+      /**
+       * Whether the cookie on the request fingerprints to this bearer's own
+       * FabOrchestrator token. Only then may a caller end the cookie's session
+       * on this bearer's account. Always false for `mismatch`, by definition.
+       */
+      cookieIsOwn: boolean;
+    };
 
 export function checkSession(authorization: string | null, foToken: string | null): SessionCheck {
   if (!authorization) return { ok: false, why: "no-bearer" };
@@ -33,10 +47,11 @@ export function checkSession(authorization: string | null, foToken: string | nul
 
   const inspected = inspectToken(authorization.slice("Bearer ".length));
   if (inspected.kind === "invalid") return { ok: false, why: "invalid" };
-  if (inspected.kind === "expired") return { ok: false, why: "expired" };
 
-  if (!foToken || inspected.payload.fp !== foFingerprint(foToken)) return { ok: false, why: "mismatch" };
-  return { ok: true, session: inspected.payload, foToken };
+  const cookieIsOwn = !!foToken && inspected.payload.fp === foFingerprint(foToken);
+  if (inspected.kind === "expired") return { ok: false, why: "expired", cookieIsOwn };
+  if (!cookieIsOwn) return { ok: false, why: "mismatch", cookieIsOwn: false };
+  return { ok: true, session: inspected.payload, foToken: foToken! };
 }
 
 /** The one refusal every failed check answers with (plan RP5: `session_invalid`). */

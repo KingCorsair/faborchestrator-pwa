@@ -51,6 +51,7 @@ function loadShell({ tokenPresent = true, storageThrows = false, path = undefine
   const posts: string[] = [];
   const bodies: string[] = [];
   const navigations: string[] = [];
+  let reloads = 0;
 
   const window = {
     localStorage: {
@@ -65,6 +66,9 @@ function loadShell({ tokenPresent = true, storageThrows = false, path = undefine
     },
     location: {
       replace: (to: string) => navigations.push(to),
+      reload: () => {
+        reloads += 1;
+      },
       ...(path === undefined ? {} : { pathname: path, search: "" }),
     },
     addEventListener: (type: string, fn: (e: { key?: string; newValue?: string | null }) => void) => {
@@ -106,8 +110,16 @@ function loadShell({ tokenPresent = true, storageThrows = false, path = undefine
     bodies,
     navigations,
     store,
+    reloads: () => reloads,
     foClearsItsToken: () => store.delete("llmatscale_auth_token"),
-    storageEvent: (e: { key: string; newValue: string | null }) => listeners.storage?.forEach((fn) => fn(e)),
+    /** A sign-in in another tab: the token is replaced, in storage and by the event. */
+    anotherTabSignsIn: (token = "pwa-bearer-2") => {
+      const oldValue = store.get("llmatscale_auth_token") ?? null;
+      store.set("llmatscale_auth_token", token);
+      return { key: "llmatscale_auth_token", oldValue, newValue: token };
+    },
+    storageEvent: (e: { key: string; oldValue?: string | null; newValue: string | null }) =>
+      listeners.storage?.forEach((fn) => fn(e)),
   };
 }
 
@@ -141,6 +153,43 @@ describe("FO's idle expiry ends this app's session (fo-shell.js)", () => {
     const page = loadShell({ tokenPresent: false });
     await page.advance(20_000);
     assert.deepEqual(page.posts, ["/api/pwa/auth/logout"]);
+  });
+
+  test("a sign-in in another tab replaces the token: this page reloads, and signs nobody out", async () => {
+    // Review of c193e9e, blocking issue 1: FabOrchestrator's chat keeps the
+    // bearer it loaded with, so a stale tab would send the old bearer beside
+    // the new cookie; the gateway refuses it, FO's fetch wrapper wipes the
+    // shared storage, and the new session dies. Reloading first prevents it.
+    const page = loadShell();
+    await page.advance(4_000);
+    page.storageEvent(page.anotherTabSignsIn());
+    await page.advance(0);
+    assert.equal(page.reloads(), 1, "the page reloads to pick up the new bearer");
+    assert.deepEqual(page.posts, [], "no sign-out: the new session is left alone");
+    assert.deepEqual(page.navigations, []);
+    assert.equal(page.store.get("llmatscale_auth_token"), "pwa-bearer-2", "the new token is untouched");
+    // Nothing repeats while the reload is on its way.
+    await page.advance(10_000);
+    assert.equal(page.reloads(), 1);
+    assert.deepEqual(page.posts, []);
+  });
+
+  test("the replacement is caught by the watcher too, when the storage event was missed", async () => {
+    const page = loadShell();
+    await page.advance(4_000);
+    page.anotherTabSignsIn(); // the event never arrives (a frozen tab)
+    await page.advance(1_500);
+    assert.equal(page.reloads(), 1);
+    assert.deepEqual(page.posts, []);
+  });
+
+  test("the same token written again is not a new session", async () => {
+    const page = loadShell();
+    await page.advance(4_000);
+    page.storageEvent({ key: "llmatscale_auth_token", oldValue: "pwa-bearer", newValue: "pwa-bearer" });
+    await page.advance(3_000);
+    assert.equal(page.reloads(), 0);
+    assert.deepEqual(page.posts, []);
   });
 
   test("the plan's client order: the server told, both keys forgotten, sign-in returns to the page (RP2)", async () => {

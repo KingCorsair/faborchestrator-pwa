@@ -56,15 +56,50 @@
   var FO_TOKEN_KEY = "llmatscale_auth_token";
   var FO_SESSION_KEY = "llmatscale_auth_session";
   var signingOut = false;
+  var reloading = false;
+  /* The bearer this page loaded under, once FabOrchestrator has booted. */
+  var known = null;
+  /* Storage that cannot be read (private mode, blocked cookies): never a
+   * reason to sign out or reload on a guess. */
+  var UNREADABLE = {};
 
-  function foTokenPresent() {
+  function tokenNow() {
     try {
-      return !!window.localStorage.getItem(FO_TOKEN_KEY);
+      return window.localStorage.getItem(FO_TOKEN_KEY);
     } catch (_error) {
-      // Storage unreadable (private mode, blocked cookies). Say "present" so a
-      // browser that cannot answer is never signed out on a guess.
-      return true;
+      return UNREADABLE;
     }
+  }
+
+  /* ── A re-sign-in in another tab replaces the token: reload, don't stay ──
+   *
+   * FabOrchestrator's chat builds its request transport once, when the page
+   * loads, with the bearer it found in localStorage then. A sign-in in another
+   * tab writes a new bearer beside a new cookie, and this page would keep
+   * sending the old one: the gateway refuses it, and FabOrchestrator's fetch
+   * wrapper treats any authenticated 401 as "the session expired" and wipes
+   * the shared localStorage — taking the new session down with it (review of
+   * c193e9e, 30 September 2026, blocking issue 1). So a token that *changes*
+   * to a different, present value means a newer session on this browser, and
+   * this page reloads to pick it up before it can send the old one. A token
+   * that *disappears* still means sign-out, below. */
+  function reloadForNewSession() {
+    if (reloading || signingOut) return;
+    reloading = true;
+    try {
+      window.location.reload();
+    } catch (_error) {
+      /* Never worth an error on FabOrchestrator's page. */
+    }
+  }
+
+  /* One look at the token: gone → sign out; replaced → reload; else remember. */
+  function checkToken() {
+    var token = tokenNow();
+    if (token === UNREADABLE) return;
+    if (!token) return endSession();
+    if (known && token !== known) return reloadForNewSession();
+    known = token;
   }
 
   /* Sign-in, returning to this page afterwards: FabOrchestrator's idle expiry
@@ -119,17 +154,18 @@
     // boot, and reading before it has finished would sign out a session that is
     // in the middle of starting.
     setTimeout(function () {
-      if (!foTokenPresent()) return endSession();
-      setInterval(function () {
-        if (!foTokenPresent()) endSession();
-      }, 1500);
-      // Another tab signing out, and coming back to a backgrounded tab, are
-      // both cheaper to catch than to wait 1.5s for.
+      checkToken();
+      if (signingOut) return;
+      setInterval(checkToken, 1500);
+      // Another tab signing out, or signing in again, and coming back to a
+      // backgrounded tab, are all cheaper to catch than to wait 1.5s for.
       window.addEventListener("storage", function (e) {
-        if (e.key === FO_TOKEN_KEY && !e.newValue) endSession();
+        if (e.key !== FO_TOKEN_KEY) return;
+        if (!e.newValue) return endSession();
+        if (known && e.newValue !== known) reloadForNewSession();
       });
       document.addEventListener("visibilitychange", function () {
-        if (!document.hidden && !foTokenPresent()) endSession();
+        if (!document.hidden) checkToken();
       });
     }, 4000);
   }

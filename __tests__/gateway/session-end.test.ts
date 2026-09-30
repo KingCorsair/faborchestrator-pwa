@@ -2,13 +2,20 @@
  * The gateway ending a session (plan RP2, finding G5), driven through the real
  * route handler against a stubbed FabOrchestrator.
  *
- * When a bearer is a real session that has ended — expired, or paired with a
- * cookie that is not its own — the gateway answers 401 `session_invalid` at
- * once with the cookie cleared, and revokes the cookie's FabOrchestrator token
- * after the response. Clearing alone would not do: the client's follow-up
- * sign-out then arrives with no cookie and cannot revoke, and FabOrchestrator
- * keeps the session until its own 30-day expiry. A malformed bearer changes
- * nothing; it may be a stray header.
+ * When a bearer is a real session that has ended — expired — **and the cookie
+ * beside it is that session's own**, the gateway answers 401 `session_invalid`
+ * at once with the cookie cleared, and revokes the cookie's FabOrchestrator
+ * token after the response. Clearing alone would not do: the client's
+ * follow-up sign-out then arrives with no cookie and cannot revoke, and
+ * FabOrchestrator keeps the session until its own 30-day expiry.
+ *
+ * Every other refusal leaves the cookie alone. A malformed bearer may be a
+ * stray header. A bearer beside a cookie that is not its own — expired or
+ * still valid — is a tab left open across a re-sign-in in another tab
+ * (FabOrchestrator's chat keeps the bearer it loaded with): the cookie is the
+ * *new* session's, and until 30 September 2026 this route revoked it (review
+ * of c193e9e, blocking issue 1). The assertion that matters: **after the stale
+ * tab is refused, the new session still works.**
  */
 
 import { test, describe, beforeEach, afterEach } from "node:test";
@@ -31,7 +38,10 @@ const FO_TOKEN = "fo-session-not-a-real-token";
 const USER = { id: "u1", email: "op@plant.example", name: "Op", roleName: "Business User" };
 const LIVE = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), FO_TOKEN).token;
 const EXPIRED = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), FO_TOKEN).token;
-const SOMEBODY_ELSES = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), "a-different-fo-token").token;
+/** Session A, from an earlier sign-in on the same browser: its own FO token is not the cookie's. */
+const OLD_FO_TOKEN = "a-different-fo-token";
+const SOMEBODY_ELSES = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), OLD_FO_TOKEN).token;
+const OLD_AND_EXPIRED = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), OLD_FO_TOKEN).token;
 
 const realFetch = globalThis.fetch;
 const realInfo = console.info;
@@ -79,30 +89,67 @@ afterEach(() => {
 });
 
 describe("a session that has ended is ended here too (G5)", () => {
-  for (const [label, bearer] of [
-    ["an expired bearer beside its cookie", EXPIRED],
-    ["a bearer beside a cookie that is not its own", SOMEBODY_ELSES],
+  test("an expired bearer beside its own cookie: 401 at once, the cookie cleared, FabOrchestrator's token revoked after", async () => {
+    stubFo();
+    const res = await call("GET", "/api/conversations", {
+      authorization: `Bearer ${EXPIRED}`,
+      cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}`,
+    });
+    assert.equal(res.status, 401);
+    assert.equal(((await res.json()) as { code: string }).code, "session_invalid");
+    assert.match(res.headers.get("set-cookie") ?? "", new RegExp(`${FO_TOKEN_COOKIE}=;`));
+    assert.ok(!seen.some((c) => c.path === "/api/conversations"), "the request itself is never forwarded");
+
+    await settle();
+    const revoke = seen.find((c) => c.path === "/api/auth/logout");
+    assert.ok(revoke, "FabOrchestrator must be told, or the session row lives for 30 days");
+    assert.equal(revoke!.bearer, `Bearer ${FO_TOKEN}`);
+    const end = info.find((l) => l.includes('"event":"session_end"'));
+    assert.ok(end && end.includes('"reason":"gateway_refusal"'), info.join("\n"));
+    assert.ok(!info.join("\n").includes(FO_TOKEN), "never the token itself");
+  });
+
+  // The stale tab (review of c193e9e, blocking issue 1). Session A was signed
+  // in first; a re-sign-in in another tab replaced the cookie with session B's
+  // and wrote bearer B to localStorage; a FabOrchestrator page loaded under A
+  // still sends bearer A. The cookie is B's, and B must survive.
+  for (const [label, staleBearer] of [
+    ["an expired bearer A beside the newer cookie B", OLD_AND_EXPIRED],
+    ["a still-valid bearer A beside the newer cookie B", SOMEBODY_ELSES],
   ] as const) {
-    test(`${label}: 401 at once, the cookie cleared, FabOrchestrator's token revoked after`, async () => {
+    test(`${label}: 401, cookie B kept, FO session B not revoked, and B still works afterwards`, async () => {
       stubFo();
-      const res = await call("GET", "/api/conversations", {
-        authorization: `Bearer ${bearer}`,
+      const stale = await call("GET", "/api/conversations", {
+        authorization: `Bearer ${staleBearer}`,
         cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}`,
       });
-      assert.equal(res.status, 401);
-      assert.equal(((await res.json()) as { code: string }).code, "session_invalid");
-      assert.match(res.headers.get("set-cookie") ?? "", new RegExp(`${FO_TOKEN_COOKIE}=;`));
-      assert.ok(!seen.some((c) => c.path === "/api/conversations"), "the request itself is never forwarded");
-
+      assert.equal(stale.status, 401);
+      assert.equal(((await stale.json()) as { code: string }).code, "session_invalid");
+      assert.equal(stale.headers.get("set-cookie"), null, "cookie B is not cleared");
       await settle();
-      const revoke = seen.find((c) => c.path === "/api/auth/logout");
-      assert.ok(revoke, "FabOrchestrator must be told, or the session row lives for 30 days");
-      assert.equal(revoke!.bearer, `Bearer ${FO_TOKEN}`);
-      const end = info.find((l) => l.includes('"event":"session_end"'));
-      assert.ok(end && end.includes('"reason":"gateway_refusal"'), info.join("\n"));
-      assert.ok(!info.join("\n").includes(FO_TOKEN), "never the token itself");
+      assert.deepEqual(seen, [], "nothing forwarded, and no revoke of B (or of anything)");
+      assert.ok(!info.some((l) => l.includes('"event":"session_end"')), "no session ended");
+
+      // Tab B, the session that was signed in last, carries on.
+      const fresh = await call("GET", "/api/conversations", {
+        authorization: `Bearer ${LIVE}`,
+        cookie: `${FO_TOKEN_COOKIE}=${FO_TOKEN}`,
+      });
+      assert.equal(fresh.status, 200);
+      assert.equal(fresh.headers.get("set-cookie"), null);
+      await fresh.text();
+      assert.deepEqual(seen, [{ method: "GET", path: "/api/conversations", bearer: `Bearer ${FO_TOKEN}` }]);
     });
   }
+
+  test("an expired bearer with no cookie at all: 401 and nothing to end", async () => {
+    stubFo();
+    const res = await call("GET", "/api/conversations", { authorization: `Bearer ${EXPIRED}` });
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("set-cookie"), null);
+    await settle();
+    assert.deepEqual(seen, []);
+  });
 
   test("several calls refused at once revoke once", async () => {
     stubFo();

@@ -1,11 +1,56 @@
 # Where this project stands
 
-**As of 30 September 2026.** Code on branch `pwa/amay-embed-fo-production-hardening` of `KingCorsair/faborchestrator-pwa` (**public** on GitHub as of 30 September; see "Open" below). The embedding baseline and the 29–30 September production-hardening commits are described in their commit messages; the section directly below records the corrections made on top of them on 30 September.
+**As of 1 October 2026.** Code on branch `pwa/amay-embed-fo-production-hardening` of `KingCorsair/faborchestrator-pwa` (**public** on GitHub as of 30 September; see "Open" below). The embedding baseline and the 29–30 September production-hardening commits are described in their commit messages; the section directly below records the corrections made on top of them on 30 September.
 
 This file is the running answer to "where are we and what is left". It records
 what has been *proved*, not what has been written — anything claimed here has a
 test, a probe report, or a browser run behind it. When the two disagree, this
 file is wrong and should be corrected.
+
+---
+
+## One account, several devices: each device's conversations are its own — 1 October 2026
+
+**On this branch, local only: not deployed, not pushed.** The hardening app
+still runs release v3 (`06acee8`, tagged locally `deployed-hardening-v3`).
+
+**Asked for (Amay, 1 October):** several people may sign in with the same
+FabOrchestrator account; inside this app each device is its own private session
+and sees and uses only the conversations it started. **FabOrchestrator is not
+changed**: logins, plant data and the model stay the existing real ones. The
+full description, limits and deployment steps are in
+`docs/CONVERSATION_SEATS.md`.
+
+| Area | Change | Where | Tests |
+|---|---|---|---|
+| Device and seat | A browser's first sign-in mints a device key in the httpOnly cookie `__Host-faborch_seat`; its hash, the seat, is signed into the session (`sid`). Sign-out and expiry leave the cookie, so the same browser returns to the same seat. Nothing is sent to FabOrchestrator | `lib/faborch/device.ts`, `lib/auth.ts`, `app/api/pwa/auth/login/route.ts` | `device-seat.test.ts` (20) |
+| Ownership store | One append-only file of validated, checksummed records; writes serialised and flushed before they are believed; a corrupt or conflicting record grants nothing; no in-memory fallback | `lib/gateway/seat-store.ts` | `seat-store.test.ts` (23) |
+| The seat rule | The conversation list is cut down to the seat's rows; a new conversation is recorded before the phone hears of it; any request naming a conversation that is not the seat's is refused before FabOrchestrator is asked; everything else is forwarded unchanged | `lib/gateway/seats.ts`, `app/fo-gateway/[...path]/route.ts` | `seat-isolation.test.ts` (39) |
+| Artifacts | `/api/artifacts` is denied (404): an artifact id cannot be tied to a device and FabOrchestrator's client never calls it | `lib/gateway/registry.ts` | `seat-isolation.test.ts` |
+| Deployment | The store lives on a volume; the container starts as root only to hand the store's directory to `nextjs`, then runs the server as `nextjs` | `Dockerfile`, `fly.hardening.toml`, `.env.example` | not built locally (no Docker here) |
+
+**Verified, locally.** 879 tests (797 before), `tsc`, `eslint`, `next build`.
+`scripts/two-seat-check.mjs`, two cookie jars on one account through this app's
+production build against an **unmodified** local FabOrchestrator: **72 of 72**,
+including the check that FabOrchestrator itself still lists both conversations
+for the account. After a hard kill and restart on the same store file each
+device still had exactly its own (6 of 6). Two separate browsers on
+FabOrchestrator's real screens: 11 of 11. The local FabOrchestrator used a local
+test database and a model stand-in (no working model key was available).
+
+**Not verified.** Anything against the real FabOrchestrator or the deployed
+app; the container image (the start command was syntax-checked, not run); real
+phones.
+
+**Departs from the plan.** RP2 records "no PWA session store" and "shared
+accounts are not a PWA requirement" (24 September). This implements the opposite
+on the owner's instruction; the plan document was not edited and needs a
+revision and its review.
+
+**Open.** Deploying needs a 1 GB Fly volume and recreates the machine. Everybody
+is signed out once and every device starts with an empty history; existing
+conversations stay in FabOrchestrator and at its own site. Isolation is inside
+this app only. Memory, usage limits, settings and MCP connections stay shared.
 
 ---
 

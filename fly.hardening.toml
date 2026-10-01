@@ -56,7 +56,24 @@ primary_region = "sjc"
   # Kept for the rollback to "surfaces"; ignored while the mode is "whole".
   FO_EMBED_SURFACES = "/chat,/reports"
 
+  # ── Which device started which conversation (1 October 2026) ───────────────
+  #
+  # Several people may sign in with the same FabOrchestrator account, and each
+  # device sees and uses only the conversations it started
+  # (`lib/gateway/seats.ts`). That fact is kept in this one append-only file,
+  # on the volume mounted below, so it survives restarts and deploys.
+  # Without this variable every conversation route answers 503: there is no
+  # in-memory fallback.
+  SEAT_STORE_PATH = "/data/seat-store/conversations.log"
+
 [build]
+
+# The seat store's volume. Create it once, before the first deploy that names it:
+#   flyctl volumes create seat_store --size 1 --region sjc --app faborch-pwa-amay-hardening
+# A volume belongs to one machine: this app runs exactly one (`--ha=false`).
+[mounts]
+  source = "seat_store"
+  destination = "/data"
 
 [http_service]
   internal_port = 3000

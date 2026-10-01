@@ -17,6 +17,10 @@ next-env.d.ts
 # deployment's URL, so a committed copy is a link that goes stale silently.
 qr/
 
+# The local seat store (`SEAT_STORE_PATH` in .env.example): who started which
+# conversation on this machine. Never committed.
+.seat-store/
+
 .DS_Store
 *.pem
 npm-debug.log*

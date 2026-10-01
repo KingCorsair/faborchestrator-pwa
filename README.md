@@ -239,6 +239,7 @@ Three more read FabOrchestrator itself, read-only, for the embedding baseline
 
 ```bash
 node scripts/embed-live-check.mjs       # the embedding gateway: ownership, assets, single login (needs FO_EMBED_SURFACES set)
+node scripts/two-seat-check.mjs         # two devices on ONE account keep private conversations; writes and makes model calls, so it takes its own account (SEAT_CHECK_EMAIL/PASSWORD)
 node scripts/embed-mobile-check.mjs     # the embedded FO chat at 390×844 and 360×640 → docs/probes/wp2-shots/
 node scripts/embed-routing-check.mjs    # two builds on one origin: service worker, cross-build navigation, chunk caching
 node scripts/embed-dashboard-check.mjs     # the FO Dashboard/Reports surface through the gateway

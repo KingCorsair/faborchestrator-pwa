@@ -89,7 +89,20 @@ export interface SessionPayload extends SessionUser {
   aud?: string;
   /** The signing key's public id. Absent only on tokens minted before 2026-09-30. */
   kid?: string;
+  /**
+   * The seat: which device this session was started on (`lib/faborch/device.ts`).
+   * A one-way hash of the device's key, never the key. It is what separates two
+   * devices signed in to the same FabOrchestrator account: the gateway lets a
+   * session use only the conversations its seat started
+   * (`lib/gateway/seats.ts`). Signed with the rest of the payload, so a client
+   * cannot claim another seat. Absent only on tokens minted before 2026-10-01,
+   * which can use no conversation route.
+   */
+  sid?: string;
 }
+
+/** A seat id: 43 base64url characters (`seatIdFor`). */
+const SEAT_ID = /^[A-Za-z0-9_-]{43}$/;
 
 /**
  * A short, one-way fingerprint of an FO token.
@@ -226,6 +239,7 @@ export function sessionFor(
   notAfter: string,
   foToken: string,
   now: number = Date.now(),
+  seatId?: string,
 ): LoginResult {
   const ring = sessionKeyRing();
   let exp = now + ttlMs();
@@ -246,6 +260,7 @@ export function sessionFor(
     iss: SESSION_ISSUER,
     aud: SESSION_AUDIENCE,
     kid: ring.current.id,
+    ...(seatId ? { sid: seatId } : {}),
   };
   const body = b64url(JSON.stringify(payload));
 
@@ -304,6 +319,8 @@ export function inspectToken(token: string, now: number = Date.now()): TokenInsp
     }
   }
   if (typeof payload.exp !== "number" || typeof payload.fp !== "string" || !payload.fp) return INVALID;
+  // A seat, when a token carries one, is one of ours or the token is not.
+  if (payload.sid !== undefined && !(typeof payload.sid === "string" && SEAT_ID.test(payload.sid))) return INVALID;
 
   return payload.exp <= now ? { kind: "expired", payload } : { kind: "valid", payload };
 }

@@ -7,6 +7,7 @@ import {
   FabOrchRequestError,
   type FoSession,
 } from "@/lib/faborch/client";
+import { deviceKeyFrom, newDeviceKey, seatIdFor, setDeviceCookie } from "@/lib/faborch/device";
 import { revokeFoSession, sessionConfigProblems, type SessionEndReason } from "@/lib/faborch/end-session";
 import { clearPasswordChangeMark, passwordChangeMarkedFor } from "@/lib/faborch/password-mark";
 import { foTokenFrom, sessionCookieGraceSeconds, setFoTokenCookie } from "@/lib/faborch/session";
@@ -80,6 +81,16 @@ const NO_STORE = { "Cache-Control": "no-store" };
  *  5. The answer carries `next`: FabOrchestrator's change page when the account
  *     must change its password, which is the only way a phone can reach it.
  *     The FO cookie lives as long as this app's session plus a short grace.
+ *
+ * ── Which device is signing in (1 October 2026) ─────────────────────────────
+ * Several people may share one FabOrchestrator account, and each device must
+ * keep its own conversations. So step 4 also names the device: this browser's
+ * device key (`lib/faborch/device.ts`), the one in its cookie or a new one at
+ * its first sign-in, is hashed into a **seat**, and the seat is signed into
+ * this app's session. The gateway then lets the session use only the
+ * conversations that seat started (`lib/gateway/seats.ts`). Nothing about the
+ * device is sent to FabOrchestrator. The cookie is renewed once the sign-in
+ * has succeeded; sign-out never clears it.
  *
  * Anything that fails after FabOrchestrator has issued a token revokes that
  * token before answering, so a failed sign-in never leaves a live FO session.
@@ -257,6 +268,9 @@ async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResp
 
   // ── Step 4: this app's own session, for an operator FO has vouched for ────
   // `fo.expiresAt` caps it at FabOrchestrator's own expiry — see `sessionFor`.
+  // The session carries this browser's seat: the key it already holds, or a
+  // new one for a browser signing in for the first time.
+  const deviceKey = deviceKeyFrom(req) ?? newDeviceKey();
   const session = sessionFor(
     {
       id: fo.user.id,
@@ -266,6 +280,8 @@ async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResp
     },
     fo.expiresAt,
     fo.token,
+    undefined,
+    seatIdFor(deviceKey),
   );
 
   // ── Step 5: the answer ─────────────────────────────────────────────────────
@@ -296,6 +312,8 @@ async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResp
     { headers: NO_STORE },
   );
   setFoTokenCookie(req, res, fo.token, session.expiresAt);
+  // The same browser returns to the same seat at its next sign-in.
+  setDeviceCookie(req, res, deviceKey);
   // FabOrchestrator no longer holds this user for a change: the mark from an
   // earlier change has done its job.
   if (!forcedChange && passwordChangeMarkedFor(req, fo.user.id)) clearPasswordChangeMark(res);

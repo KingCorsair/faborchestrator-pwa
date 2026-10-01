@@ -434,6 +434,26 @@ export async function foLogout(token: string): Promise<boolean> {
   }
 }
 
+/**
+ * Delete a conversation FabOrchestrator has just created, with the caller's own
+ * token. The seat rule's undo (`lib/gateway/seats.ts`): a new conversation
+ * whose ownership could not be recorded must not be left for nobody. Never
+ * throws; false means it may still exist.
+ */
+export async function foDeleteConversation(token: string, id: string): Promise<boolean> {
+  try {
+    const res = await fetchFo(
+      `/api/conversations/${encodeURIComponent(id)}`,
+      { method: "DELETE", headers: authHeader(token) },
+      { timeoutMs: FO_CALL_TIMEOUTS.revoke },
+    );
+    return res.ok || res.status === 404;
+  } catch {
+    // Too slow or unreachable; `fetchFo` has already reported which.
+    return false;
+  }
+}
+
 /** One turn of a conversation, in the shape `ChatRequestSchema` accepts. */
 export interface FoUiMessage {
   role: "user" | "assistant";

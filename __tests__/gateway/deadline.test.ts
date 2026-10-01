@@ -32,6 +32,10 @@ import {
   gatewayBudgets,
 } from "@/lib/gateway/deadline";
 import { GET, POST } from "@/app/fo-gateway/[...path]/route";
+import { seatStoreOwning, TEST_SEAT } from "./seat-fixture";
+
+// The two conversations the stopped-answer tests name belong to this seat.
+seatStoreOwning("33333333-3333-4333-8333-333333333333", "66666666-6666-4666-8666-666666666666");
 
 const B = gatewayBudgets({});
 const FO_TOKEN = "fo-session-not-a-real-token";
@@ -39,6 +43,8 @@ const PWA_TOKEN = sessionFor(
   { id: "u1", email: "op@plant.example", name: "Op", roleName: "Business User" },
   new Date(Date.now() + 864e5).toISOString(),
   FO_TOKEN,
+  undefined,
+  TEST_SEAT,
 ).token;
 
 const realFetch = globalThis.fetch;

@@ -33,22 +33,30 @@ import { PASSWORD_CHANGED_COOKIE, passwordMarkFor } from "@/lib/faborch/password
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { GATEWAY_MARKER_HEADER } from "@/lib/gateway/registry";
 import { GET, POST } from "@/app/fo-gateway/[...path]/route";
+import { seatStoreOwning, TEST_SEAT } from "./seat-fixture";
+
+seatStoreOwning();
 
 const FO_TOKEN = "fo-session-not-a-real-token";
 const USER = { id: "u1", email: "op@plant.example", name: "Op", roleName: "Business User" };
-const LIVE = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), FO_TOKEN).token;
-const EXPIRED = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), FO_TOKEN).token;
+const LIVE = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), FO_TOKEN, undefined, TEST_SEAT).token;
+const EXPIRED = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), FO_TOKEN, undefined, TEST_SEAT).token;
 /** Session A, from an earlier sign-in on the same browser: its own FO token is not the cookie's. */
 const OLD_FO_TOKEN = "a-different-fo-token";
-const SOMEBODY_ELSES = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), OLD_FO_TOKEN).token;
-const OLD_AND_EXPIRED = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), OLD_FO_TOKEN).token;
+const SOMEBODY_ELSES = sessionFor(USER, new Date(Date.now() + 864e5).toISOString(), OLD_FO_TOKEN, undefined, TEST_SEAT).token;
+const OLD_AND_EXPIRED = sessionFor(USER, new Date(Date.now() - 1000).toISOString(), OLD_FO_TOKEN, undefined, TEST_SEAT).token;
 
 const realFetch = globalThis.fetch;
 const realInfo = console.info;
 let seen: { method: string; path: string; bearer: string | null }[] = [];
 let info: string[] = [];
 
-function stubFo(answer: (path: string, method: string) => Response = () => Response.json({ ok: true })) {
+function stubFo(
+  // `/api/conversations` is the path these tests call, and the gateway reads
+  // that answer as a list (`lib/gateway/seats.ts`): an empty one by default.
+  answer: (path: string, method: string) => Response = (path) =>
+    path === "/api/conversations" ? Response.json([]) : Response.json({ ok: true }),
+) {
   globalThis.fetch = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const path = new URL(String(input)).pathname;
     const method = (init.method ?? "GET").toUpperCase();

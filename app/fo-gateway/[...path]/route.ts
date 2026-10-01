@@ -31,6 +31,16 @@
  *     decompressed the body already; the server compresses again for the
  *     phone. Streams keep the two headers that stop intermediaries buffering.
  *
+ * ── The seat rule (1 October 2026) ──────────────────────────────────────────
+ * Several devices may be signed in to one FabOrchestrator account, and each
+ * may use only the conversations it started (`lib/gateway/seats.ts`). On the
+ * way in, a request that names a conversation which is not the session's seat's
+ * is refused before FabOrchestrator is asked anything. On the way back, the
+ * conversation list is read whole and cut down to the seat's own rows, and a
+ * newly created conversation is recorded as the seat's before the phone hears
+ * of it. Those two answers are small JSON and are the only ones this handler
+ * holds rather than pipes. Everything forwarded is forwarded unchanged.
+ *
  * ── Its own refusals are coded (plan RP5) ───────────────────────────────────
  * Every answer the gateway makes itself carries `{code, error}`: 401
  * `session_invalid`, 400 `invalid_request`, 403 `conversation_forbidden`, 404
@@ -67,15 +77,28 @@ import {
   checkChatBody,
   deletedConversationId,
   forgetConversation,
-  isConversationCreate,
-  isConversationList,
   needsOwnershipCheck,
   refusedConversationId,
-  warmFromCreateStream,
-  warmFromListStream,
+  rememberCreated,
+  rememberFromList,
 } from "@/lib/gateway/ownership";
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { classify, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
+import {
+  claimCreatedConversation,
+  conversationIdInChatBody,
+  filterListForSeat,
+  MAX_CREATE_BYTES,
+  MAX_LIST_BYTES,
+  readBodyUpTo,
+  refusalForConversation,
+  refusalIfStoreDown,
+  SEAT_FORBIDDEN,
+  SEAT_UNAVAILABLE,
+  seatGateFor,
+  type SeatGate,
+  type SeatRefusal,
+} from "@/lib/gateway/seats";
 import { foOrigins, upstreamOrigin } from "@/lib/gateway/upstream";
 import { logEvent, reportError } from "@/lib/report-error";
 
@@ -163,6 +186,34 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   const method = req.method.toUpperCase();
   const hasBody = method !== "GET" && method !== "HEAD";
 
+  // ── The seat rule, on the way in (lib/gateway/seats.ts) ──────────────────
+  //
+  // Only for a signed-in request: an anonymous one carries no token, and
+  // FabOrchestrator answers it 401 itself. Decided from the path here, before
+  // a byte of the body is read or FabOrchestrator is asked anything.
+  const gate: SeatGate = verdict.action === "inject" ? seatGateFor(pathname, method) : { kind: "none" };
+  let seat: string | null = null;
+  if (verdict.action === "inject" && gate.kind !== "none") {
+    seat = verdict.seatId;
+    if (!seat) {
+      // A session from before seats existed. It cannot be given one now, so it
+      // is ended properly (cookie cleared, FabOrchestrator's token revoked) and
+      // the next sign-in has a seat.
+      logEvent("warn", "gateway_refused", { path: pathname, reason: "no_seat", method });
+      const res = coded(401, SESSION_INVALID.code, SESSION_INVALID.error);
+      endServerSession(res, verdict.foToken, "no_seat");
+      return res;
+    }
+    if (gate.kind === "refuse") return seatRefused(SEAT_FORBIDDEN);
+    const refusal =
+      gate.kind === "conversation"
+        ? await refusalForConversation(seat, gate.id, pathname)
+        : gate.kind === "chat"
+          ? null // the conversation, if any, is in the body: checked once it is read
+          : await refusalIfStoreDown(pathname);
+    if (refusal) return seatRefused(refusal);
+  }
+
   const headersOut = upstreamRequestHeaders(req.headers, {
     ip: clientIp(req),
     proto: req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || req.nextUrl.protocol.replace(":", ""),
@@ -223,6 +274,14 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     // FabOrchestrator. An id that is not proved is refused with a code the
     // operator can act on — never stripped into a turn that is silently not
     // saved (`lib/gateway/ownership.ts`).
+    // The seat rule first: a conversation another device started is refused
+    // here, and FabOrchestrator is not asked about it at all.
+    if (gate.kind === "chat" && seat) {
+      const named = conversationIdInChatBody(new TextDecoder().decode(read.bytes));
+      const refusal = named ? await refusalForConversation(seat, named, pathname) : null;
+      if (refusal) return seatRefused(refusal);
+    }
+
     if (needsOwnershipCheck(pathname, method) && verdict.action === "inject") {
       const outcome = await checkChatBody(pathname, new TextDecoder().decode(read.bytes), verdict.foToken);
       if (outcome.action === "refuse") {
@@ -333,30 +392,51 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
     body = injectShellScript(body);
   }
 
-  // ── Warming the ownership cache from a list already on its way (WP8) ─────
+  // ── The seat rule, on the way back (lib/gateway/seats.ts) ────────────────
   //
-  // The ownership check above is the only thing here that costs an upstream
-  // round trip, and WP8 measured it: 1,276 ms to first byte for a turn
-  // carrying a conversation id against 708 ms for one without. What it fetches
-  // is this account's conversation list — which FabOrchestrator's own sidebar
-  // has *already* requested through this gateway before anybody could pick a
-  // thread to type into. So the ids are read out of that answer as it streams
-  // past, and the turn that follows finds them waiting. The response is
-  // forwarded chunk by chunk exactly as it would have been; only a copy is
-  // kept, and only until the stream ends.
-  if (body && verdict.action === "inject" && upstream.ok && isConversationList(pathname, method)) {
-    body = warmFromListStream(body, verdict.foToken, requestedAt);
+  // The conversation list is the one answer that would show a device another
+  // device's conversations, so it is read whole (55 KB measured) and only the
+  // rows this seat started are returned. A list that cannot be read, or cannot
+  // be filtered, is refused: it is never passed through as it came.
+  //
+  // The rows kept also warm the ownership cache, as the whole list used to
+  // (WP8): the turn that follows finds its conversation already proved.
+  if (seat && verdict.action === "inject" && gate.kind === "list" && upstream.ok) {
+    const text = body ? await readBodyUpTo(body, MAX_LIST_BYTES) : "[]";
+    if (text === null) {
+      reportError("gateway/seat-list-too-large", new Error("the conversation list is larger than this app will filter"), {
+        path: pathname,
+        limit: MAX_LIST_BYTES,
+      });
+      return seatRefused(SEAT_UNAVAILABLE);
+    }
+    const filtered = await filterListForSeat(text, seat, pathname);
+    if (!filtered.ok) return seatRefused(filtered.refusal);
+    rememberFromList(verdict.foToken, filtered.body, requestedAt);
+    return new NextResponse(filtered.body, { status: upstream.status, headers });
   }
 
-  // ── The same cache, from a create and a delete (RP6) ─────────────────────
-  //
-  // A 201 from `POST /api/conversations` names a conversation FabOrchestrator
-  // just made for this token, so its first turn needs no lookup. A successful
-  // `DELETE /api/conversations/{id}` forgets that id for every token and
-  // leaves a tombstone, so a proof already in flight cannot re-warm it.
-  if (body && verdict.action === "inject" && upstream.status === 201 && isConversationCreate(pathname, method)) {
-    body = warmFromCreateStream(body, verdict.foToken);
+  // A conversation FabOrchestrator has just created is recorded as this seat's
+  // **before** the phone is told its id. If it cannot be recorded it is deleted
+  // again in FabOrchestrator and the phone is told to retry: no conversation is
+  // ever left that no seat owns, and none is handed over unrecorded.
+  if (seat && verdict.action === "inject" && gate.kind === "create" && upstream.ok) {
+    const text = body ? await readBodyUpTo(body, MAX_CREATE_BYTES) : null;
+    const claimed =
+      text === null
+        ? ({ ok: false, refusal: SEAT_UNAVAILABLE } as const)
+        : await claimCreatedConversation(text, seat, verdict.foToken, pathname);
+    if (!claimed.ok) return seatRefused(claimed.refusal);
+    // RP6 `warmFromCreate`: the create is itself the proof for this token.
+    rememberCreated(verdict.foToken, claimed.id);
+    return new NextResponse(text, { status: upstream.status, headers });
   }
+
+  // ── The ownership cache, on a delete (RP6) ───────────────────────────────
+  //
+  // A successful `DELETE /api/conversations/{id}` forgets that id for every
+  // token and leaves a tombstone, so a proof already in flight cannot re-warm
+  // it. (The seat store keeps its record: an id never passes to another seat.)
   const deletedId = upstream.ok ? deletedConversationId(pathname, method) : null;
   if (deletedId) forgetConversation(deletedId);
   // FabOrchestrator refusing a change to a conversation means it is not this
@@ -407,6 +487,11 @@ function coded(status: number, code: string, error: string, retryAfterSeconds?: 
   const headers: Record<string, string> = { ...NO_STORE };
   if (retryAfterSeconds) headers["Retry-After"] = String(retryAfterSeconds);
   return NextResponse.json({ code, error }, { status, headers });
+}
+
+/** One of the seat rule's refusals (`lib/gateway/seats.ts`), as a coded answer. */
+function seatRefused(refusal: SeatRefusal): NextResponse {
+  return coded(refusal.status, refusal.code, refusal.error, refusal.retryAfterSeconds);
 }
 
 /**

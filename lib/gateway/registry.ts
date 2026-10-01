@@ -165,6 +165,11 @@ export const FO_DENIED_PREFIXES: readonly string[] = [
   "/api/auth/password-reset",
   "/api/fabinsight/cron",
   "/api/fabinsight/schema",
+  // Artifacts are reached by an artifact id or a conversation id, and an
+  // artifact id cannot be tied to the device that owns its conversation
+  // (`lib/gateway/seats.ts`). FabOrchestrator's own client never calls this
+  // route, so it is closed rather than half-guarded (1 October 2026).
+  "/api/artifacts",
   "/forgot-password",
   "/reset-password",
 ];
@@ -184,7 +189,6 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/user",
   "/api/memory",
   "/api/messages/feedback",
-  "/api/artifacts",
   "/api/files",
   "/api/fabinsight/pinned",
   "/api/fabinsight/render",

@@ -64,9 +64,11 @@ export type BridgeVerdict =
   | { action: "forward-anonymous" }
   /**
    * A live session of this app, holding the matching cookie. Use this token.
-   * `userId` is the verified session's FabOrchestrator user id.
+   * `userId` is the verified session's FabOrchestrator user id. `seatId` is
+   * the device the session was started on (`lib/faborch/device.ts`), or null
+   * for a session minted before seats existed.
    */
-  | { action: "inject"; foToken: string; userId: string }
+  | { action: "inject"; foToken: string; userId: string; seatId: string | null }
   /**
    * A bearer that does not verify, or verifies without its cookie. Refuse.
    * `endSession` names the FO token to revoke when a real session has ended
@@ -78,7 +80,9 @@ export type BridgeVerdict =
 export function bridgeAuthorization(req: NextRequest): BridgeVerdict {
   const foToken = foTokenFrom(req);
   const check = checkSession(req.headers.get("authorization"), foToken);
-  if (check.ok) return { action: "inject", foToken: check.foToken, userId: check.session.id };
+  if (check.ok) {
+    return { action: "inject", foToken: check.foToken, userId: check.session.id, seatId: check.session.sid ?? null };
+  }
   if (check.why === "no-bearer") return { action: "forward-anonymous" };
 
   // One reason for every failure: saying which check failed tells an attacker

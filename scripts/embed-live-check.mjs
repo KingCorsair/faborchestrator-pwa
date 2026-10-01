@@ -312,20 +312,19 @@ if (firstConversationId) {
     record("wp5", "a conversation can be written to (pinned, then unpinned)", pin.ok && unpin.ok, `HTTP ${pin.status} then ${unpin.status}`);
   }
   {
-    // Artifacts for that thread. FabOrchestrator checks ownership on this one
-    // itself, so a 200 here is FabOrchestrator agreeing the caller owns it.
+    // Artifacts. Closed at the gateway since 1 October 2026: an artifact id
+    // cannot be tied to the device that owns its conversation
+    // (`lib/gateway/seats.ts`), and FabOrchestrator's client never calls this
+    // route. So the caller's own conversation and somebody else's are both 404.
     const res = await get(`/api/artifacts?conversationId=${firstConversationId}`, { headers: bearer });
-    const body = await res.json().catch(() => null);
-    const arts = body?.artifacts ?? (Array.isArray(body) ? body : []);
-    record("wp5", "artifacts for a conversation are readable", res.status === 200, `HTTP ${res.status}, ${arts.length} artifacts`);
+    await res.text();
+    record("wp5", "the artifacts route is closed, even for the caller's own conversation", res.status === 404, `HTTP ${res.status}`);
   }
   {
-    // Somebody else's conversation. FabOrchestrator's own check should refuse
-    // this, and the gateway must not paper over the refusal.
     const forged = "00000000-0000-4000-8000-000000000000";
     const res = await get(`/api/artifacts?conversationId=${forged}`, { headers: bearer });
     await res.text();
-    record("wp5", "…and a conversation that is not the caller's is refused by FabOrchestrator", res.status === 403 || res.status === 404, `HTTP ${res.status}`);
+    record("wp5", "…and for a conversation that is not the caller's", res.status === 404, `HTTP ${res.status}`);
   }
 }
 {

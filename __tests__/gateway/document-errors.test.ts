@@ -21,12 +21,17 @@ import { sessionFor } from "@/lib/auth";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { GATEWAY_MARKER_HEADER } from "@/lib/gateway/registry";
 import { GET } from "@/app/fo-gateway/[...path]/route";
+import { seatStoreOwning, TEST_SEAT } from "./seat-fixture";
+
+seatStoreOwning();
 
 const FO_TOKEN = "fo-session-not-a-real-token";
 const PWA_TOKEN = sessionFor(
   { id: "u1", email: "op@plant.example", name: "Op", roleName: "Business User" },
   new Date(Date.now() + 864e5).toISOString(),
   FO_TOKEN,
+  undefined,
+  TEST_SEAT,
 ).token;
 
 const realFetch = globalThis.fetch;

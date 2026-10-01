@@ -211,6 +211,15 @@ function remember(token: string, id: string, provedSince: number = Date.now()): 
   }
 }
 
+/**
+ * Remember a conversation FabOrchestrator has just created for this token (RP6
+ * `warmFromCreate`), for a caller that already holds the answer rather than a
+ * stream of it (`lib/gateway/seats.ts` reads the create's answer whole).
+ */
+export function rememberCreated(token: string, id: string): void {
+  remember(token, id);
+}
+
 function remembered(token: string, id: string): boolean {
   const key = cacheKey(token, id);
   const expires = owned.get(key);

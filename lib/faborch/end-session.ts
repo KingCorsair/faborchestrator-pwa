@@ -40,6 +40,8 @@ export type SessionEndReason =
   | "fo_signed_out"
   /** The gateway refused a bearer whose session had ended (G5). */
   | "gateway_refusal"
+  /** A session with no seat (minted before 1 October 2026) asked for a conversation route. */
+  | "no_seat"
   /** A new sign-in on this browser replaced an older session (RP2 login step 3). */
   | "replaced"
   /** Sign-in's `/me` probe refused the token FabOrchestrator had just issued. */

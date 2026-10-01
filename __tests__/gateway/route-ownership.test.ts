@@ -24,14 +24,20 @@ import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { resetOwnershipCache } from "@/lib/gateway/ownership";
 import { GATEWAY_MARKER_HEADER } from "@/lib/gateway/registry";
 import { DELETE, GET, PATCH, POST } from "@/app/fo-gateway/[...path]/route";
+import { seatStoreOwning, TEST_SEAT } from "./seat-fixture";
 
 const FO_TOKEN = "fo-session-not-a-real-token";
 const MINE = "11111111-1111-4111-8111-111111111111";
 const THEIRS = "22222222-2222-4222-8222-222222222222";
+// These tests are about FabOrchestrator's own ownership answer, so the seat
+// rule is satisfied for both ids and the proof decides (`seat-fixture.ts`).
+seatStoreOwning(MINE, THEIRS);
 const PWA_TOKEN = sessionFor(
   { id: "u1", email: "op@plant.example", name: "Op", roleName: "Business User" },
   new Date(Date.now() + 864e5).toISOString(),
   FO_TOKEN,
+  undefined,
+  TEST_SEAT,
 ).token;
 
 const realFetch = globalThis.fetch;

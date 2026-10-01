@@ -69,9 +69,17 @@ disconnect (§9 question 47). The plan document itself was not edited.
 
 ### What a deploy now needs
 
-* **`SESSION_SIGNING_KEY_ID`** — `fly.toml` and `fly.preview.toml` set
-  `2026-09`; any other app (for example `faborch-pwa-amay-hardening`) must set
-  it, or sign-in and every gateway call fail loudly.
+* **`SESSION_SIGNING_KEY_ID`** — `fly.toml`, `fly.preview.toml` and
+  `fly.hardening.toml` set `2026-09`; any other app must set it, or sign-in
+  and every gateway call fail loudly.
+* **The hardening test app keeps the UI split, on purpose**
+  (`fly.hardening.toml`, `faborch-pwa-amay-hardening`): `FO_UI_BASE_URL` with
+  `FO_UI_SPLIT_ALLOWED=1`, so FabOrchestrator's pages come from the
+  `mobile-nav-preview` build and the phone has its sidebar opener and Back
+  button, while every API call goes to FabOrchestrator production through the
+  gateway. A deploy of that app without the two lines (release v2, 30
+  September) removed the phone navigation; nothing in this app changed.
+  Temporary, until FabOrchestrator production has the fix.
 * **`SESSION_SIGNING_SECRET` of at least 32 characters** (the old minimum was 16).
 * To show FabOrchestrator's real screens, **remove `FO_UI_BASE_URL`** from the
   app's settings; left alone without `FO_UI_SPLIT_ALLOWED=1`, every

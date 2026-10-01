@@ -1,0 +1,73 @@
+# Fly.io configuration for the **hardening test app**, not for production.
+#
+# ── What this app is (30 September 2026) ──────────────────────────────────────
+# `faborch-pwa-amay-hardening` runs the branch
+# `pwa/amay-embed-fo-production-hardening`: the same-origin gateway with the
+# session, timeout, body-size, stopped-answer and ownership-cache fixes. It is
+# where that branch is checked on a real deployment before anything is merged.
+# Production (`faborch-demo`, `fly.toml`) and the embedding preview
+# (`faborch-embed-preview`, `fly.preview.toml`) are separate apps and are never
+# read or changed by a deploy that names this file.
+#
+# Until this file existed the app was deployed from a scratch copy of
+# `fly.preview.toml`, and a redeploy that left `FO_UI_BASE_URL` out took the
+# phone's sidebar opener and Back button away (release v2, 30 September). The
+# settings are recorded here so a later redeploy cannot drop them by accident.
+#
+# Deploy (from the repository root, on the hardening branch):
+#   flyctl deploy . -c fly.hardening.toml --ha=false --app faborch-pwa-amay-hardening
+#
+# `SESSION_SIGNING_SECRET` is a Fly secret and is not in this file or in Git.
+app = "faborch-pwa-amay-hardening"
+
+# Beside FabOrchestrator's origin, for the reason `fly.preview.toml` gives.
+primary_region = "sjc"
+
+[env]
+  # FabOrchestrator production: every API and data call goes here.
+  FABORCH_BASE_URL = "https://d7y8a8whrch88.cloudfront.net"
+
+  # The public id of the session signing key (plan RP2 part 5). Not a secret.
+  SESSION_SIGNING_KEY_ID = "2026-09"
+
+  # ── FabOrchestrator's pages from the mobile-navigation preview build ───────
+  #
+  # **Deliberate, and temporary.** FabOrchestrator's website has no way into
+  # its sidebar below 768 px (`docs/OPEN_ISSUES.md` 0a). The fix is in
+  # FabOrchestrator's own repository, branch `mobile-nav-preview`, commit
+  # `b305f26`, and is not in the FabOrchestrator that production runs. So this
+  # app takes FabOrchestrator's **documents and static assets** from a build of
+  # that branch (`faborch-fo-ui-preview`, `fly.fo-ui-preview.toml`, reachable
+  # only on Fly's private network), and nothing else: every API call still
+  # goes to FABORCH_BASE_URL through the gateway, with every check this branch
+  # adds. The split is by request class in `lib/gateway/upstream.ts`.
+  #
+  # Both lines are needed. `FO_UI_BASE_URL` alone fails closed: every
+  # FabOrchestrator page answers 503 `not_configured` (RP1, G18).
+  #
+  # Remove both, and retire `faborch-fo-ui-preview`, once the FabOrchestrator
+  # that production runs contains the mobile-navigation fix.
+  FO_UI_BASE_URL = "http://faborch-fo-ui-preview.internal:3000"
+  FO_UI_SPLIT_ALLOWED = "1"
+
+  # Whole-application embedding, as on the embedding preview.
+  FO_EMBED_MODE = "whole"
+
+  # Kept for the rollback to "surfaces"; ignored while the mode is "whole".
+  FO_EMBED_SURFACES = "/chat,/reports"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  # http → https: outside a secure context the service worker will not register.
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # The size the memory figures in the 30 September review were measured for.
+  memory = "512mb"

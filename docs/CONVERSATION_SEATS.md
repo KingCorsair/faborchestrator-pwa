@@ -1,8 +1,8 @@
 # One account, several devices: each device's conversations are its own
 
-**As of 1 October 2026.** Built and tested **locally** on
-`pwa/amay-embed-fo-production-hardening`. Not deployed and not pushed: the
-hardening app still runs release v3 (`06acee8`).
+**As of 2 October 2026.** On `pwa/amay-embed-fo-production-hardening`, deployed
+to `faborch-pwa-amay-hardening` as release v4 (2 October, 00:21 UTC). Not
+pushed. Release v3 (`06acee8`) is the rollback.
 
 ## The requirement
 

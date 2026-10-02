@@ -11,8 +11,20 @@ file is wrong and should be corrected.
 
 ## One account, several devices: each device's conversations are its own — 1 October 2026
 
-**On this branch, local only: not deployed, not pushed.** The hardening app
-still runs release v3 (`06acee8`, tagged locally `deployed-hardening-v3`).
+**Deployed to `faborch-pwa-amay-hardening` as release v4 on 2 October 2026,
+00:21 UTC. Not pushed.** The previous release, v3 (`06acee8`, tagged locally
+`deployed-hardening-v3`), is the rollback.
+
+**On the deployment.** The volume `seat_store` is attached at `/data`; the
+server runs as `nextjs`, and `/data/seat-store` is its own (mode 700). A sign-in
+smoke with the probe account against the real FabOrchestrator passed 11 of 11:
+two devices on the one account get different seats and different
+FabOrchestrator sessions, each list answers and is empty, a conversation that is
+not the device's is refused, and routes that are not about conversations still
+reach FabOrchestrator. The mobile-navigation check is unchanged: matrix 130 of
+130, taps 34 of 34. **Not yet run on the deployment:** the two-device script,
+because it creates conversations and sends real model turns in a real account;
+so the store has not yet written a record on the volume.
 
 **Asked for (Amay, 1 October):** several people may sign in with the same
 FabOrchestrator account; inside this app each device is its own private session

@@ -8,6 +8,13 @@ import {
   type Owner,
 } from "@/lib/gateway/registry";
 import { closedNativeApi, frontDoorRedirect, retiredScreenRedirect } from "@/lib/gateway/destinations";
+import {
+  DEVICE_BLOCKED_PAGE,
+  DEVICE_ENROLL_PAGE,
+  deviceGate,
+  deviceGateMode,
+  isDeviceExempt,
+} from "@/lib/devices/gate";
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { safeReturnPath } from "@/lib/return-path";
 
@@ -82,7 +89,15 @@ import { safeReturnPath } from "@/lib/return-path";
  *  - `/diagnostics` — the page you open when the app is not working, and
  *    "log in first" is not a diagnostic.
  */
-const PUBLIC = new Set(["/login", "/offline", "/diagnostics"]);
+const PUBLIC = new Set(["/login", "/offline", "/diagnostics", DEVICE_BLOCKED_PAGE, DEVICE_ENROLL_PAGE]);
+
+/**
+ * `PUBLIC`, plus the enrollment link `/device-enroll/<token>`: an unenrolled
+ * phone opening it has, by definition, no session yet.
+ */
+function isPublic(pathname: string): boolean {
+  return PUBLIC.has(pathname) || pathname.startsWith(`${DEVICE_ENROLL_PAGE}/`);
+}
 
 /** This app's chunk prefix, from `next.config.ts`. */
 const PWA_ASSET_PREFIX = "/pwa-assets";
@@ -109,7 +124,7 @@ function isDocument(pathname: string): boolean {
   return true;
 }
 
-export function proxy(req: NextRequest): NextResponse {
+export function proxy(req: NextRequest): NextResponse | Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
   // The gateway's internal path is never reachable directly. The handler also
@@ -119,12 +134,31 @@ export function proxy(req: NextRequest): NextResponse {
   }
 
   // This app's own chunks, from the prefix back to where Next keeps them.
+  // Content-hashed build output, no data: the blocked and enrollment pages
+  // need them on a device that is not approved.
   if (pathname.startsWith(`${PWA_ASSET_PREFIX}/_next/`)) {
     const url = req.nextUrl.clone();
     url.pathname = pathname.slice(PWA_ASSET_PREFIX.length);
     return NextResponse.rewrite(url);
   }
 
+  // ── The approved-device check comes first (6 October 2026) ───────────────
+  //
+  // Before the sign-in gate, before this app's pages and APIs, and before
+  // anything is handed to FabOrchestrator: a device that has not been through
+  // a one-time enrollment reaches only the blocked page, the enrollment flow
+  // and the files needed to install the app (`lib/devices/gate.ts`). With
+  // `DEVICE_GATE` off this is skipped and the proxy stays synchronous, exactly
+  // as before.
+  if (deviceGateMode() === "enforce" && !isDeviceExempt(pathname)) {
+    return deviceGate(req).then((blocked) => blocked ?? route(req));
+  }
+  return route(req);
+}
+
+/** Everything after the device check: ownership, redirects and the sign-in gate. */
+function route(req: NextRequest): NextResponse {
+  const { pathname } = req.nextUrl;
   const registry = readRegistry();
 
   // ── The native API routes are closed in `whole` mode (plan RP8) ──────────
@@ -230,7 +264,7 @@ export function proxy(req: NextRequest): NextResponse {
 function gate(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
   if (!isDocument(pathname)) return NextResponse.next();
-  if (PUBLIC.has(pathname)) return NextResponse.next();
+  if (isPublic(pathname)) return NextResponse.next();
 
   // An empty value is what `clearFoTokenCookie` leaves behind on the way out,
   // and some browsers send the emptied cookie back before dropping it. A

@@ -7,6 +7,9 @@ import {
   FabOrchRequestError,
   type FoSession,
 } from "@/lib/faborch/client";
+import { deviceAudit } from "@/lib/devices/audit";
+import { presentedCredential, setDeviceCredentialCookie } from "@/lib/devices/credential";
+import { checkApprovedDevice, DEVICE_NOT_APPROVED, deviceGateMode } from "@/lib/devices/gate";
 import { deviceKeyFrom, newDeviceKey, seatIdFor, setDeviceCookie } from "@/lib/faborch/device";
 import { revokeFoSession, sessionConfigProblems, type SessionEndReason } from "@/lib/faborch/end-session";
 import { clearPasswordChangeMark, passwordChangeMarkedFor } from "@/lib/faborch/password-mark";
@@ -216,6 +219,32 @@ export async function POST(req: NextRequest) {
 
 /** Steps 2 to 5, once FabOrchestrator has accepted the password. */
 async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResponse> {
+  // ── The approved device (device enrollment, 6 October 2026) ───────────────
+  // The proxy has already refused this request if the device is not approved
+  // (`lib/devices/gate.ts`); it is checked again here because this is where the
+  // user becomes known. A device is enrolled for one user, so a different
+  // account signing in on it is refused and the token FabOrchestrator just
+  // issued is revoked. Same account on another, unenrolled device never gets
+  // this far: the proxy blocks it before sign-in.
+  let deviceCredential: string | null = null;
+  if (deviceGateMode() === "enforce") {
+    const check = await checkApprovedDevice(req);
+    if (!check.ok) return await refuseAndRevoke(fo.token, "device_blocked", 403, DEVICE_NOT_APPROVED);
+    if (check.device.userId !== fo.user.id) {
+      deviceAudit("DEVICE_LOGIN_REFUSED", {
+        deviceId: check.device.deviceId,
+        userId: fo.user.id,
+        reason: "device_user_mismatch",
+      });
+      return await refuseAndRevoke(fo.token, "device_user_mismatch", 403, {
+        code: "device_user_mismatch",
+        error: "This device is enrolled for a different user. Ask your administrator to enroll it for you.",
+      });
+    }
+    const presented = presentedCredential(req);
+    deviceCredential = presented.kind === "present" ? presented.credential.raw : null;
+  }
+
   // ── Step 2: the `/me` probe, with the token FO just issued ────────────────
   // FO's login has just set its idle clock, so this extends nothing.
   //  - 403 "no longer active" after a correct password: a coded failure, not
@@ -314,6 +343,8 @@ async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResp
   setFoTokenCookie(req, res, fo.token, session.expiresAt);
   // The same browser returns to the same seat at its next sign-in.
   setDeviceCookie(req, res, deviceKey);
+  // The approved-device credential is renewed at each sign-in, like the seat.
+  if (deviceCredential) setDeviceCredentialCookie(req, res, deviceCredential);
   // FabOrchestrator no longer holds this user for a change: the mark from an
   // earlier change has done its job.
   if (!forcedChange && passwordChangeMarkedFor(req, fo.user.id)) clearPasswordChangeMark(res);

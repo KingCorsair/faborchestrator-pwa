@@ -20,6 +20,8 @@ qr/
 # The local seat store (`SEAT_STORE_PATH` in .env.example): who started which
 # conversation on this machine. Never committed.
 .seat-store/
+# The local device store (`DEVICE_STORE_PATH`): enrollment and device records.
+.device-store/
 
 .DS_Store
 *.pem

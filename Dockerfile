@@ -39,6 +39,9 @@ RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs && apk add
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# The device-enrollment bootstrap CLI (`lib/devices/`): plain JavaScript, run
+# from `flyctl ssh console` to issue the first administrator's enrollment.
+COPY --from=builder /app/scripts/device-enrollment.mjs ./scripts/device-enrollment.mjs
 
 # No `USER nextjs` here, and that is deliberate (1 October 2026). The seat store
 # (`lib/gateway/seat-store.ts`) lives on a mounted volume, and a volume is
@@ -56,4 +59,5 @@ EXPOSE 3000
 
 # If the directory cannot be prepared the server still starts; the store is then
 # unwritable and every conversation route fails closed, which is logged.
-CMD ["sh", "-c", "if [ -n \"$SEAT_STORE_PATH\" ]; then d=$(dirname \"$SEAT_STORE_PATH\"); mkdir -p \"$d\" && chown -R nextjs:nodejs \"$d\" && chmod 700 \"$d\"; fi; exec su-exec nextjs:nodejs node server.js"]
+# The device store (`DEVICE_STORE_PATH`) gets the same treatment.
+CMD ["sh", "-c", "for p in \"$SEAT_STORE_PATH\" \"$DEVICE_STORE_PATH\"; do if [ -n \"$p\" ]; then d=$(dirname \"$p\"); mkdir -p \"$d\" && chown -R nextjs:nodejs \"$d\" && chmod 700 \"$d\"; fi; done; exec su-exec nextjs:nodejs node server.js"]

@@ -16,8 +16,12 @@ process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign"
 process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
-import { NextRequest } from "next/server";
-import { proxy } from "@/proxy";
+import { NextRequest, NextResponse } from "next/server";
+import { proxy as proxyMaybeAsync } from "@/proxy";
+
+// With `DEVICE_GATE` unset the proxy answers synchronously, as it always did;
+// the device gate's asynchronous path is held by `__tests__/devices/`.
+const proxy = (req: NextRequest) => proxyMaybeAsync(req) as NextResponse;
 import { sessionFor } from "@/lib/auth";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { closedNativeApi } from "@/lib/gateway/destinations";

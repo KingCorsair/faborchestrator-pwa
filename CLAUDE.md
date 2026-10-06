@@ -105,6 +105,19 @@ current tier works cleanly end to end.
    Approve / Reject / Escalate buttons record the decision only (in-memory or
    simple log at first).
 
+## Approved devices (6 October 2026)
+
+With `DEVICE_GATE=enforce`, `proxy.ts` refuses every request from a browser
+that has not been through a one-time enrollment, **before** the sign-in gate
+(`lib/devices/`). The credential is a bearer token this app issues, in the
+httpOnly `__Host-fo_device` cookie; the server keeps only its hash, in an
+append-only store like the seat store (`DEVICE_STORE_PATH`). It identifies a
+browser or installed app, not a physical phone. Design, limits (iOS Safari vs
+the Home Screen app), rollout and the acceptance test:
+`docs/DEVICE_ENROLLMENT.md`. Keep the device check and the user session
+separate, and keep the exempt list in `lib/devices/gate.ts` free of anything
+that returns FabOrchestrator data.
+
 ## Architecture design workflow (the RP process)
 
 Added 2026-09-24. The controlling engineering plan for bringing this app to

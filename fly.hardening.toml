@@ -65,6 +65,14 @@ primary_region = "sjc"
   # Without this variable every conversation route answers 503: there is no
   # in-memory fallback.
   SEAT_STORE_PATH = "/data/seat-store/conversations.log"
+  # Approved-device enrollment (`lib/devices/`). The store sits on the same
+  # volume. The gate is OFF here on purpose: deploy, enroll the devices that
+  # should keep access (the first one with scripts/device-enrollment.mjs over
+  # `flyctl ssh console`), then set DEVICE_GATE = "enforce" and redeploy.
+  # Administrators: `flyctl secrets set DEVICE_ADMIN_EMAILS=a@x,b@y`.
+  DEVICE_STORE_PATH = "/data/devices/devices.log"
+  DEVICE_GATE = "off"
+  PUBLIC_ORIGIN = "https://faborch-pwa-amay-hardening.fly.dev"
 
 [build]
 

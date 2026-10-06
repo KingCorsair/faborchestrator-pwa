@@ -100,6 +100,12 @@ export const PWA_RESERVED_PREFIXES: readonly string[] = [
   "/api/pwa",
   "/api/faborch",
   "/pwa-assets",
+  // Device enrollment (6 October 2026, `lib/devices/`): the blocked page, the
+  // enrollment page and its link, and device administration. FabOrchestrator
+  // has none of these paths.
+  "/device-blocked",
+  "/device-enroll",
+  "/device-admin",
 ];
 
 /**

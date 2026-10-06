@@ -50,7 +50,13 @@ export type SessionEndReason =
   /** FabOrchestrator still holds the account for a password change after one was made. */
   | "password_change_required"
   /** Sign-in failed after FabOrchestrator had issued a token. */
-  | "login_failed";
+  | "login_failed"
+  /** Device enrollment checked the user's identity with FabOrchestrator and keeps no session. */
+  | "device_enrollment"
+  /** Sign-in on an approved device by a user it was not enrolled for (`lib/devices/`). */
+  | "device_user_mismatch"
+  /** The device is not (or no longer) approved: its blocked page ends the session. */
+  | "device_blocked";
 
 /** The reasons a client may name when it asks the server to end a session. */
 export const CLIENT_END_REASONS: ReadonlySet<SessionEndReason> = new Set([
@@ -60,6 +66,7 @@ export const CLIENT_END_REASONS: ReadonlySet<SessionEndReason> = new Set([
   "token_missing",
   "storage_unavailable",
   "fo_signed_out",
+  "device_blocked",
 ]);
 
 /**

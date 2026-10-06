@@ -10,15 +10,17 @@
     "typecheck": "tsc --noEmit",
     "icons": "npx tsx scripts/generate-icons.ts",
     "test:platform": "npx tsx --test \"__tests__/platform/*.test.ts\"",
-    "test": "npm run test:platform && npm run test:faborch && npm run test:gateway",
+    "test": "npm run test:platform && npm run test:faborch && npm run test:gateway && npm run test:devices",
     "qr": "npx tsx scripts/generate-qr.ts",
     "test:faborch": "npx tsx --test \"__tests__/faborch/*.test.ts\"",
-    "test:gateway": "npx tsx --test \"__tests__/gateway/*.test.ts\""
+    "test:gateway": "npx tsx --test \"__tests__/gateway/*.test.ts\"",
+    "test:devices": "npx tsx --test \"__tests__/devices/*.test.ts\""
   },
   "dependencies": {
     "clsx": "^2.1.1",
     "lucide-react": "^0.473.0",
     "next": "16.3.6",
+    "qrcode": "^1.5.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",
@@ -35,7 +37,6 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "playwright": "^1.62.1",
-    "qrcode": "^1.5.4",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5",

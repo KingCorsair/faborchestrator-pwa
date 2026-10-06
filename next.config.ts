@@ -8,6 +8,20 @@ if (REQUEST_BODY_CEILING_BYTES <= MAX_REQUEST_BODY_BYTES) {
   throw new Error("REQUEST_BODY_CEILING_BYTES must be larger than MAX_REQUEST_BODY_BYTES.");
 }
 
+/** The content security policy of the device-enrollment pages (see `headers()` below). */
+const DEVICE_PAGE_CSP = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 const nextConfig: NextConfig = {
   experimental: {
     /**
@@ -151,6 +165,24 @@ const nextConfig: NextConfig = {
         // holds it against the paths both builds actually serve.
         source: revalidateSourcePattern(),
         headers: [{ key: "Cache-Control", value: "no-cache, must-revalidate" }],
+      },
+      {
+        // The device-enrollment pages (6 October 2026, `lib/devices/`). They are
+        // this app's own, not FabOrchestrator's, so a policy here cannot break
+        // an embedded FabOrchestrator page. No framing (a revoke button must not
+        // be clickjacked), no referrer (the enrollment link carries a token),
+        // no plugins, no foreign scripts or form targets. `'unsafe-inline'`
+        // stays for scripts and styles because the root layout and Next's
+        // hydration use inline scripts and this app has no nonce plumbing;
+        // `'unsafe-eval'` is added in development only, for Next's dev runtime.
+        source: "/:page(device-admin|device-blocked|device-enroll)/:rest*",
+        headers: [
+          { key: "Content-Security-Policy", value: DEVICE_PAGE_CSP },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
       },
     ];
   },

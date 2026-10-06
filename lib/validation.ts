@@ -220,3 +220,28 @@ export const CreateConversationSchema = z.object({
 export const UpdateConversationSchema = z.object({
   isPinned: z.boolean(),
 });
+
+/* ── Device enrollment (6 October 2026, `lib/devices/`) ───────────────────── */
+
+/** An administrator issues a one-time enrollment for one user. */
+export const CreateEnrollmentSchema = z
+  .object({
+    email: z.string().trim().min(3, "The user's email is required").max(255).email("Enter the user's email address"),
+    site: z.string().trim().max(100).optional(),
+    friendlyName: z.string().trim().max(100).optional(),
+  })
+  .strict();
+
+/** The expected user proves who they are, on the device being enrolled. */
+export const CompleteEnrollmentSchema = z.object({
+  email: z.string().min(1, "Email is required").max(255),
+  password: z.string().min(1, "Password is required").max(128),
+  /** Whether the page was opened in the installed app (display-mode: standalone). Descriptive only. */
+  installedApp: z.boolean().optional(),
+});
+
+export const RevokeDeviceSchema = z
+  .object({
+    reason: z.string().trim().max(200).optional(),
+  })
+  .strict();

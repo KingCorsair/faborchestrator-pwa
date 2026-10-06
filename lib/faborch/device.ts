@@ -97,7 +97,17 @@ const DEVICE_KEY = /^[A-Za-z0-9_-]{43}$/;
  * on a loopback host. A forwarded scheme can only matter on loopback.
  */
 export function deviceCookieName(req: NextRequest): string {
-  return isLoopbackHost(req) && !isHttps(req) ? DEVICE_COOKIE_INSECURE : DEVICE_COOKIE;
+  return hostCookieName(req, DEVICE_COOKIE_INSECURE);
+}
+
+/**
+ * `__Host-<base>` everywhere except plain http on a loopback host, where it is
+ * `<base>`. The seat cookie's rule, shared with the approved-device credential
+ * (`lib/devices/credential.ts`): neither may be set by a sibling host or
+ * shadowed at another path.
+ */
+export function hostCookieName(req: NextRequest, base: string): string {
+  return isLoopbackHost(req) && !isHttps(req) ? base : `__Host-${base}`;
 }
 
 export function newDeviceKey(): string {

@@ -106,6 +106,9 @@ export const PWA_RESERVED_PREFIXES: readonly string[] = [
   "/device-blocked",
   "/device-enroll",
   "/device-admin",
+  // The developer-only device-credential feasibility test (404 unless
+  // DEVICE_CRYPTO_TEST=1).
+  "/device-crypto-test",
 ];
 
 /**

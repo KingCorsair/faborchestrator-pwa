@@ -96,7 +96,13 @@ const PUBLIC = new Set(["/login", "/offline", "/diagnostics", DEVICE_BLOCKED_PAG
  * phone opening it has, by definition, no session yet.
  */
 function isPublic(pathname: string): boolean {
-  return PUBLIC.has(pathname) || pathname.startsWith(`${DEVICE_ENROLL_PAGE}/`);
+  return (
+    PUBLIC.has(pathname) ||
+    pathname.startsWith(`${DEVICE_ENROLL_PAGE}/`) ||
+    // The developer-only crypto feasibility test, which renders nothing but
+    // itself and answers 404 unless DEVICE_CRYPTO_TEST=1.
+    pathname === "/device-crypto-test"
+  );
 }
 
 /** This app's chunk prefix, from `next.config.ts`. */

@@ -108,6 +108,11 @@ const nextConfig: NextConfig = {
   // The failure would only bite someone trying to run `.next/standalone/`
   // directly on Windows, which nothing here asks for.
   output: "standalone",
+  // The device-credential feasibility test serves the QR decoder's wasm from
+  // node_modules (`app/device-crypto-test/zxing_reader.wasm`).
+  outputFileTracingIncludes: {
+    "/device-crypto-test/zxing_reader.wasm": ["./node_modules/zxing-wasm/dist/reader/zxing_reader.wasm"],
+  },
 
   /**
    * Documents must be revalidated; only the build output may be cached.
@@ -181,6 +186,18 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Cache-Control", value: "no-store" },
+        ],
+      },
+      {
+        // The developer-only crypto feasibility test: the same policy, plus
+        // 'wasm-unsafe-eval' for its QR decoder, which a production in-app
+        // scanner would need too.
+        source: "/device-crypto-test",
+        headers: [
+          { key: "Content-Security-Policy", value: DEVICE_PAGE_CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'") },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Frame-Options", value: "DENY" },
           { key: "Cache-Control", value: "no-store" },
         ],
       },

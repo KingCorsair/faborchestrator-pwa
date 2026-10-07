@@ -44,10 +44,11 @@ export function DeviceAdmin() {
   const [createError, setCreateError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [confirming, setConfirming] = React.useState<string | null>(null);
+  const [current, setCurrent] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     const [list, open] = await Promise.all([
-      call<{ devices: DeviceView[] }>("/api/pwa/devices"),
+      call<{ devices: DeviceView[]; currentDeviceId: string | null }>("/api/pwa/devices"),
       call<{ enrollments: EnrollmentView[] }>("/api/pwa/device-enrollments"),
     ]);
     if (!list.ok) {
@@ -56,11 +57,19 @@ export function DeviceAdmin() {
     }
     setProblem(null);
     setDevices(list.body.devices);
+    setCurrent(list.body.currentDeviceId ?? null);
     if (open.ok) setPending(open.body.enrollments);
   }, []);
 
+  // Refreshed every few seconds while the page is visible, so a phone that
+  // enrolls appears here without a reload (it was easy to revoke the wrong
+  // row from a stale list).
   React.useEffect(() => {
     void refresh();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, 5000);
+    return () => clearInterval(timer);
   }, [refresh]);
 
   async function onCreate(event: React.FormEvent<HTMLFormElement>) {
@@ -178,6 +187,14 @@ export function DeviceAdmin() {
                     <td className="py-2 pr-3">{d.friendlyName}</td>
                     <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">
                       {d.deviceId}
+                      {d.deviceId === current ? (
+                        <span
+                          className="ml-2 rounded px-[6px] py-[1px] text-[11px] font-bold"
+                          style={{ background: "var(--brand-indigo-bg)", color: "var(--cockpit-indigo)" }}
+                        >
+                          This device
+                        </span>
+                      ) : null}
                       <span className="block text-[11px] font-normal" style={{ color: "var(--text-subtle)" }} title="Public-key fingerprint">
                         key {d.keyFingerprint.slice(0, 12)}
                       </span>
@@ -201,7 +218,11 @@ export function DeviceAdmin() {
                     <td className="py-2">
                       {d.status === "APPROVED" ? (
                         <Button variant={confirming === d.deviceId ? "primary" : "secondary"} onClick={() => void revoke(d.deviceId)}>
-                          {confirming === d.deviceId ? "Confirm revoke" : "Revoke"}
+                          {confirming === d.deviceId
+                            ? d.deviceId === current
+                              ? "Revoke this device? You will lose access"
+                              : "Confirm revoke"
+                            : "Revoke"}
                         </Button>
                       ) : null}
                     </td>

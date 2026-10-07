@@ -480,6 +480,8 @@ describe("admin endpoints require an approved device, a session and the allowlis
     const text = await (await LIST_DEVICES(request("/api/pwa/devices", { cookies: admin.cookies, headers: { authorization: admin.bearer } }))).text();
     assert.match(text, /"deviceId":"DEVICE-002"/);
     assert.match(text, /"keyFingerprint":"[0-9a-f]{32}"/);
+    // The page marks the administrator's own device, so it is not revoked by mistake.
+    assert.equal((JSON.parse(text) as { currentDeviceId: string }).currentDeviceId, admin.phone.deviceId);
     assert.ok(!text.includes(phone.key.spki), "not even the public key itself");
     const file = readFileSync(currentStorePath(), "utf8");
     for (const hash of [...file.matchAll(/"th":"([^"]+)"/g)].map((m) => m[1]!)) assert.ok(!text.includes(hash));

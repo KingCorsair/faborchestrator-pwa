@@ -15,7 +15,12 @@ export async function GET(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   try {
     const devices = await deviceStore().listDevices();
-    return NextResponse.json({ devices: devices.map(deviceView) }, { headers: NO_STORE });
+    // Which row is the device asking, so the page can mark it and warn before
+    // an administrator revokes the device they are using (7 October 2026).
+    return NextResponse.json(
+      { devices: devices.map(deviceView), currentDeviceId: auth.device?.deviceId ?? null },
+      { headers: NO_STORE },
+    );
   } catch (error) {
     if (!(error instanceof DeviceStoreUnavailableError)) throw error;
     reportError("devices/list", error);

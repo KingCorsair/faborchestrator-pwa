@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { NextRequest } from "next/server";
+import { AutoEnroll } from "@/components/devices/auto-enroll";
 import { DeviceCard, Notice } from "@/components/devices/device-card";
-import { EnrollForm } from "@/components/devices/enroll-form";
 import { enrollmentCookieName, SECRET_TOKEN } from "@/lib/devices/credential";
 import { deviceStore, DeviceStoreUnavailableError, type EnrollmentLookup } from "@/lib/devices/store";
 import { reportError } from "@/lib/report-error";
@@ -16,10 +16,15 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * `/device-enroll` — the page the enrollment link lands on, after
+ * `/device-enroll` — where a scanned enrollment QR code lands, after
  * `app/device-enroll/[token]` has moved the token into a cookie and out of the
- * address bar. It shows who the enrollment is for and asks that user to prove
- * it; `/api/pwa/device-enrollments/complete` does the rest.
+ * address bar.
+ *
+ * **There is no sign-in here.** The enrollment code is the authorization: an
+ * administrator issued it for one device. With a usable code the page enrolls
+ * the device by itself as soon as it opens (`AutoEnroll`), and says so. It
+ * does not sign anybody in to FabOrchestrator; that is the normal sign-in,
+ * afterwards, on the now-approved device.
  */
 export default async function Page({
   searchParams,
@@ -48,11 +53,11 @@ export default async function Page({
       <Frame>
         <Notice tone="error">
           {link === "invalid" || lookup !== null
-            ? "This enrollment link has expired or has already been used."
-            : "Open the enrollment link or QR code your administrator gave you, on the device you want to enroll."}
+            ? "This enrollment code has expired or has already been used."
+            : "Scan the enrollment QR code your administrator gave you, on the device you want to enroll."}
         </Notice>
         <p className="m-0 text-[14px] leading-[1.6]" style={{ color: "var(--text-muted-cool)" }}>
-          Enrollment links work once and expire after a few minutes. Ask your administrator for a new one.
+          Each enrollment code works once and expires after a few minutes. Ask your administrator for a new one.
         </p>
       </Frame>
     );
@@ -60,15 +65,7 @@ export default async function Page({
 
   return (
     <Frame>
-      <p className="m-0 text-[14px] leading-[1.6]" style={{ color: "var(--text-muted-cool)" }}>
-        Your administrator has approved one device for{" "}
-        <strong style={{ color: "var(--text-ink)" }}>{lookup.enrollment.allowedEmail}</strong>. Sign in with that
-        FabOrchestrator account to make <em>this</em> device the approved one. The link then stops working.
-      </p>
-      <EnrollForm
-        email={lookup.enrollment.allowedEmail}
-        expiresAt={new Date(lookup.enrollment.expiresAt).toISOString()}
-      />
+      <AutoEnroll />
     </Frame>
   );
 }

@@ -1,194 +1,204 @@
 # Approved devices: one-time enrollment
 
-**As of 6 October 2026.** On `pwa/amay-embed-fo-production-hardening`. Not pushed,
-not deployed. Code: `lib/devices/`, `proxy.ts`, the routes below.
+**As of 6 October 2026.** On `pwa/amay-embed-fo-production-hardening`. Code:
+`lib/devices/`, `proxy.ts`, the routes below. Deployed to
+`faborch-pwa-amay-hardening` with the gate **off**.
 
-## The requirement
-
-Only a device that has been through a one-time enrollment, issued by an
-administrator after business approval, may open anything on this origin. The
-device check comes **before** sign-in:
+## In one picture
 
 ```
-device check (proxy.ts, lib/devices/gate.ts)
-  → user session (sign-in gate, requireAuth)
-  → FabOrchestrator's own authorization
-  → FabOrchestrator
+Enrollment (once per device)
+  admin creates a one-time QR at /device-admin
+    → the device scans it
+    → the device stamp is installed automatically   (no email, no password)
+    → the device is APPROVED
+
+Normal use (every time)
+  normal FO QR / front door
+    → device stamp checked FIRST
+         no stamp, unknown or REVOKED → BLOCKED
+         APPROVED                     → normal FabOrchestrator sign-in → FO
 ```
 
-The same account on a second, unenrolled phone is blocked: approval belongs to
-the device, not to the account. The device system is an extra gate; it does not
-replace or change FabOrchestrator's users or permissions, and FabOrchestrator is
-not changed.
+**The enrollment QR authorizes a device. It does not authenticate a person.**
+Holding the QR within its ten minutes is permission to approve exactly one
+device. Nobody signs in during enrollment and FabOrchestrator is not asked
+anything. Who uses an approved device is decided by the normal FabOrchestrator
+sign-in, every time, and FabOrchestrator's own permissions decide what that
+person may do. The device belongs to no user: any FabOrchestrator account may
+sign in on it.
+
+Three separate concerns:
+
+| Concern | Decided by |
+|---|---|
+| Who may open `/device-admin`, create QR codes, revoke devices | `DEVICE_ADMIN_EMAILS` (plus an approved device and a session) |
+| Which device may enter at all | the device stamp, installed by a one-time enrollment QR |
+| Who the person is, and what they may do | the normal FabOrchestrator sign-in and FabOrchestrator's permissions |
 
 ## How it fits this app
 
 | Question | Answer in this repository |
 |---|---|
-| Frontend / backend | One Next.js 16 app (App Router). Route handlers are the backend; `proxy.ts` (Next's middleware, Node runtime) sees every request first. |
-| Database | None. Durable state is append-only, checksummed JSON-lines files on a Fly volume (the seat store). The device store follows the same pattern. |
-| Auth | FabOrchestrator is the only identity (`foLogin`). This app mints a signed bearer (localStorage) bound to FO's httpOnly cookie. |
+| Frontend / backend | One Next.js 16 app. Route handlers are the backend; `proxy.ts` (Next's middleware, Node runtime) sees every request first. |
+| Database | None. Durable state is append-only, checksummed JSON-lines files on a Fly volume. The device store follows the seat store's pattern. |
+| User auth | FabOrchestrator is the only identity (`foLogin`), unchanged. |
 | PWA | `manifest.webmanifest`, `public/sw.js` (navigation fallback to `/offline` only; caches no data). |
-| QR | A static QR of the app URL (`scripts/generate-qr.ts`), scanned with the phone's **native camera**. There is no in-app scanner. |
-| Admin console | None in this app; FabOrchestrator's admin app is separate and not changed. So `/device-admin` is new, here. |
+| QR | The everyday QR is a static image of the app URL (`scripts/generate-qr.ts`), scanned with the phone's **native camera**. Enrollment QR codes are drawn by `/device-admin`. |
+| Admin console | None existed; `/device-admin` is this feature's. |
 
-## The flow
+## The flow in detail
 
-**Enrollment.**
+**1. Create.** An administrator presses *Create Device Enrollment* at
+`/device-admin` (optionally naming the device and site).
+`POST /api/pwa/device-enrollments` makes a 256-bit random token from
+`crypto.randomBytes`, stores only its **SHA-256**, and answers once with the
+link `<PUBLIC_ORIGIN>/device-enroll/<token>`, its QR code and the expiry
+(10 minutes; `DEVICE_ENROLLMENT_TTL_MINUTES`, 1–60). The screen shows the QR,
+a countdown and a *Copy link* button.
 
-1. An administrator (`DEVICE_ADMIN_EMAILS`, on an approved device, signed in)
-   opens `/device-admin` and creates an enrollment for a user's email.
-   `POST /api/pwa/device-enrollments` stores the **SHA-256 of a 256-bit random
-   token** and answers once with `<PUBLIC_ORIGIN>/device-enroll/<token>`, its QR
-   code and the expiry (10 minutes by default).
-2. The user opens the link on the device. `GET /device-enroll/<token>` checks it
-   exists, is unexpired and unused, moves the token into a short-lived httpOnly
-   cookie and redirects (303, `Referrer-Policy: no-referrer`) to the bare
-   `/device-enroll`. The token leaves the address bar. Opening the link spends
-   nothing, so link previews cannot burn it.
-3. The user signs in on that page. `POST /api/pwa/device-enrollments/complete`
-   checks the enrollment again, checks the typed email is the enrollment's
-   user, then FabOrchestrator verifies the password and must name the same user.
-   The FabOrchestrator session this creates is revoked; enrollment does not sign
-   anyone in.
-4. The store uses the enrollment **exactly once** and mints `DEVICE-nnn` plus a
-   256-bit device token; it keeps only the token's hash.
-5. The browser receives `__Host-fo_device=<DEVICE-nnn>.<token>` (HttpOnly,
-   Secure, SameSite=Lax, Path=/, 400 days, renewed at each sign-in). The token
-   is never in a response body and no API returns it again.
+**2. Scan.** The phone opens the link. `GET /device-enroll/<token>` checks the
+token exists, has not expired and has not been used, moves it into a short-lived
+httpOnly cookie (`__Host-fo_enroll`, SameSite=Lax) and redirects (303,
+`Referrer-Policy: no-referrer`) to the bare `/device-enroll`, so the token
+leaves the address bar.
 
-**Every request.** `proxy.ts` reads the cookie, looks the device up, compares
-the token's hash in constant time, and requires `APPROVED`. Otherwise:
-documents redirect to `/device-blocked`, APIs get `403 device_not_approved`,
-assets `403`. Exempt: the blocked and enrollment pages, the enrollment link and
-completion, sign-out, `/offline`, the service worker, manifest and icons, and
-this app's own build chunks. None carries FabOrchestrator data.
+**3. Enroll, automatically.** The `/device-enroll` page posts to
+`/api/pwa/device-enrollments/complete` by itself as soon as it opens. No
+email, no password, no button. The store uses the enrollment **exactly once**
+and mints `DEVICE-nnn` and a 256-bit device token, keeping only the token's
+hash. The browser receives `__Host-fo_device=<DEVICE-nnn>.<token>` (HttpOnly,
+Secure, SameSite=Lax, Path=/, 400 days). The page says *Device enrolled
+successfully. This device is now approved for FabOrchestrator access as
+DEVICE-nnn* and offers *Open FabOrchestrator*. It does **not** sign anybody in.
 
-**Sign-in.** The login route re-checks the device and refuses an account other
-than the one the device was enrolled for (`403 device_user_mismatch`, FO token
-revoked). The credential is renewed.
+Why the page posts rather than the link's GET doing it: link previews and
+mail scanners (iMessage, Slack, Teams, Outlook) fetch links they see. If a GET
+enrolled, such a fetcher would enroll itself and burn the QR. A same-origin
+POST from the running page is something only a real browser on the page
+makes. To the person scanning, it is still automatic.
+
+**4. Normal use.** Every request passes `proxy.ts` first: no stamp, a wrong
+token, an unknown or a revoked device → documents go to `/device-blocked`, APIs
+answer `403 device_not_approved`. An approved device continues to the normal
+sign-in gate and FabOrchestrator's login. The sign-in route checks the device
+again itself, and renews the stamp.
 
 **Revocation.** `POST /api/pwa/devices/{id}/revoke` appends a revocation with
 the administrator and time. The proxy re-reads the store whenever the file
-changes, so the device is refused **on its very next request**, including
-requests carrying an existing session. When the phone next opens anything it
-lands on `/device-blocked`, which signs out: the server clears the
+changes, so the device is refused **on its very next request**, existing
+session or not. Its blocked page then signs out: the server clears the
 FabOrchestrator cookie and revokes that FabOrchestrator session.
 
-**Replacement.** A new phone needs a new enrollment and gets a new id and
-token. Re-enrolling a browser that still holds an approved credential revokes
-that credential.
+**Replacement.** A new phone needs a new QR and gets a new id and token.
+Enrolling a browser that still holds an approved stamp revokes the old stamp.
 
 **Cleared storage.** No cookie means unenrolled. There is no recovery from
-metadata; enroll again.
+metadata; scan a new QR.
 
-## Security decisions
+## Security properties
 
-- **HttpOnly cookie, not IndexedDB.** The check must happen in front of the
-  document, and only a cookie arrives with a navigation. HttpOnly keeps the
-  secret away from page scripts, including FabOrchestrator's pages on this
-  origin. `__Host-` stops sibling hosts and path shadowing; two cookies of the
-  name count as none.
-- **Hashes only.** Enrollment and device tokens: 32 bytes from
-  `crypto.randomBytes`, base64url; SHA-256 on the server; constant-time compare.
-- **One-use under races.** Using an enrollment first creates a marker file with
-  `O_EXCL`; exactly one creator wins, across processes on the volume. A crash
-  after the marker burns the enrollment rather than allowing a second device.
-- **Fails closed.** `DEVICE_GATE` other than unset/`off` enforces. An unset or
-  unreadable store blocks everything. A torn, altered or orphaned record grants
-  nothing.
-- **CSRF.** State-changing routes refuse cross-site `Sec-Fetch-Site`/`Origin`
-  and require JSON; admin routes also need the bearer, which a forged form
-  cannot send.
-- **Rate limiting.** Enrollment completion uses the sign-in limiter; bad
-  enrollment links count against a separate per-address bucket.
+- **Device stamp:** HttpOnly, Secure, `__Host-` (no sibling host, no path
+  shadowing; two cookies of the name count as none), SameSite=Lax so it is sent
+  on the navigation a scanned QR opens. Page JavaScript cannot read it.
+- **Secrets:** 256-bit tokens from the OS CSPRNG; SHA-256 on the server; the
+  device token compared by hash in constant time. No raw token is stored,
+  logged, or returned after issuance. The QR link is the only place an
+  enrollment token appears, so treat a live QR like a key for its ten minutes.
+- **One use, even under races:** using an enrollment first creates a marker
+  file with `O_EXCL`; exactly one creator wins, across processes on the volume.
+  A crash after the marker burns the enrollment rather than allowing a second
+  device.
+- **Fails closed:** any `DEVICE_GATE` value but unset/`off` enforces; an unset
+  or unreadable store blocks everything; a torn, altered or orphaned record
+  grants nothing.
+- **CSRF:** state-changing routes refuse cross-site `Sec-Fetch-Site`/`Origin`
+  and require JSON; admin routes also need the bearer.
+- **Rate limiting:** enrollment attempts with unknown codes are limited per
+  address (8 per 10 minutes); FabOrchestrator sign-in keeps its own limiter.
 - **Links from `PUBLIC_ORIGIN` only,** never the `Host` header.
 - **Headers on the device pages:** CSP (`default-src 'self'`,
   `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'none'`), `no-referrer`,
   `X-Frame-Options: DENY`, `no-store`. Scripts still need `'unsafe-inline'`
-  (the root layout and Next's hydration use inline scripts; no nonce plumbing).
-  No CSP was added to FabOrchestrator's proxied pages.
-- **Audit.** `device_audit` log lines: `DEVICE_ENROLLMENT_CREATED`,
-  `DEVICE_ENROLLMENT_REJECTED`, `DEVICE_ENROLLED`, `DEVICE_REENROLLED`,
-  `DEVICE_ACCESS_ALLOWED` (when last-seen is written, at most every 15 minutes
-  per device), `DEVICE_ACCESS_BLOCKED` (bounded to one per reason, device and
-  address per minute), `DEVICE_REVOKED`, `DEVICE_LOGIN_REFUSED`. Identifiers
-  only; tests check that no token reaches a log line. The store file is the
-  durable audit of who enrolled and revoked what.
+  (the root layout and Next's hydration use inline scripts).
+- **Audit** (`device_audit` log lines, identifiers only):
+  `DEVICE_ENROLLMENT_CREATED`, `DEVICE_ENROLLMENT_REJECTED`, `DEVICE_ENROLLED`,
+  `DEVICE_REENROLLED`, `DEVICE_ACCESS_ALLOWED` (when last-seen is written, at
+  most every 15 minutes per device), `DEVICE_ACCESS_BLOCKED` (bounded),
+  `DEVICE_REVOKED`, `DEVICE_LOGIN_REFUSED`. The store file is the durable record
+  of who issued and who revoked what.
 - **Metadata is description only** (type, OS, browser, installed app or
-  browser, from the user agent and display mode). No decision reads it.
+  browser). No decision reads it.
 
-## Limitations (read these)
+## Limitations
 
 - **It is a bearer credential.** It identifies the browser or installed app
-  that holds the cookie, **not** the physical phone. Anyone who copies the
-  cookie's value can present it until the device is revoked. It does not prove
-  a serial number. The upgrade, if cloning resistance is needed, is a
-  non-exportable device key with challenge-response (WebAuthn) or an enterprise
-  device identity (Entra/Intune); only `lib/devices/credential.ts` and the
-  check in `gate.ts` would change.
-- **iOS: Safari and the installed Home Screen app keep separate cookies.**
-  The existing QR is scanned with the native camera, which opens **Safari**.
-  Enrolling there enrolls Safari, not the installed app (this app's own seat
-  work found the same separation for its seat cookie; whether iOS copies
-  cookies into the app at install time was not verified here). So: install the
-  app first, open it (it shows "not approved"), and paste the enrollment link
-  there; `/device-admin` shows a Copy link button and the enrollment page warns
-  when it is opened in a browser rather than the app. The admin list shows each
-  device's context (`installed-app` or `browser`). Not tested on a real iPhone.
-- **Android:** an installed Chrome PWA shares Chrome's cookies, so enrolling
-  from the camera's Chrome tab should cover the app. Expected, not tested on a
-  device.
-- **The everyday QR is unchanged.** Scanning it in an enrolled context opens the
-  app and passes; scanning it in another context (Safari on an iPhone whose
-  enrollment is in the app) is blocked, correctly.
-- **FabOrchestrator sessions after revocation.** Through this app the revoked
-  device is refused at once. Its FabOrchestrator session token (httpOnly, never
-  on the page) is revoked when the device next opens a page here; if it never
-  comes back, FabOrchestrator's own 30-minute idle rule ends it. This app keeps
-  no FabOrchestrator tokens server-side, so it cannot revoke one it is not shown.
-- **The administrator allowlist is an environment setting**, not
-  FabOrchestrator's role names, which this app cannot rely on.
-- **One machine, one volume,** like the seat store.
-- **`/device-admin` has no link** from FabOrchestrator's screens; open it by URL.
-- **Shared accounts:** devices are bound to the account they were enrolled for.
-  Several people on one shared account each need their own device enrolled for
-  that account.
+  holding the cookie, **not** the physical phone, and proves no serial number.
+  Anyone who copies the cookie can present it until the device is revoked.
+  Stronger cloning resistance means a non-exportable device key with
+  challenge-response (WebAuthn) or an enterprise device identity
+  (Entra/Intune); only `lib/devices/credential.ts` and the check in
+  `lib/devices/gate.ts` would change.
+- **Anyone holding a live QR can enroll a device with it.** That is the design
+  (the QR is the authorization). Show it only to the device it is for; it dies
+  after one use or ten minutes, and a device enrolled by mistake is revoked
+  from `/device-admin`.
+- **iOS: Safari and the Home Screen app keep separate cookies.** The camera
+  opens a scanned QR in Safari, so scanning approves Safari, not the installed
+  app. To approve the installed app, open it (it shows "not approved"), and
+  paste the enrollment link there (*Copy link* on `/device-admin`). Not tested
+  on a real iPhone; whether iOS copies cookies into the app at install time
+  was not verified.
+- **Android:** an installed Chrome PWA shares Chrome's cookies, so scanning
+  with the camera should cover the app. Expected, not tested on a device.
+- **FabOrchestrator sessions after revocation** end when the device next
+  opens a page here; otherwise FabOrchestrator's own 30-minute idle rule ends
+  them. This app holds no FabOrchestrator tokens server-side.
+- **Enrollments made before this change** (the user-named version, record
+  version 1) are not read: such a device must scan a new QR.
+- **One machine, one volume,** like the seat store. **`/device-admin` has no
+  link** from FabOrchestrator's screens; open it by URL.
 
 ## Rolling it out (hardening app)
 
-1. Deploy with `DEVICE_GATE = "off"` (as `fly.hardening.toml` now has it) and
-   `flyctl secrets set DEVICE_ADMIN_EMAILS=…`. Nothing changes for anyone yet.
-2. Issue the first administrator's enrollment from the machine:
-   `flyctl ssh console --app faborch-pwa-amay-hardening -C "su-exec nextjs:nodejs node scripts/device-enrollment.mjs --email <admin>"`,
-   open the printed link on the administrator's device, sign in.
-3. From `/device-admin`, enroll every device that should keep access.
-4. Set `DEVICE_GATE = "enforce"` and redeploy. Rollback: set it back to `off`.
+1. Deployed with `DEVICE_GATE = "off"`; `DEVICE_ADMIN_EMAILS` set. Nothing is
+   blocked yet.
+2. At `/device-admin`, create a QR for each device that should keep access,
+   **the administrator's own first**, and scan it on that device. (If no
+   administrator has an approved device once the gate is on, issue one from
+   the machine: `flyctl ssh console --app faborch-pwa-amay-hardening -C
+   "su-exec nextjs:nodejs node scripts/device-enrollment.mjs --name 'Admin laptop'"`.)
+3. Set `DEVICE_GATE = "enforce"` in `fly.hardening.toml` and redeploy.
+   Rollback: set it back to `off`.
 
-## Manual acceptance test
+## Demo script (gate enforced)
 
-With the gate enforced and an administrator enrolled:
+1. **Unapproved device:** Phone A opens the normal FO URL → "This device is not
+   approved".
+2. **Generate:** the admin opens `/device-admin` → *Create Device Enrollment* →
+   QR, countdown, link.
+3. **Automatic enrollment:** Phone A scans the QR → "Device enrolled
+   successfully … DEVICE-nnn", no email or password asked. `/device-admin` lists
+   DEVICE-nnn as APPROVED; scanning the same QR again says it has been used.
+4. **Normal access:** Phone A opens the normal FO URL → the sign-in page → the
+   user signs in → FabOrchestrator.
+5. **Second phone:** Phone B opens the same URL → blocked, even with valid FO
+   credentials.
+6. **Revocation:** the admin revokes DEVICE-nnn → Phone A's next tap lands on
+   "not approved", although its cookie is still there.
 
-- **A** Phone A, not enrolled, opens the normal QR → "This device is not
-  approved".
-- **B** Admin creates an enrollment for the user at `/device-admin`; Phone A
-  opens it (inside the installed app on an iPhone: paste the link), signs in →
-  "approved as DEVICE-002".
-- **C** Phone A opens the normal QR → sign-in → FabOrchestrator.
-- **D** Phone B, same account, not enrolled → blocked, and its sign-in is
-  refused.
-- **E** Admin revokes DEVICE-002 → Phone A's next tap lands on "not approved".
-- **F** Phone B gets its own enrollment → DEVICE-003 works on its own; DEVICE-002
-  stays blocked.
+## Verified
 
-## Verified (6 October 2026)
-
-- `npm test`: 923 tests (879 existing, unchanged in behaviour; 44 new in
-  `__tests__/devices/`), `tsc`, `eslint`, `next build`.
-- Over the wire against `next start` (production build) with the gate enforced
-  and a stub FabOrchestrator: scenarios A–F plus link handling, CSP, admin list
-  and store contents, **25 of 25**; none of the six secrets of the run appeared
-  in the server log; page JavaScript saw no cookie. The store file was deleted
-  under the running server between runs and enrollment kept working.
-- Not run: a real iPhone or Android device, the real FabOrchestrator, or the
-  deployed hardening app.
+- `npm test` (all suites), `tsc`, `eslint`, `next build`.
+  `__tests__/devices/` covers: enrollment with no FabOrchestrator call, email
+  or session; a QR naming a user refused; link previews cannot spend a QR;
+  expired and reused QR; eight simultaneous uses of one QR → exactly one
+  device; rate limiting; blocked before enrollment, through after; another
+  unapproved device blocked; revocation on the next request; replacement;
+  sign-in a separate step, open to any account on an approved device; admin
+  authorization; no token or hash in responses, the store file or logs; the
+  bootstrap CLI's record format.
+- Over the wire against `next start` with the gate enforced and a stub
+  FabOrchestrator: demo scenarios 1–6 (see the commit for the run).
+- Not run: a real iPhone or Android device, or the gate enforced on the
+  deployed app.

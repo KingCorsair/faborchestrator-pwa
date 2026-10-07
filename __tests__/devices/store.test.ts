@@ -9,7 +9,7 @@ import { appendFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { currentStorePath, setUp, tearDown } from "./fixture";
 import { hashSecret } from "@/lib/devices/credential";
 import { describeDevice } from "@/lib/devices/metadata";
-import { DeviceStore, parseRecord, serializeRecord } from "@/lib/devices/store";
+import { DeviceStore, parseRecord, recordChecksum, serializeRecord } from "@/lib/devices/store";
 
 const META = describeDevice("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Safari/604.1", true);
 const TEN_MIN = 10 * 60 * 1000;
@@ -25,13 +25,13 @@ afterEach(async () => {
   await tearDown();
 });
 
-async function issue(email = "alice@plant.example", now = Date.now()) {
-  return store.createEnrollment({ allowedEmail: email, createdBy: "admin@plant.example", ttlMs: TEN_MIN, now });
+async function issue(now = Date.now(), friendlyName?: string) {
+  return store.createEnrollment({ createdBy: "admin@plant.example", ttlMs: TEN_MIN, now, friendlyName });
 }
 
-async function enroll(email = "alice@plant.example") {
-  const { token } = await issue(email);
-  const result = await store.completeEnrollment({ token, userId: `id-${email}`, email, metadata: META });
+async function enroll() {
+  const { token } = await issue();
+  const result = await store.completeEnrollment({ token, metadata: META });
   assert.equal(result.kind, "enrolled");
   return result as Extract<typeof result, { kind: "enrolled" }>;
 }
@@ -41,36 +41,39 @@ describe("enrollment", () => {
     const result = await enroll();
     assert.equal(result.device.deviceId, "DEVICE-001");
     assert.equal(result.device.status, "APPROVED");
-    assert.equal(result.device.userId, "id-alice@plant.example");
     assert.equal(result.device.createdBy, "admin@plant.example");
     assert.match(result.token, /^[A-Za-z0-9_-]{43}$/);
     assert.equal((await store.verifyDevice("DEVICE-001", result.token)).kind, "approved");
   });
 
   test("an expired enrollment cannot be used", async () => {
-    const { token } = await issue("alice@plant.example", Date.now() - TEN_MIN - 1);
+    const { token } = await issue(Date.now() - TEN_MIN - 1);
     assert.equal((await store.lookupEnrollment(token)).kind, "expired");
-    const result = await store.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META });
+    const result = await store.completeEnrollment({ token, metadata: META });
     assert.equal(result.kind, "expired");
     assert.equal((await store.listDevices()).length, 0);
   });
 
   test("an already-used enrollment cannot be used again", async () => {
     const { token } = await issue();
-    const first = await store.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META });
+    const first = await store.completeEnrollment({ token, metadata: META });
     assert.equal(first.kind, "enrolled");
-    const second = await store.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META });
+    const second = await store.completeEnrollment({ token, metadata: META });
     assert.equal(second.kind, "used");
     assert.equal((await store.listDevices()).length, 1);
   });
 
-  test("the wrong user cannot use it, and it stays usable for the right one", async () => {
-    const { token } = await issue("alice@plant.example");
-    const wrong = await store.completeEnrollment({ token, userId: "b", email: "bob@plant.example", metadata: META });
-    assert.equal(wrong.kind, "wrong_user");
-    assert.equal((await store.lookupEnrollment(token)).kind, "valid");
-    const right = await store.completeEnrollment({ token, userId: "a", email: "ALICE@plant.example", metadata: META });
-    assert.equal(right.kind, "enrolled");
+  test("the token alone enrolls: no user is named, asked for or recorded", async () => {
+    const { token, enrollment } = await issue(Date.now(), "Line 3 phone");
+    assert.deepEqual(Object.keys(enrollment).sort(), [
+      "createdAt", "createdBy", "deviceId", "enrollmentId", "expiresAt", "friendlyName", "site", "usedAt",
+    ]);
+    const result = await store.completeEnrollment({ token, metadata: META });
+    assert.equal(result.kind, "enrolled");
+    if (result.kind !== "enrolled") return;
+    assert.equal(result.device.friendlyName, "Line 3 phone");
+    assert.ok(!("userId" in result.device) && !("email" in result.device), "a device belongs to no user");
+    assert.ok(!readFileSync(currentStorePath(), "utf8").includes("email"));
   });
 
   test("an unknown or malformed token names nothing", async () => {
@@ -82,7 +85,7 @@ describe("enrollment", () => {
     const { token } = await issue();
     const results = await Promise.all(
       Array.from({ length: 20 }, () =>
-        store.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META }),
+        store.completeEnrollment({ token, metadata: META }),
       ),
     );
     assert.equal(results.filter((r) => r.kind === "enrolled").length, 1);
@@ -94,8 +97,8 @@ describe("enrollment", () => {
     const other = new DeviceStore(currentStorePath());
     try {
       const results = await Promise.all([
-        ...Array.from({ length: 5 }, () => store.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META })),
-        ...Array.from({ length: 5 }, () => other.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META })),
+        ...Array.from({ length: 5 }, () => store.completeEnrollment({ token, metadata: META })),
+        ...Array.from({ length: 5 }, () => other.completeEnrollment({ token, metadata: META })),
       ]);
       assert.equal(results.filter((r) => r.kind === "enrolled").length, 1);
       assert.equal((await store.listDevices()).length, 1);
@@ -106,11 +109,11 @@ describe("enrollment", () => {
   });
 
   test("pending enrollments list only unused, unexpired ones, without tokens", async () => {
-    await issue("alice@plant.example");
-    await issue("bob@plant.example", Date.now() - TEN_MIN - 1);
-    await enroll("admin@plant.example");
+    await issue(Date.now(), "pending");
+    await issue(Date.now() - TEN_MIN - 1, "expired");
+    await enroll();
     const pending = await store.listPendingEnrollments();
-    assert.deepEqual(pending.map((e) => e.allowedEmail), ["alice@plant.example"]);
+    assert.deepEqual(pending.map((e) => e.friendlyName), ["pending"]);
     assert.ok(!JSON.stringify(pending).includes("th"));
   });
 });
@@ -178,7 +181,7 @@ describe("device verification", () => {
 describe("what the file holds", () => {
   test("only hashes: neither the enrollment token nor the device token is stored", async () => {
     const { token: enrollmentToken } = await issue();
-    const result = await store.completeEnrollment({ token: enrollmentToken, userId: "a", email: "alice@plant.example", metadata: META });
+    const result = await store.completeEnrollment({ token: enrollmentToken, metadata: META });
     assert.equal(result.kind, "enrolled");
     const deviceToken = (result as { token: string }).token;
     const file = readFileSync(currentStorePath(), "utf8");
@@ -196,8 +199,6 @@ describe("what the file holds", () => {
       eid: "enr_AAAAAAAAAAAAAAAA",
       dev: "DEVICE-777",
       th: hashSecret("B".repeat(43)),
-      uid: "x",
-      email: "x@x",
       name: "x",
       dtype: "phone",
       os: "iOS",
@@ -217,18 +218,26 @@ describe("what the file holds", () => {
     assert.equal((await store.verifyDevice(device.deviceId, token)).kind, "revoked");
   });
 
+  test("a version-1 record (enrollment for a named user, before 6 October) grants nothing", async () => {
+    const fields = { v: 1, t: "enrollment", id: "enr_AAAAAAAAAAAAAAAA", th: hashSecret("C".repeat(43)), email: "a@b.c", by: "x", site: null, name: null, at: Date.now(), exp: Date.now() + TEN_MIN };
+    appendFileSync(currentStorePath(), `${JSON.stringify({ ...fields, h: recordChecksum(fields) })}
+`);
+    assert.equal((await store.lookupEnrollment("C".repeat(43))).kind, "unknown");
+    assert.equal((await store.stats()).corrupt, 1);
+  });
+
   test("a store file replaced underneath a running store is the one written and read next", async () => {
-    await enroll("alice@plant.example");
+    await enroll();
     rmSync(currentStorePath());
-    const { token } = await issue("bob@plant.example");
+    const { token, enrollment } = await issue();
     assert.equal((await store.lookupEnrollment(token)).kind, "valid");
-    assert.ok(readFileSync(currentStorePath(), "utf8").includes("bob@plant.example"));
+    assert.ok(readFileSync(currentStorePath(), "utf8").includes(enrollment.enrollmentId));
     assert.equal((await store.listDevices()).length, 0, "the replaced file's devices are gone, not remembered");
   });
 
   test("an enrollment's marker exists once it is used, so a crash after it burns the enrollment rather than reusing it", async () => {
     const { token, enrollment } = await issue();
-    await store.completeEnrollment({ token, userId: "a", email: "alice@plant.example", metadata: META });
+    await store.completeEnrollment({ token, metadata: META });
     const markers = readdirSync(`${currentStorePath()}.locks`);
     assert.ok(markers.includes(`enrollment-${enrollment.enrollmentId}`));
     assert.ok(markers.includes("device-DEVICE-001"));

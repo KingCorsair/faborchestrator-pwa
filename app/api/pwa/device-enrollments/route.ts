@@ -14,8 +14,9 @@ const NO_STORE = { "Cache-Control": "no-store" };
 /**
  * Device enrollments, for administrators (`lib/devices/admin.ts`).
  *
- * POST issues a one-time enrollment for one user and answers with the link and
- * its QR code. **This is the only response that ever carries the enrollment
+ * POST issues a one-time enrollment and answers with the link and its QR
+ * code. The enrollment names no user: holding the link authorizes one device,
+ * and whoever then uses that device still signs in normally. **This is the only response that ever carries the enrollment
  * token**, and it goes to the administrator who asked; the store keeps its
  * hash. GET lists the enrollments still waiting to be used, without tokens.
  *
@@ -60,7 +61,6 @@ export async function POST(req: NextRequest) {
 
   try {
     const { enrollment, token } = await deviceStore().createEnrollment({
-      allowedEmail: parsed.data.email,
       createdBy: auth.admin.email,
       site: parsed.data.site,
       friendlyName: parsed.data.friendlyName,
@@ -69,7 +69,6 @@ export async function POST(req: NextRequest) {
     const url = enrollmentUrl(token)!;
     deviceAudit("DEVICE_ENROLLMENT_CREATED", {
       enrollmentId: enrollment.enrollmentId,
-      email: enrollment.allowedEmail,
       site: enrollment.site,
       actor: auth.admin.email,
       expiresAt: new Date(enrollment.expiresAt).toISOString(),

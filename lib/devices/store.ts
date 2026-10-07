@@ -12,7 +12,7 @@
  * lines in order, so the file is also the audit trail of who enrolled and who
  * revoked what.
  *
- *   enrollment  an administrator issued a one-time enrollment for a user
+ *   enrollment  an administrator issued a one-time enrollment
  *   enrolled    that enrollment was used: a device was created, APPROVED
  *   revoked     a device was revoked (by an administrator, or replaced)
  *   seen        a device was used (written at most every `SEEN_PERSIST_MS`)
@@ -61,7 +61,12 @@ import { DEVICE_ID, hashSecret, newSecretToken, SECRET_HASH, SECRET_TOKEN, secre
 
 export const DEVICE_STORE_ENV = "DEVICE_STORE_PATH";
 
-const RECORD_VERSION = 1;
+/**
+ * 2 since 6 October 2026, when enrollment stopped naming a user (the QR code
+ * authorizes a device, not a person). A version-1 line is not a valid record
+ * and grants nothing: a device enrolled under version 1 must enroll again.
+ */
+const RECORD_VERSION = 2;
 
 /** How often a device's use is written down. In memory it is exact; on disk it is at most this stale. */
 export const SEEN_PERSIST_MS = 15 * 60 * 1000;
@@ -70,8 +75,7 @@ export type DeviceStatus = "APPROVED" | "REVOKED";
 
 export interface Enrollment {
   enrollmentId: string;
-  /** The one user who may use it, as their FabOrchestrator email (lower case). */
-  allowedEmail: string;
+  /** The administrator who issued it. */
   createdBy: string;
   site: string | null;
   /** The name the device will be given, if the administrator chose one. */
@@ -92,10 +96,13 @@ export interface DeviceMetadata {
   context: string;
 }
 
+/**
+ * An approved (or revoked) device. It belongs to no user: the enrollment
+ * authorized the device, and whoever signs in on it is decided by the normal
+ * FabOrchestrator sign-in, every time.
+ */
 export interface Device extends DeviceMetadata {
   deviceId: string;
-  userId: string;
-  email: string;
   status: DeviceStatus;
   site: string | null;
   enrollmentId: string;
@@ -120,7 +127,6 @@ const EnrollmentRecord = z
     t: z.literal("enrollment"),
     id: z.string().regex(ENROLLMENT_ID),
     th: z.string().regex(SECRET_HASH),
-    email: text(255),
     by: text(255),
     site: text(100).nullable(),
     name: text(100).nullable(),
@@ -137,8 +143,6 @@ const EnrolledRecord = z
     eid: z.string().regex(ENROLLMENT_ID),
     dev: z.string().regex(DEVICE_ID),
     th: z.string().regex(SECRET_HASH),
-    uid: text(255),
-    email: text(255),
     name: text(100),
     dtype: text(40),
     os: text(40),
@@ -232,8 +236,7 @@ export type EnrollmentLookup =
 
 export type CompleteResult =
   | { kind: "enrolled"; device: Device; token: string }
-  | { kind: "unknown" | "expired" | "used" }
-  | { kind: "wrong_user"; enrollment: Enrollment };
+  | { kind: "unknown" | "expired" | "used" };
 
 export type DeviceVerification =
   | { kind: "approved"; device: Device }
@@ -256,6 +259,7 @@ function emptyState(): State {
   return { enrollments: new Map(), enrollmentByHash: new Map(), devices: new Map(), tokenHashes: new Map(), corrupt: 0 };
 }
 
+/** Lower case, trimmed: how administrator emails are compared (`lib/devices/admin.ts`). */
 export function normaliseEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -278,10 +282,10 @@ export class DeviceStore {
 
   /**
    * Issue a one-time enrollment. Returns the raw token exactly once, for the
-   * link; only its hash is stored.
+   * link; only its hash is stored. It names no user: whoever holds the link
+   * within its lifetime may enroll one device with it.
    */
   createEnrollment(input: {
-    allowedEmail: string;
     createdBy: string;
     site?: string | null;
     friendlyName?: string | null;
@@ -294,7 +298,6 @@ export class DeviceStore {
       t: "enrollment" as const,
       id: `enr_${newSecretToken().slice(0, 16)}`,
       th: hashSecret(token),
-      email: normaliseEmail(input.allowedEmail),
       by: input.createdBy,
       site: input.site?.trim() || null,
       name: input.friendlyName?.trim() || null,
@@ -326,14 +329,13 @@ export class DeviceStore {
   }
 
   /**
-   * Use an enrollment: create an APPROVED device for the user who has just
-   * authenticated, and mint its token. Exactly one call can succeed per
-   * enrollment, however many race (see "One enrollment, one device").
+   * Use an enrollment: create an APPROVED device and mint its token. The token
+   * is the whole authorization; no user is involved. Exactly one call can
+   * succeed per enrollment, however many race (see "One enrollment, one
+   * device").
    */
   completeEnrollment(input: {
     token: string;
-    userId: string;
-    email: string;
     metadata: DeviceMetadata;
     now?: number;
   }): Promise<CompleteResult> {
@@ -344,7 +346,6 @@ export class DeviceStore {
       const lookup = this.classifyEnrollment(this.state.enrollmentByHash.get(hashSecret(input.token)), now);
       if (lookup.kind !== "valid") return { kind: lookup.kind };
       const enrollment = lookup.enrollment;
-      if (normaliseEmail(input.email) !== enrollment.allowedEmail) return { kind: "wrong_user", enrollment };
 
       // The race-proof step: exactly one creator of this marker, ever.
       if (!(await this.createMarker(`enrollment-${enrollment.enrollmentId}`))) return { kind: "used" };
@@ -357,8 +358,6 @@ export class DeviceStore {
           eid: enrollment.enrollmentId,
           dev: deviceId,
           th: hashSecret(deviceToken),
-          uid: input.userId,
-          email: normaliseEmail(input.email),
           name: enrollment.friendlyName ?? input.metadata.friendlyName,
           dtype: input.metadata.deviceType,
           os: input.metadata.os,
@@ -583,7 +582,6 @@ function fold(content: string): { state: State; badLines: number[] } {
         if (state.enrollments.has(record.id) || state.enrollmentByHash.has(record.th)) return bad(index);
         state.enrollments.set(record.id, {
           enrollmentId: record.id,
-          allowedEmail: normaliseEmail(record.email),
           createdBy: record.by,
           site: record.site,
           friendlyName: record.name,
@@ -604,8 +602,6 @@ function fold(content: string): { state: State; badLines: number[] } {
         enrollment.deviceId = record.dev;
         state.devices.set(record.dev, {
           deviceId: record.dev,
-          userId: record.uid,
-          email: normaliseEmail(record.email),
           status: "APPROVED",
           site: enrollment.site,
           enrollmentId: record.eid,

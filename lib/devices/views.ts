@@ -12,8 +12,6 @@ export function deviceView(d: Device) {
   return {
     deviceId: d.deviceId,
     friendlyName: d.friendlyName,
-    userId: d.userId,
-    email: d.email,
     status: d.status,
     deviceType: d.deviceType,
     os: d.os,
@@ -34,7 +32,6 @@ export type DeviceView = ReturnType<typeof deviceView>;
 export function enrollmentView(e: Enrollment) {
   return {
     enrollmentId: e.enrollmentId,
-    email: e.allowedEmail,
     site: e.site,
     friendlyName: e.friendlyName,
     createdBy: e.createdBy,

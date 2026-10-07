@@ -221,25 +221,17 @@ export async function POST(req: NextRequest) {
 async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResponse> {
   // ── The approved device (device enrollment, 6 October 2026) ───────────────
   // The proxy has already refused this request if the device is not approved
-  // (`lib/devices/gate.ts`); it is checked again here because this is where the
-  // user becomes known. A device is enrolled for one user, so a different
-  // account signing in on it is refused and the token FabOrchestrator just
-  // issued is revoked. Same account on another, unenrolled device never gets
-  // this far: the proxy blocks it before sign-in.
+  // (`lib/devices/gate.ts`). It is checked again here, in the route itself,
+  // so sign-in never depends on the proxy alone. The device belongs to no
+  // user: any FabOrchestrator account may sign in on an approved device, and
+  // FabOrchestrator's own permissions decide what that account may do. An
+  // unenrolled device never gets this far, whatever credentials it holds.
   let deviceCredential: string | null = null;
   if (deviceGateMode() === "enforce") {
     const check = await checkApprovedDevice(req);
-    if (!check.ok) return await refuseAndRevoke(fo.token, "device_blocked", 403, DEVICE_NOT_APPROVED);
-    if (check.device.userId !== fo.user.id) {
-      deviceAudit("DEVICE_LOGIN_REFUSED", {
-        deviceId: check.device.deviceId,
-        userId: fo.user.id,
-        reason: "device_user_mismatch",
-      });
-      return await refuseAndRevoke(fo.token, "device_user_mismatch", 403, {
-        code: "device_user_mismatch",
-        error: "This device is enrolled for a different user. Ask your administrator to enroll it for you.",
-      });
+    if (!check.ok) {
+      deviceAudit("DEVICE_LOGIN_REFUSED", { deviceId: check.deviceId, userId: fo.user.id, reason: check.reason });
+      return await refuseAndRevoke(fo.token, "device_blocked", 403, DEVICE_NOT_APPROVED);
     }
     const presented = presentedCredential(req);
     deviceCredential = presented.kind === "present" ? presented.credential.raw : null;

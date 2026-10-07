@@ -204,7 +204,7 @@ export async function deviceGate(req: NextRequest, now: number = Date.now()): Pr
   }
   const store = deviceStore();
   if (await store.recordSeen(check.device.deviceId, now)) {
-    deviceAudit("DEVICE_ACCESS_ALLOWED", { deviceId: check.device.deviceId, userId: check.device.userId, site: check.device.site });
+    deviceAudit("DEVICE_ACCESS_ALLOWED", { deviceId: check.device.deviceId, site: check.device.site });
   }
   return null;
 }

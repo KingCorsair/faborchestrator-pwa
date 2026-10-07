@@ -51,10 +51,6 @@ export type SessionEndReason =
   | "password_change_required"
   /** Sign-in failed after FabOrchestrator had issued a token. */
   | "login_failed"
-  /** Device enrollment checked the user's identity with FabOrchestrator and keeps no session. */
-  | "device_enrollment"
-  /** Sign-in on an approved device by a user it was not enrolled for (`lib/devices/`). */
-  | "device_user_mismatch"
   /** The device is not (or no longer) approved: its blocked page ends the session. */
   | "device_blocked";
 

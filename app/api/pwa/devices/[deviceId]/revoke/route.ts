@@ -59,7 +59,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ deviceId: 
     if (result.changed) {
       deviceAudit("DEVICE_REVOKED", {
         deviceId,
-        userId: result.device.userId,
         site: result.device.site,
         actor: auth.admin.email,
         reason: result.device.revokeReason,

@@ -24,7 +24,7 @@ function run(...args: string[]): string {
 }
 
 test("the CLI's enrollment is one the store accepts and can complete", async () => {
-  const out = run("--email", "Admin@Plant.Example", "--store", currentStorePath(), "--origin", "https://pwa.test", "--minutes", "5", "--name", "Desk PC");
+  const out = run("--store", currentStorePath(), "--origin", "https://pwa.test", "--minutes", "5", "--name", "Desk PC");
   const url = /https:\/\/pwa\.test\/device-enroll\/([A-Za-z0-9_-]{43})/.exec(out);
   assert.ok(url, out);
   const token = url[1]!;
@@ -39,16 +39,10 @@ test("the CLI's enrollment is one the store accepts and can complete", async () 
     const lookup = await store.lookupEnrollment(token);
     assert.equal(lookup.kind, "valid");
     if (lookup.kind !== "valid") return;
-    assert.equal(lookup.enrollment.allowedEmail, "admin@plant.example");
     assert.equal(lookup.enrollment.createdBy, "bootstrap-cli");
     assert.ok(lookup.enrollment.expiresAt - lookup.enrollment.createdAt === 5 * 60 * 1000);
 
-    const done = await store.completeEnrollment({
-      token,
-      userId: "user-admin",
-      email: "admin@plant.example",
-      metadata: describeDevice(null, false),
-    });
+    const done = await store.completeEnrollment({ token, metadata: describeDevice(null, false) });
     assert.equal(done.kind, "enrolled");
     if (done.kind === "enrolled") assert.equal(done.device.friendlyName, "Desk PC");
   } finally {
@@ -57,8 +51,8 @@ test("the CLI's enrollment is one the store accepts and can complete", async () 
 });
 
 test("the CLI refuses to run without what it needs", () => {
-  assert.throws(() => run("--store", currentStorePath(), "--origin", "https://pwa.test"));
-  assert.throws(() => run("--email", "a@b.c", "--origin", "https://pwa.test", "--store", ""));
-  assert.throws(() => run("--email", "a@b.c", "--store", currentStorePath()));
-  assert.throws(() => run("--email", "a@b.c", "--store", currentStorePath(), "--origin", "https://pwa.test", "--minutes", "90"));
+  assert.throws(() => run("--origin", "https://pwa.test", "--store", ""));
+  assert.throws(() => run("--store", currentStorePath()));
+  assert.throws(() => run("--store", currentStorePath(), "--origin", "https://pwa.test", "--minutes", "90"));
+  assert.throws(() => run("--email", "a@b.c", "--store", currentStorePath(), "--origin", "https://pwa.test"));
 });

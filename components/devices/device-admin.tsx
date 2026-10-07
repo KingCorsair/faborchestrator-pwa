@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Device administration: create a one-time enrollment (QR code, link, expiry,
- * expected user), see enrolled devices, revoke one.
+ * Device administration: create a one-time enrollment (QR code, link, expiry),
+ * see enrolled devices, revoke one. An enrollment names no user: the code
+ * authorizes one device, and who uses the device is decided at sign-in.
  *
  * Revoking asks for a second tap on the same row rather than a browser
  * `confirm()`, which blocks the page and which a standalone app on some phones
@@ -70,7 +71,6 @@ export function DeviceAdmin() {
     const result = await call<Issued>("/api/pwa/device-enrollments", {
       method: "POST",
       body: JSON.stringify({
-        email: String(form.get("email") ?? ""),
         site: String(form.get("site") ?? "") || undefined,
         friendlyName: String(form.get("friendlyName") ?? "") || undefined,
       }),
@@ -120,18 +120,18 @@ export function DeviceAdmin() {
   return (
     <Shell>
       <section className="fab-card flex flex-col gap-4" style={{ padding: 24 }}>
-        <Label as="h2">Create enrollment</Label>
+        <Label as="h2">Create device enrollment</Label>
         <p className="m-0 text-[14px]" style={{ color: "var(--text-muted-cool)" }}>
-          A one-time QR code for one user&rsquo;s device. It expires in minutes and works once; the device that uses it
-          becomes approved. Business approval for the device must already be in place.
+          A one-time QR code that approves one device. Scanning it enrolls the device at once, with no sign-in; it
+          expires in minutes and works once. Whoever then uses the device still signs in to FabOrchestrator as
+          usual. Business approval for the device must already be in place.
         </p>
-        <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-3">
-          <Field name="email" label="User's FabOrchestrator email" type="email" required />
+        <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2">
           <Field name="friendlyName" label="Device name (optional)" />
           <Field name="site" label="Site (optional)" />
-          <div className="sm:col-span-3">
+          <div className="sm:col-span-2">
             <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Creating…" : "Create enrollment"}
+              {busy ? "Creating…" : "Create Device Enrollment"}
             </Button>
           </div>
         </form>
@@ -145,8 +145,8 @@ export function DeviceAdmin() {
           <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[14px]">
             {pending.map((e) => (
               <li key={e.enrollmentId}>
-                <strong>{e.email}</strong>
-                {e.friendlyName ? ` · ${e.friendlyName}` : ""} · expires {when(e.expiresAt)} · by {e.createdBy}
+                <strong>{e.friendlyName ?? "Unnamed device"}</strong>
+                {e.site ? ` · ${e.site}` : ""} · expires {when(e.expiresAt)} · by {e.createdBy}
               </li>
             ))}
           </ul>
@@ -165,7 +165,7 @@ export function DeviceAdmin() {
             <table className="w-full text-left text-[13px]" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--text-subtle)" }}>
-                  {["Device name", "Device ID", "User", "Device type", "Status", "Enrolled", "Last seen", ""].map((h) => (
+                  {["Device name", "Device ID", "Device type", "Status", "Enrolled", "Issued by", "Last seen", ""].map((h) => (
                     <th key={h} className="py-2 pr-3 font-normal">
                       {h}
                     </th>
@@ -177,7 +177,6 @@ export function DeviceAdmin() {
                   <tr key={d.deviceId} style={{ borderTop: "1px solid var(--border-light)" }}>
                     <td className="py-2 pr-3">{d.friendlyName}</td>
                     <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">{d.deviceId}</td>
-                    <td className="py-2 pr-3">{d.email}</td>
                     <td className="py-2 pr-3">
                       {d.deviceType} · {d.os} · {d.browser} · {d.context}
                     </td>
@@ -192,6 +191,7 @@ export function DeviceAdmin() {
                       ) : null}
                     </td>
                     <td className="py-2 pr-3">{when(d.createdAt)}</td>
+                    <td className="py-2 pr-3">{d.createdBy}</td>
                     <td className="py-2 pr-3">{when(d.lastSeenAt)}</td>
                     <td className="py-2">
                       {d.status === "APPROVED" ? (
@@ -265,7 +265,7 @@ function IssuedEnrollment({ issued, onDone }: { issued: Issued; onDone: () => vo
       />
       <div className="flex min-w-0 flex-col gap-2 text-[14px]">
         <span>
-          For <strong>{issued.enrollment.email}</strong>
+          <strong>One-time device enrollment</strong>
           {issued.enrollment.friendlyName ? ` · ${issued.enrollment.friendlyName}` : ""}
           {issued.enrollment.site ? ` · ${issued.enrollment.site}` : ""}
         </span>
@@ -283,8 +283,8 @@ function IssuedEnrollment({ issued, onDone }: { issued: Issued; onDone: () => vo
           )}
         </span>
         <span className="text-[12px]" style={{ color: "var(--text-subtle)" }}>
-          Scan it on the device to enroll, inside the installed app where possible. The link, for pasting into the
-          installed app:
+          Scan it on the device to approve it. It works once. The link, for pasting into the installed app on an
+          iPhone:
         </span>
         <code className="break-all text-[12px]">{issued.url}</code>
         <div className="flex gap-2">

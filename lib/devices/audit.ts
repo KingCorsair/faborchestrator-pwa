@@ -24,11 +24,10 @@ export interface DeviceAuditDetail {
   deviceId?: string | null;
   previousDeviceId?: string | null;
   enrollmentId?: string | null;
+  /** The FabOrchestrator user, where one is involved (sign-in on a device). Devices belong to no user. */
   userId?: string | null;
-  /** The user the event is about, when only their email is known (an enrollment's expected user). */
-  email?: string | null;
   site?: string | null;
-  /** Who performed it: an administrator's email, or `self` for the device's own user. */
+  /** Who performed it: an administrator's email, or `self` when a device's own re-enrollment replaced it. */
   actor?: string | null;
   reason?: string | null;
   /** `document`, `api` or `asset`; never the path, which may carry an id. */

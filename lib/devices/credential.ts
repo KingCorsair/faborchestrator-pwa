@@ -160,9 +160,11 @@ export function setEnrollmentCookie(req: NextRequest, res: NextResponse, token: 
     value: token,
     httpOnly: true,
     secure: secure(name),
-    // Strict: it is only ever read by this app's own enrollment page and its
-    // own POST, both same-origin, after the redirect that set it.
-    sameSite: "strict",
+    // Lax, not Strict: it is set on the redirect that answers a scanned QR
+    // code, a navigation that starts outside the browser, and the page that
+    // redirect lands on must receive it. Its only reader that acts on it is a
+    // same-origin JSON POST, which carries the route's own cross-site check.
+    sameSite: "lax",
     path: "/",
     maxAge: Math.max(1, Math.floor(maxAgeS)),
   });

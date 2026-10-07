@@ -241,6 +241,15 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="fab min-h-full p-6" style={{ background: "var(--page-surface)" }}>
       <div className="mx-auto flex max-w-[1100px] flex-col gap-5">
+        {/* Reached from FabOrchestrator's top bar (its "Devices" button); a
+            whole-page link back, since FabOrchestrator is a separate app. */}
+        <a
+          href="/home"
+          className="w-fit text-[13px] font-bold no-underline"
+          style={{ color: "var(--cockpit-indigo)" }}
+        >
+          ← Back to FabOrchestrator
+        </a>
         <header className="flex items-center justify-between gap-4">
           <BrandLockup />
           <h1 className="m-0 text-[20px]">Approved devices</h1>

@@ -47,6 +47,7 @@ import { GET as LIST_DEVICES } from "@/app/api/pwa/devices/route";
 import { POST as REVOKE } from "@/app/api/pwa/devices/[deviceId]/revoke/route";
 import { POST as CHALLENGE } from "@/app/api/pwa/device-auth/challenge/route";
 import { POST as LOGIN } from "@/app/api/pwa/auth/login/route";
+import { GET as ADMIN_ME } from "@/app/api/pwa/device-admin/me/route";
 
 /* ── Logs: captured for every test, and checked for secrets ────────────────── */
 
@@ -471,6 +472,23 @@ describe("admin endpoints require an approved device, a session and the allowlis
     ]) {
       assert.equal((await handler()).status, 403);
     }
+  });
+
+  test("FabOrchestrator's Devices button asks /api/pwa/device-admin/me: yes only for an admin on an approved device", async () => {
+    const me = (cookies: Cookies, bearer?: string) =>
+      ADMIN_ME(request("/api/pwa/device-admin/me", { cookies, headers: bearer ? { authorization: bearer } : {} }));
+    const admin = await adminBrowser();
+    const yes = await me(admin.cookies, admin.bearer);
+    assert.equal(yes.status, 200);
+    assert.deepEqual(await yes.json(), { admin: true });
+
+    const alicePhone = await enrolledPhone();
+    const alice = sessionOf("alice@plant.example");
+    await bindSession(alice.foToken, alicePhone.deviceId!);
+    assert.equal((await me(alice.cookies, alice.bearer)).status, 403, "not on the allowlist");
+    const unproved = sessionOf("admin@plant.example");
+    assert.equal((await me(unproved.cookies, unproved.bearer)).status, 403, "admin, but no device proof");
+    assert.equal((await me({})).status, 403, "no session");
   });
 
   test("the device list shows key fingerprints, never keys or hashes", async () => {

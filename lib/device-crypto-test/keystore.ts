@@ -7,22 +7,29 @@
  * here converts the private key to a string. The one call that tries to export
  * it (`exportRefused`) exists to prove the browser refuses.
  *
- * If a browser cannot persist the `CryptoKey` (WebKit refuses in private
- * browsing, with `DataCloneError`), `generate` reports that as the result. It
- * does not fall back to an exportable or wrapped key: that would be a weaker
- * design, and the point of the test is to find out whether the strong one works.
+ * Three records, so the debug buttons can never disturb an enrolled device:
  *
- * Client-only. Separate database from anything else in the app.
+ *   "device"   the enrolled device: its key and its DEVICE-nnn
+ *   "pending"  a key made during an enrollment, until the server confirms it
+ *   "debug"    the manual debug buttons' key
+ *
+ * If a browser cannot persist the `CryptoKey` (WebKit refuses in private
+ * browsing, with `DataCloneError`), that is reported as the result. There is no
+ * fallback to an exportable or wrapped key: that would be a weaker design, and
+ * the point of the test is to find out whether the strong one works.
+ *
+ * Client-only. Its own database, separate from anything else in the app.
  */
 
 const DB_NAME = "fo-device-crypto-test";
 const DB_VERSION = 1;
 const KEYS = "keys";
 const LAUNCHES = "launches";
-const RECORD_ID = "device";
+
+export type RecordId = "device" | "pending" | "debug";
 
 export interface StoredCredential {
-  id: typeof RECORD_ID;
+  id: RecordId;
   privateKey: CryptoKey;
   /** Public key, SPKI DER, base64url. Public: safe to show, send and store. */
   publicKeySpki: string;
@@ -30,13 +37,16 @@ export interface StoredCredential {
   createdAt: number;
   /** The context it was created in, for the report. */
   createdIn: "installed-app" | "browser";
+  /** The server's id for this device, once enrolled. */
+  deviceId: string | null;
 }
 
 export interface LaunchEntry {
   at: number;
   context: "installed-app" | "browser";
-  /** What this page load found in IndexedDB. */
+  /** What this page load found in IndexedDB for the enrolled device. */
   found: "usable-key" | "no-key" | "unusable-record" | "storage-error";
+  deviceId?: string | null;
 }
 
 function b64url(bytes: ArrayBuffer | Uint8Array): string {
@@ -126,12 +136,15 @@ function usable(record: unknown): record is StoredCredential {
   );
 }
 
-export type GenerateResult =
+export type StoreResult =
   | { ok: true; credential: StoredCredential }
   | { ok: false; stage: "generate" | "store" | "read-back"; error: string };
 
-/** Make a new key pair and store the private CryptoKey itself. Replaces any existing test credential. */
-export async function generate(): Promise<GenerateResult> {
+/**
+ * Make a new key pair (private key non-extractable) and store the private
+ * `CryptoKey` itself under `id`, then read it back. Replaces that record only.
+ */
+export async function generateAndStore(id: RecordId, deviceId: string | null = null): Promise<StoreResult> {
   let pair: CryptoKeyPair;
   try {
     pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
@@ -141,20 +154,26 @@ export async function generate(): Promise<GenerateResult> {
   // Public keys are always exportable; that is what a server stores.
   const spki = await crypto.subtle.exportKey("spki", pair.publicKey);
   const credential: StoredCredential = {
-    id: RECORD_ID,
+    id,
     privateKey: pair.privateKey,
     publicKeySpki: b64url(spki),
     fingerprint: await fingerprintOf(spki),
     createdAt: Date.now(),
     createdIn: context(),
+    deviceId,
   };
+  return put(credential);
+}
+
+/** Store a credential record (the CryptoKey by structured clone) and read it back. */
+export async function put(credential: StoredCredential): Promise<StoreResult> {
   try {
     await tx(KEYS, "readwrite", (s) => s.put(credential));
   } catch (error) {
     // DataCloneError here means: this browser cannot persist a CryptoKey.
     return { ok: false, stage: "store", error: describe(error) };
   }
-  const back = await load();
+  const back = await load(credential.id);
   if (back.kind !== "usable") return { ok: false, stage: "read-back", error: `read back as: ${back.kind}` };
   return { ok: true, credential: back.credential };
 }
@@ -165,10 +184,10 @@ export type LoadResult =
   | { kind: "unusable"; detail: string }
   | { kind: "storage-error"; error: string };
 
-export async function load(): Promise<LoadResult> {
+export async function load(id: RecordId): Promise<LoadResult> {
   let record: unknown;
   try {
-    record = await tx(KEYS, "readonly", (s) => s.get(RECORD_ID));
+    record = await tx(KEYS, "readonly", (s) => s.get(id));
   } catch (error) {
     return { kind: "storage-error", error: describe(error) };
   }
@@ -180,11 +199,11 @@ export async function load(): Promise<LoadResult> {
   return { kind: "usable", credential: record };
 }
 
-export async function clear(): Promise<void> {
-  await tx(KEYS, "readwrite", (s) => s.delete(RECORD_ID));
+export async function remove(id: RecordId): Promise<void> {
+  await tx(KEYS, "readwrite", (s) => s.delete(id));
 }
 
-/** Sign bytes with the stored private key. ECDSA P-256, SHA-256; Web Crypto yields r‖s (64 bytes). */
+/** Sign bytes with a stored private key. ECDSA P-256, SHA-256; Web Crypto yields r‖s (64 bytes). */
 export async function sign(credential: StoredCredential, data: Uint8Array<ArrayBuffer>): Promise<string> {
   const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, credential.privateKey, data);
   return b64url(signature);
@@ -216,9 +235,9 @@ export async function exportRefused(credential: StoredCredential): Promise<boole
 }
 
 /** Record what this page load found, for the restart history. Keeps the last 30. */
-export async function recordLaunch(found: LaunchEntry["found"]): Promise<LaunchEntry[]> {
+export async function recordLaunch(found: LaunchEntry["found"], deviceId: string | null): Promise<LaunchEntry[]> {
   try {
-    await tx(LAUNCHES, "readwrite", (s) => s.add({ at: Date.now(), context: context(), found } satisfies LaunchEntry));
+    await tx(LAUNCHES, "readwrite", (s) => s.add({ at: Date.now(), context: context(), found, deviceId } satisfies LaunchEntry));
     const all = await tx<LaunchEntry[]>(LAUNCHES, "readonly", (s) => s.getAll() as IDBRequest<LaunchEntry[]>);
     return all.slice(-30);
   } catch {

@@ -40,8 +40,11 @@ export type Purpose = "enroll" | "verify";
 interface OpenChallenge {
   bytes: Buffer;
   purpose: Purpose;
-  /** Fingerprint of the public key this challenge may be answered by. */
-  keyFingerprint: string;
+  /**
+   * What the challenge is for: an enrollment id, a device id, or (debug) a key
+   * fingerprint. An answer is checked against the same subject.
+   */
+  subject: string;
   expiresAt: number;
 }
 
@@ -68,19 +71,19 @@ function sweep(now: number): void {
   for (const [id, c] of open) if (c.expiresAt <= now) open.delete(id);
 }
 
-/** Issue a challenge for one key and one purpose. */
+/** Issue a challenge for one subject (enrollment, device, or debug key) and one purpose. */
 export function issueChallenge(
   purpose: Purpose,
-  claimedFingerprint: string,
+  subject: string,
   now: number = Date.now(),
 ): { challengeId: string; challenge: string; expiresAt: number } | null {
-  if (!/^[0-9a-f]{32}$/.test(claimedFingerprint)) return null;
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(subject)) return null;
   sweep(now);
   if (open.size >= MAX_OPEN) return null;
   const challengeId = randomBytes(16).toString("base64url");
   const bytes = randomBytes(32);
   const expiresAt = now + CHALLENGE_TTL_MS;
-  open.set(challengeId, { bytes, purpose, keyFingerprint: claimedFingerprint, expiresAt });
+  open.set(challengeId, { bytes, purpose, subject, expiresAt });
   return { challengeId, challenge: bytes.toString("base64url"), expiresAt };
 }
 
@@ -88,15 +91,25 @@ export type VerifyResult =
   | { ok: true; fingerprint: string; purpose: Purpose }
   | {
       ok: false;
-      reason: "unknown_or_used_challenge" | "expired" | "wrong_purpose" | "bad_key" | "key_mismatch" | "bad_signature";
+      reason:
+        | "unknown_or_used_challenge"
+        | "expired"
+        | "wrong_purpose"
+        | "wrong_subject"
+        | "bad_key"
+        | "key_mismatch"
+        | "bad_signature";
     };
 
 /**
  * Check one proof. The challenge is removed **before** anything else is
  * checked, so whatever the outcome it can never be answered again.
+ *
+ * `subject` is what the caller expects the challenge to be for. When it is a
+ * key fingerprint (the debug path), the presented key must also match it.
  */
 export function verifyProof(
-  input: { challengeId: string; purpose: Purpose; publicKeySpki: string; signature: string },
+  input: { challengeId: string; purpose: Purpose; subject: string; publicKeySpki: string; signature: string },
   now: number = Date.now(),
 ): VerifyResult {
   const challenge = open.get(input.challengeId);
@@ -104,11 +117,14 @@ export function verifyProof(
   if (!challenge) return { ok: false, reason: "unknown_or_used_challenge" };
   if (challenge.expiresAt <= now) return { ok: false, reason: "expired" };
   if (challenge.purpose !== input.purpose) return { ok: false, reason: "wrong_purpose" };
+  if (challenge.subject !== input.subject) return { ok: false, reason: "wrong_subject" };
 
   const decoded = decodeSpki(input.publicKeySpki);
   if (!decoded) return { ok: false, reason: "bad_key" };
   const fingerprint = keyFingerprint(decoded.der);
-  if (fingerprint !== challenge.keyFingerprint) return { ok: false, reason: "key_mismatch" };
+  if (/^[0-9a-f]{32}$/.test(challenge.subject) && fingerprint !== challenge.subject) {
+    return { ok: false, reason: "key_mismatch" };
+  }
 
   if (!/^[A-Za-z0-9_-]{80,100}$/.test(input.signature)) return { ok: false, reason: "bad_signature" };
   const signature = Buffer.from(input.signature, "base64url");

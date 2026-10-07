@@ -83,16 +83,16 @@ export type ScannedQr =
   | { kind: "other"; text: string };
 
 /**
- * What a scanned QR is, for the test: an enrollment-style test QR
- * (`<origin>/device-crypto-test?enroll=<token>`), the normal FO QR (any other
- * URL on this origin), or something else.
+ * What a scanned QR is, for the test: an Enrollment QR
+ * (`<origin>/device-crypto-test?enroll=<43-character one-time code>`), the
+ * Normal Access QR (any other URL on this origin), or something else.
  */
 export function classifyQr(text: string, origin: string): ScannedQr {
   try {
     const url = new URL(text.trim());
     if (url.origin !== origin) return { kind: "other", text };
     const token = url.pathname === "/device-crypto-test" ? url.searchParams.get("enroll") : null;
-    if (token && /^TEST-[A-Za-z0-9_-]{8,64}$/.test(token)) return { kind: "enrollment", token };
+    if (token && /^[A-Za-z0-9_-]{43}$/.test(token)) return { kind: "enrollment", token };
     return { kind: "normal", path: url.pathname };
   } catch {
     return { kind: "other", text };

@@ -9,121 +9,147 @@ by signing fresh server challenges. Entra/Intune are outside this work.
 The working cookie implementation (`docs/DEVICE_ENROLLMENT.md`) is unchanged.
 Nothing here is deployed or connected to the real device store.
 
-## The test
+## The test: the real QR workflow
 
-| Piece | Where |
-|---|---|
-| Page (developer-only; 404 unless `DEVICE_CRYPTO_TEST=1`) | `app/device-crypto-test/page.tsx`, `components/device-crypto-test/crypto-test.tsx` |
-| Its own manifest: installs as a separate Home Screen app, **FO Crypto Test**, start URL and scope `/device-crypto-test` | `app/device-crypto-test/manifest.webmanifest/route.ts` |
-| Key generation, IndexedDB storage of the `CryptoKey`, signing, restart log | `lib/device-crypto-test/keystore.ts` |
-| Server challenge (32 random bytes, 60 s, single use, bound to one key and one purpose) and Node verification of the browser's signature | `lib/device-crypto-test/challenges.ts`, `app/api/pwa/device-crypto-test/{challenge,verify}` |
-| In-app QR scanner (BarcodeDetector, else zxing-wasm served by this app) | `lib/device-crypto-test/scanner.ts`, `app/device-crypto-test/zxing_reader.wasm/route.ts` |
-| Unit tests | `__tests__/devices/crypto-test.test.ts` |
+`/device-crypto-test` (404 unless `DEVICE_CRYPTO_TEST=1`). It has its own
+manifest, so "Add to Home Screen" from it installs a separate app, **FO Crypto
+Test** (start URL and scope `/device-crypto-test`), with its own installed-app
+storage. Everything server-side is an **in-memory test registry**
+(`lib/device-crypto-test/registry.ts`): never the production device store,
+never the device gate, gone when the server restarts.
 
-The page shows: credential present/absent, public-key fingerprint, created
-when and in which context (installed app or browser), a restart history (what
-every page load found), storage-persisted state, browser/context details, and a
-result log. Buttons: Generate Device Credential, Check Stored Credential, Sign
-Test Challenge + Verify Signature, Replay Last Signature, Request Persistent
-Storage, Scan QR (inside this app), Clear Test Credential, Clear Restart History.
-It never shows or exports private key material; it does try to export it once,
-to prove the browser refuses.
+**Test admin (on the computer)**
+- **Create Enrollment QR**: a 256-bit one-time code (stored as SHA-256), valid
+  10 minutes, shown as a QR with its enrollment ID, a countdown, and its state
+  (UNUSED → USED by DEVICE-nnn, or EXPIRED), polled every 2 seconds.
+- **Normal Access QR**: the everyday FO URL. It enrolls nothing.
+- **Test devices**: DEVICE-nnn, status, key fingerprint, enrolled, last
+  verified, **Revoke** / Reinstate.
 
-Two test QR codes are on the page: an **enrollment-style** one
-(`/device-crypto-test?enroll=TEST-…`, a throwaway value) and the **normal FO
-QR** (`/`). Scanned with the in-app scanner they run, respectively, "make a key
-here and prove it" and "prove the key → would continue to FO sign-in, or BLOCK".
-Opened with the phone's own Camera instead, the enrollment one lands in the
-browser and the page says so in red: that is the iPhone mismatch, made visible.
+**Phone (the installed test app)**
+- **Scan Enrollment QR** → in-app camera → automatically:
+  1. the server checks the code is unused and unexpired (**before** any key is
+     made, so a spent QR changes nothing on the phone);
+  2. an ECDSA P-256 key pair is generated, private key `extractable: false`;
+  3. the private `CryptoKey` itself is stored in IndexedDB and read back
+     (`DataCloneError` here is reported as the feasibility result);
+  4. the phone signs the server's enrollment challenge and sends the public key;
+  5. the server verifies that proof, consumes the code (one synchronous
+     check-and-set: of several phones racing, exactly one wins) and creates
+     DEVICE-nnn, APPROVED, holding that public key;
+  6. the phone stores DEVICE-nnn beside its key.
+
+  Result: **"Device enrolled successfully as DEVICE-nnn"**. No email, password,
+  login or extra button.
+- **On every launch**: "Stored device: DEVICE-nnn — key loaded from IndexedDB on
+  this launch … No new key generated", plus a launch history.
+- **Scan Normal Access QR** → in-app camera → the phone claims its stored
+  DEVICE-nnn, the server issues a 60-second single-use challenge for that
+  device, the phone signs it with the stored private key, the server verifies
+  against the **public key registered at enrollment** (never one the phone
+  supplies) and then checks the status:
+  - **"Device verified successfully — DEVICE-nnn"** (APPROVED);
+  - **"BLOCKED — DEVICE-nnn is REVOKED"** (the signature was valid: crypto says
+    which device; server state says no);
+  - **"BLOCKED — no enrolled device credential"** (never enrolled, or key gone).
+- An Enrollment QR link opened in a **browser tab** instead of the installed app
+  is refused, and the QR stays unused: a key made there would belong to the
+  browser's storage, not the app's.
+- "No camera? Paste the QR link" runs the same handler. The old manual crypto
+  buttons are in a collapsed **Debug** section, on their own key, so they
+  cannot disturb the enrolled device.
 
 ## Results so far (this machine)
 
-| Check | Chromium | WebKit (Playwright, Windows) |
-|---|---|---|
-| Generate P-256 key, `extractable: false` | ✓ | ✓ |
-| Store the `CryptoKey` in IndexedDB and read it back | ✓ | ✓ |
-| Export of the private key refused (pkcs8, jwk) | ✓ | ✓ |
-| Sign a server challenge; Node verifies (IEEE P1363) | ✓ | ✓ |
-| Replay of a used signature refused | ✓ | ✓ |
-| Same key after **3 full browser restarts**, each signing a fresh challenge | ✓ | ✓ |
-| Cleared → unenrolled → device check would BLOCK | ✓ | ✓ |
-| In-app scanner reads the enrollment QR (fake camera), key made and proved in the same page | ✓ | — |
-| After restart, in-app scan of the normal QR proves the same key | ✓ | — |
-| Never-enrolled context scanning the normal QR → BLOCK | ✓ | — |
+The 15-step demonstration, end to end against the production build: a
+"computer" browser on the test admin; Phone A and Phone B as separate
+persistent browser profiles, each "close and reopen" a full browser restart.
 
-26/26 restart checks, 9/9 scanner checks, 12 unit tests (fresh, one-use,
-expiring, key-bound and purpose-bound challenges; wrong curve, wrong key,
-tampered and replayed signatures refused; a non-exportable key cannot be
-exported **or wrapped**).
+| Step | Chromium (fake camera) | WebKit (paste box) |
+|---|---|---|
+| 1. Computer creates Enrollment QR (UNUSED, countdown) | ✓ | ✓ |
+| 2–3. Phone A scans it → "Device enrolled successfully as DEVICE-001"; key non-exportable, in IndexedDB, export refused | ✓ | ✓ |
+| 4. Same QR again on Phone A → "already been used", nothing changed | ✓ | ✓ |
+| 4. Same QR on Phone B → "already been used", B stays unenrolled; computer shows USED by DEVICE-001 | ✓ | ✓ |
+| 5–6. Close and reopen Phone A → "Stored device: DEVICE-001", key loaded, no new key | ✓ | ✓ |
+| 7–10. Phone A scans Normal Access QR → "Device verified successfully — DEVICE-001" | ✓ | ✓ |
+| 11–12. Phone B (never enrolled) scans it → "BLOCKED — no enrolled device credential" | ✓ | ✓ |
+| 13. Computer revokes DEVICE-001 | ✓ | ✓ |
+| 14–15. Phone A scans again → "BLOCKED — DEVICE-001 is REVOKED", signature still valid | ✓ | ✓ |
+| Enrollment link opened in a browser tab → refused, QR still UNUSED | ✓ | ✓ |
+
+16/16 in each engine. Unit tests (16): one-time codes, reuse refused, six
+phones racing for one code → exactly one device, expiry, proof of the private
+key required at enrollment, challenge bound to its enrollment or device, access
+checked against the registered key, revocation and reinstatement, challenge
+freshness, single use, expiry and replay, P-256 only, the API end to end, and
+the flag.
 
 **What this does not prove.** Playwright's WebKit on Windows is not Apple's
-WebKit. It did *not* reproduce the known iOS failure (Safari private browsing
-refuses to store a `CryptoKey`, `DataCloneError`, because Apple's WebKit
-encrypts stored keys with a per-site key it cannot get in an ephemeral session).
-So the **iPhone Home Screen app result can only come from a real iPhone.**
+WebKit, and a desktop profile is not an iOS Home Screen app. The iPhone result
+can only come from a real iPhone.
 
 ## Running it on real phones (no deploy)
 
-The phone needs HTTPS (Web Crypto, the camera and installation all require a
-secure context). A Cloudflare quick tunnel to this computer gives one:
+The phones need HTTPS (Web Crypto, the camera and installation all require a
+secure context). Two ways:
 
-1. `cloudflared tunnel --url http://localhost:3013` and note the
-   `https://….trycloudflare.com` address it prints.
-2. In the repo, with that address:
-   `npm run build`, then start with
-   `DEVICE_CRYPTO_TEST=1 PUBLIC_ORIGIN=https://….trycloudflare.com npx next start --port 3013`
-   (plus the usual `SESSION_SIGNING_*`, `FABORCH_BASE_URL`, `SEAT_STORE_PATH`
-   from `.env`). The test needs no FabOrchestrator.
-3. Open `https://….trycloudflare.com/device-crypto-test` on the computer too:
-   it shows the two test QR codes.
+- **A Cloudflare quick tunnel to this computer** (no production change):
+  1. `cloudflared tunnel --url http://localhost:3013`, note the
+     `https://….trycloudflare.com` address.
+  2. In the repo: `npm run build`, then
+     `DEVICE_CRYPTO_TEST=1 PUBLIC_ORIGIN=https://….trycloudflare.com npx next start --port 3013`
+     (the usual `SESSION_SIGNING_*`, `FABORCH_BASE_URL`, `SEAT_STORE_PATH` come
+     from `.env`; the test needs no FabOrchestrator).
+  The address changes with every tunnel, and an installed test app is tied to
+  it; keep one tunnel running for the whole test. Restarting the server clears
+  the test registry (the phone would then report "server does not know
+  DEVICE-001").
+- **The hardening app**, with approval: set `DEVICE_CRYPTO_TEST=1` there for
+  the duration of the test, then remove it.
 
-The tunnel address changes every time; an installed test app is tied to it.
-Reinstall after a new tunnel. Alternatively, with approval, set
-`DEVICE_CRYPTO_TEST=1` on the hardening app for the duration of the test.
+### The demonstration (iPhone = Phone A; any second phone = Phone B)
 
-### iPhone
+Preparation, each phone: open `https://<host>/device-crypto-test` in Safari
+(iPhone) or Chrome (Android) → Share → **Add to Home Screen** (Android: menu →
+Install app) → open **FO Crypto Test** from the Home Screen. The top card must
+say **This app (installed-app)**.
 
-1. Safari → the test URL → Share → **Add to Home Screen** (name: FO Crypto Test).
-2. Open **FO Crypto Test** from the Home Screen. "Status in this context" must
-   say **installed-app**.
-3. **Generate Device Credential** → expect "Key generated … stored in IndexedDB
-   and read back" and "Private key export refused".
-   (If it says `FAILED at store: DataCloneError`, the design does not work in
-   this context. Stop and report.)
-4. **Sign Test Challenge + Verify Signature** → "Signature verified by the
-   server". **Replay Last Signature** → "refused".
-5. **Request Persistent Storage**; note the answer.
-6. Fully close the app (swipe it away in the app switcher).
-7. Reopen it from the Home Screen → expect "Key loaded after restart: <same
-   fingerprint>"; restart history gains a `usable-key` line.
-8. Sign + Verify again → verified.
-9. Repeat 6–8 twice more; also once after locking the phone for a few minutes,
-   and once after rebooting the phone.
-10. **Scan QR (inside this app)** → allow the camera → point at the
-    enrollment-style QR on the computer → "Enrollment-style QR scanned inside
-    the installed-app", proof verified. Then scan the normal FO QR → "Device
-    proof OK → production would continue". The app never switches to Safari.
-11. Control: scan the enrollment-style QR with the **Camera app**. It opens in
-    Safari; the page says "This is the browser, not the installed app" and shows
-    no credential, although the installed app has one. That is the storage
-    separation.
-12. Optional, important for deciding re-enrollment rules: back up and restore
-    to another iPhone (or note whether the app survives an iOS update) and
-    record whether the key is still there.
+1. **Computer**: open `https://<host>/device-crypto-test`, press **Create
+   Enrollment QR**. It shows UNUSED and a countdown.
+2. **Phone A** (installed app): **Scan Enrollment QR**, allow the camera, point
+   at the computer's QR.
+3. Phone A shows **"Device enrolled successfully as DEVICE-001"** and
+   **"Stored device: DEVICE-001"**. (If it shows "This app could not keep a
+   device key … DataCloneError", that is the feasibility answer for this phone:
+   stop and record it.) The computer shows USED by DEVICE-001 and lists
+   DEVICE-001 APPROVED.
+4. Phone A: **Scan Enrollment QR** on the same code again → "already been
+   used". (Optional: Phone B scans it too → "already been used".)
+5. Fully close the app on Phone A (swipe it away in the app switcher).
+6. Reopen it from the Home Screen → **"Stored device: DEVICE-001"**, and the
+   activity line "key loaded from IndexedDB on this launch … No new key
+   generated". Launch history gains a `usable-key · DEVICE-001` line.
+7. **Computer**: the **Normal Access QR** is on the same page.
+8. Phone A: **Scan Normal Access QR**.
+9.–10. Phone A shows **"Device verified successfully — DEVICE-001"**; the
+   computer's Last verified updates.
+11. **Phone B** (installed, never enrolled): **Scan Normal Access QR**.
+12. Phone B shows **"BLOCKED — no enrolled device credential"**.
+13. **Computer**: **Revoke DEVICE-001**.
+14. Phone A: **Scan Normal Access QR**.
+15. Phone A shows **"BLOCKED — DEVICE-001 is REVOKED"** ("the signature was
+    valid").
 
-### Android (Chrome)
+Worth adding on the iPhone: repeat steps 5–10 after locking the phone for a
+while and after a reboot; and, as a control, scan the Enrollment QR with the
+**Camera app** instead. It opens in Safari, which refuses to enroll ("Opened in
+the browser, not the installed app") and leaves the QR unused: the storage
+separation, made visible. On Android, try the same control: a Chrome-installed
+app may receive the link directly, and then it enrolls automatically.
 
-1. Chrome → test URL → menu → **Install app** (or Add to Home screen).
-2. Open the installed **FO Crypto Test**; context should say installed-app.
-3. Steps 3–10 as for iPhone.
-4. Control, expected to differ from iPhone: scan the enrollment-style QR with
-   the **Camera app**. If it opens in the installed app or in Chrome, the page
-   should show the **same** credential, because a Chrome-installed app shares
-   Chrome's storage. Record which surface opened it. (If the phone's default
-   browser is not Chrome, it will open there and show no credential.)
-
-Record for each phone: model, OS version, browser version, each step's result,
-and a screenshot of the restart history.
+Record for each phone: model, OS and browser version, the result of each step,
+and a screenshot of the top card, the banner and the launch history.
 
 ## Findings
 

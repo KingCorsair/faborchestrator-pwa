@@ -266,6 +266,8 @@ describe("enrollment", () => {
     assert.equal(link.status, 303);
     assert.equal(redirectedTo(link), "/device-enroll");
     assert.ok(!(link.headers.get("location") ?? "").includes(token), "the code leaves the address bar");
+    // Relative: on Fly a route handler's own URL is the listen address (0.0.0.0:3000).
+    assert.equal(link.headers.get("location"), "/device-enroll");
     const pending = setCookie(link, ENROLL_COOKIE);
     assert.equal(pending, token);
     const result = await scanEnrollment(token, { via: "cookie" });

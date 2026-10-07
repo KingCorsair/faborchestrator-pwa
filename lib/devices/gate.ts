@@ -163,12 +163,13 @@ export function deviceBlockedResponse(req: NextRequest, reason: BlockReason): Ne
   if (kind === "asset") {
     return new NextResponse(null, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
-  const url = req.nextUrl.clone();
-  url.pathname = DEVICE_BLOCKED_PAGE;
-  url.search = `?reason=${unavailable ? "unavailable" : reason === "revoked" ? "revoked" : "session"}`;
-  const res = NextResponse.redirect(url, 307);
-  res.headers.set("Cache-Control", "no-store");
-  return res;
+  // A relative Location: a route handler's `req.nextUrl` on the standalone
+  // server is the listen address (`0.0.0.0:3000`), not the public origin.
+  const why = unavailable ? "unavailable" : reason === "revoked" ? "revoked" : "session";
+  return new NextResponse(null, {
+    status: 307,
+    headers: { Location: `${DEVICE_BLOCKED_PAGE}?reason=${why}`, "Cache-Control": "no-store" },
+  });
 }
 
 /* ── Blocked-request logging, bounded ──────────────────────────────────────── */

@@ -22,6 +22,7 @@ import { submittedCredentials } from "@/lib/credentials";
 import { endClientSession } from "@/lib/end-client-session";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 import { AUTH_TOKEN_KEY, readStored, storeSession, type StoredUser } from "@/lib/stored-session";
+import { signInProof, storedDevice } from "@/lib/devices/keystore";
 
 export interface LoginPageProps {
   /**
@@ -30,9 +31,15 @@ export interface LoginPageProps {
    * it does no checking of its own.
    */
   next?: string;
+  /**
+   * Whether this deployment requires an approved device (`DEVICE_GATE`,
+   * `lib/devices/gate.ts`). Then the page checks this device's key before it
+   * shows the form, and sends a device without one to `/device-blocked`.
+   */
+  deviceRequired?: boolean;
 }
 
-export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
+export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }: LoginPageProps) {
   const router = useRouter();
   /*
     The credential fields are deliberately **uncontrolled**.
@@ -58,6 +65,28 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
   const [showPassword, setShowPassword] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+
+  /**
+   * The approved device, before the person (device enrollment, 6 October
+   * 2026). The device's key lives in this browser's IndexedDB
+   * (`lib/devices/keystore.ts`); without one there is nothing to sign in with,
+   * so the form is never shown and the device goes to the device-check page.
+   * `null` while unknown; with the gate off nothing is required and the form
+   * shows at once.
+   */
+  const [device, setDevice] = React.useState<string | null | "checking">(deviceRequired ? "checking" : null);
+  React.useEffect(() => {
+    let cancelled = false;
+    void storedDevice().then((stored) => {
+      if (cancelled) return;
+      if (stored.kind === "enrolled") setDevice(stored.credential.deviceId);
+      else if (deviceRequired) window.location.replace("/device-blocked");
+      else setDevice(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [deviceRequired]);
 
   /**
    * Whether a session already exists on this device, once checked.
@@ -191,14 +220,36 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
     setError(null);
 
     try {
+      // The device proves itself first: a fresh challenge, signed with the key
+      // it made at enrollment. Sent whenever this device has a key (so sessions
+      // are bound to their device even before the gate is turned on); required
+      // when the gate is on, and the server checks it before the password.
+      let deviceProof: { deviceId: string; challengeId: string; signature: string } | undefined;
+      if (device && device !== "checking") {
+        const proof = await signInProof();
+        if (proof.ok) deviceProof = proof.proof;
+        else if (deviceRequired) {
+          if (proof.reason === "unavailable") {
+            setError(proof.detail ?? "This device could not be checked just now. Try again shortly.");
+          } else {
+            window.location.replace("/device-blocked");
+          }
+          return;
+        }
+      }
+
       const res = await fetch("/api/pwa/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: submittedEmail, password: submittedPassword }),
+        body: JSON.stringify({ email: submittedEmail, password: submittedPassword, ...(deviceProof ? { device: deviceProof } : {}) }),
       });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        if (data.code === "device_revoked" || data.code === "device_not_approved") {
+          window.location.replace(`/device-blocked${data.code === "device_revoked" ? "?reason=revoked" : ""}`);
+          return;
+        }
         setError(data.error ?? "Sign-in failed");
         return;
       }
@@ -301,6 +352,11 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
               visitor who does not know which one they have opened cannot tell
               from anything else here. */}
           <h1 className="text-[26px]">Sign in to FabOrchestrator PWA</h1>
+          {device && device !== "checking" ? (
+            <p data-testid="approved-device" className="m-0 -mt-[8px] text-[12px]" style={{ color: "var(--text-muted-cool)" }}>
+              Approved device: <strong>{device}</strong>
+            </p>
+          ) : null}
 
           {/*
             An existing session, surfaced rather than acted on. The two states
@@ -434,7 +490,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH }: LoginPageProps) {
               click in that gap is handled by the browser, not by this component.
               The window is invisible on localhost and real on a phone.
             */
-            disabled={busy || !hydrated}
+            disabled={busy || !hydrated || device === "checking"}
             className="mt-1 w-full justify-center py-[15px] text-[16px]"
             style={{ borderRadius: 13 }}
           >

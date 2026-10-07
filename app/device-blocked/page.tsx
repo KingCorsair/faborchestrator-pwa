@@ -11,13 +11,17 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 /**
- * `/device-blocked` — where `proxy.ts` sends every document request from a
- * device that is not an enrolled, approved one (`lib/devices/gate.ts`).
+ * `/device-blocked` — where a device lands when it cannot enter
+ * FabOrchestrator: the sign-in page found no device key here, or `proxy.ts`
+ * refused a session whose device is revoked (`?reason=revoked`), unbound
+ * (`?reason=session`) or could not be checked (`?reason=unavailable`).
  *
- * It renders no FabOrchestrator data and calls nothing but sign-out: whatever
- * session this browser still holds is ended here (the server clears the
- * FabOrchestrator cookie and revokes its token), which is how a revoked
- * device's session ends the next time the phone opens anything.
+ * It renders no FabOrchestrator data. On arrival it ends whatever session this
+ * browser holds (which also revokes it at FabOrchestrator). It then shows what
+ * this device holds, and enrolls it **here**, with the in-app scanner or a
+ * pasted link: inside the installed app that is the only way to put the key in
+ * the app's own storage (on an iPhone, a Camera scan opens Safari, whose
+ * storage is separate).
  */
 export default async function Page({
   searchParams,
@@ -25,27 +29,17 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { reason } = await searchParams;
-  const unavailable = reason === "unavailable";
+  const why = reason === "revoked" || reason === "session" || reason === "unavailable" ? reason : null;
 
   return (
-    <DeviceCard eyebrow="DEVICE CHECK" title={unavailable ? "This device could not be checked" : "This device is not approved"}>
-      {unavailable ? (
+    <DeviceCard eyebrow="DEVICE CHECK" title={why === "unavailable" ? "This device could not be checked" : "Device check"}>
+      {why === "unavailable" ? (
         <Notice tone="error">
-          FabOrchestrator could not check whether this device is approved just now. Try again in a few minutes, and
-          contact your administrator if this continues.
+          FabOrchestrator could not check this device just now. Try again in a few minutes, and contact your
+          administrator if this continues.
         </Notice>
-      ) : (
-        <>
-          <p className="m-0 text-[15px] leading-[1.6]" style={{ color: "var(--text-ink)" }}>
-            This device is not approved to access FabOrchestrator.
-          </p>
-          <p className="m-0 text-[14px] leading-[1.6]" style={{ color: "var(--text-muted-cool)" }}>
-            Please contact your administrator to enroll this device. They will give you a one-time enrollment code to
-            scan on this device.
-          </p>
-        </>
-      )}
-      <BlockedActions />
+      ) : null}
+      <BlockedActions reason={why} />
     </DeviceCard>
   );
 }

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { currentStorePath, setUp, tearDown } from "./fixture";
+import { currentStorePath, newPhoneKey, setUp, tearDown } from "./fixture";
 import { describeDevice } from "@/lib/devices/metadata";
 import { DeviceStore, parseRecord } from "@/lib/devices/store";
 
@@ -42,7 +42,7 @@ test("the CLI's enrollment is one the store accepts and can complete", async () 
     assert.equal(lookup.enrollment.createdBy, "bootstrap-cli");
     assert.ok(lookup.enrollment.expiresAt - lookup.enrollment.createdAt === 5 * 60 * 1000);
 
-    const done = await store.completeEnrollment({ token, metadata: describeDevice(null, false) });
+    const done = await store.completeEnrollment({ token, publicKeySpki: (await newPhoneKey()).spki, metadata: describeDevice(null, false) });
     assert.equal(done.kind, "enrolled");
     if (done.kind === "enrolled") assert.equal(done.device.friendlyName, "Desk PC");
   } finally {

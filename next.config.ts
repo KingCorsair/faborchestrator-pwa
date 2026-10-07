@@ -11,7 +11,8 @@ if (REQUEST_BODY_CEILING_BYTES <= MAX_REQUEST_BODY_BYTES) {
 /** The content security policy of the device-enrollment pages (see `headers()` below). */
 const DEVICE_PAGE_CSP = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
+  // 'wasm-unsafe-eval': the in-app enrollment scanner decodes QR codes in wasm.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
@@ -108,10 +109,11 @@ const nextConfig: NextConfig = {
   // The failure would only bite someone trying to run `.next/standalone/`
   // directly on Windows, which nothing here asks for.
   output: "standalone",
-  // The device-credential feasibility test serves the QR decoder's wasm from
-  // node_modules (`app/device-crypto-test/zxing_reader.wasm`).
+  // The in-app enrollment scanner (and the developer feasibility test) serve
+  // the QR decoder's wasm from node_modules (`app/device-blocked/zxing_reader.wasm`).
   outputFileTracingIncludes: {
     "/device-crypto-test/zxing_reader.wasm": ["./node_modules/zxing-wasm/dist/reader/zxing_reader.wasm"],
+    "/device-blocked/zxing_reader.wasm": ["./node_modules/zxing-wasm/dist/reader/zxing_reader.wasm"],
   },
 
   /**
@@ -195,7 +197,7 @@ const nextConfig: NextConfig = {
         // scanner would need too.
         source: "/device-crypto-test",
         headers: [
-          { key: "Content-Security-Policy", value: DEVICE_PAGE_CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'") },
+          { key: "Content-Security-Policy", value: DEVICE_PAGE_CSP },
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Cache-Control", value: "no-store" },

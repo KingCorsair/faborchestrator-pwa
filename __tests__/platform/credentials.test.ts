@@ -96,7 +96,8 @@ describe("a submit that escapes React must not leak the credential", () => {
   test("the submit button waits for hydration", () => {
     assert.match(
       source,
-      /disabled=\{busy \|\| !hydrated\}/,
+      // Further conditions may follow (the device check, 6 October 2026); `!hydrated` must stay.
+      /disabled=\{busy \|\| !hydrated(?: \|\| [^}]+)?\}/,
       "the submit button must be disabled until React has attached",
     );
     assert.match(source, /setHydrated\(true\)/, "and something must set that flag");

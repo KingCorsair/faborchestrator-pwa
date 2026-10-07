@@ -16,10 +16,14 @@
  *   enrolled    that enrollment was used: a device was created, APPROVED
  *   revoked     a device was revoked (by an administrator, or replaced)
  *   seen        a device was used (written at most every `SEEN_PERSIST_MS`)
+ *   bound       a session signed in with a device's proof (by the FO token's
+ *               fingerprint, never the token): every later request on it is
+ *               checked against that device
  *
- * The file holds **hashes, never secrets**: the SHA-256 of each enrollment
- * token and each device token (`lib/devices/credential.ts`). The raw tokens
- * exist only in the enrollment link and in the device's cookie.
+ * The file holds **no secrets**: the SHA-256 of each enrollment code
+ * (`lib/devices/credential.ts`) and each device's **public** key. The raw
+ * enrollment code exists only in the enrollment link; a device's private key
+ * never leaves the device (`lib/devices/keystore.ts`).
  *
  * ── The rules it keeps ──────────────────────────────────────────────────────
  *  · **Fails closed.** A line that is not exactly a valid record is counted,
@@ -57,16 +61,25 @@ import { mkdir, open, readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { reportError } from "@/lib/report-error";
-import { DEVICE_ID, hashSecret, newSecretToken, SECRET_HASH, SECRET_TOKEN, secretMatches } from "./credential";
+import { decodePublicKey, PUBLIC_KEY_SPKI } from "./challenges";
+import { DEVICE_ID, hashSecret, newSecretToken, SECRET_HASH, SECRET_TOKEN } from "./credential";
 
 export const DEVICE_STORE_ENV = "DEVICE_STORE_PATH";
 
 /**
- * 2 since 6 October 2026, when enrollment stopped naming a user (the QR code
- * authorizes a device, not a person). A version-1 line is not a valid record
- * and grants nothing: a device enrolled under version 1 must enroll again.
+ * 3 since 6 October 2026, when the device stamp became a Web Crypto key pair:
+ * a device record holds the device's **public key**, and the private key never
+ * leaves the device. Records of earlier versions (a user-named enrollment, a
+ * bearer-token hash) are not valid records and grant nothing: those devices
+ * must enroll again.
  */
-const RECORD_VERSION = 2;
+const RECORD_VERSION = 3;
+
+/** How long a session's device binding is kept, at most: past any session's end. */
+const MAX_BINDING_MS = 24 * 60 * 60 * 1000;
+
+/** A session's fingerprint as `lib/auth.ts` `foFingerprint` makes it. */
+const SESSION_FP = /^[A-Za-z0-9_-]{22}$/;
 
 /** How often a device's use is written down. In memory it is exact; on disk it is at most this stale. */
 export const SEEN_PERSIST_MS = 15 * 60 * 1000;
@@ -104,6 +117,8 @@ export interface DeviceMetadata {
 export interface Device extends DeviceMetadata {
   deviceId: string;
   status: DeviceStatus;
+  /** Fingerprint of the device's public key: public, for display and logs. */
+  keyFingerprint: string;
   site: string | null;
   enrollmentId: string;
   /** The administrator who issued the enrollment this device came from. */
@@ -142,7 +157,8 @@ const EnrolledRecord = z
     t: z.literal("enrolled"),
     eid: z.string().regex(ENROLLMENT_ID),
     dev: z.string().regex(DEVICE_ID),
-    th: z.string().regex(SECRET_HASH),
+    /** The device's public key (SPKI, base64url). The private key never reaches the server. */
+    pk: z.string().regex(PUBLIC_KEY_SPKI),
     name: text(100),
     dtype: text(40),
     os: text(40),
@@ -175,7 +191,20 @@ const SeenRecord = z
   })
   .strict();
 
-const StoreRecord = z.discriminatedUnion("t", [EnrollmentRecord, EnrolledRecord, RevokedRecord, SeenRecord]);
+/** A session that signed in with this device's proof: its FO-token fingerprint, never the token. */
+const BoundRecord = z
+  .object({
+    v: z.literal(RECORD_VERSION),
+    t: z.literal("bound"),
+    sf: z.string().regex(SESSION_FP),
+    dev: z.string().regex(DEVICE_ID),
+    exp: time,
+    at: time,
+    h: z.string(),
+  })
+  .strict();
+
+const StoreRecord = z.discriminatedUnion("t", [EnrollmentRecord, EnrolledRecord, RevokedRecord, SeenRecord, BoundRecord]);
 type StoreRecord = z.infer<typeof StoreRecord>;
 type Unsigned<R> = R extends unknown ? Omit<R, "h" | "v"> : never;
 
@@ -235,15 +264,8 @@ export type EnrollmentLookup =
   | { kind: "unknown" };
 
 export type CompleteResult =
-  | { kind: "enrolled"; device: Device; token: string }
-  | { kind: "unknown" | "expired" | "used" };
-
-export type DeviceVerification =
-  | { kind: "approved"; device: Device }
-  | { kind: "revoked"; device: Device }
-  /** The id is known but the token is not its token. */
-  | { kind: "mismatch"; deviceId: string }
-  | { kind: "unknown" };
+  | { kind: "enrolled"; device: Device }
+  | { kind: "unknown" | "expired" | "used" | "bad_key" };
 
 /* ── The store ─────────────────────────────────────────────────────────────── */
 
@@ -251,12 +273,14 @@ interface State {
   enrollments: Map<string, Enrollment>;
   enrollmentByHash: Map<string, string>;
   devices: Map<string, Device>;
-  tokenHashes: Map<string, string>;
+  publicKeys: Map<string, string>;
+  /** Session fingerprint → the device it signed in with, and until when. */
+  sessions: Map<string, { deviceId: string; exp: number }>;
   corrupt: number;
 }
 
 function emptyState(): State {
-  return { enrollments: new Map(), enrollmentByHash: new Map(), devices: new Map(), tokenHashes: new Map(), corrupt: 0 };
+  return { enrollments: new Map(), enrollmentByHash: new Map(), devices: new Map(), publicKeys: new Map(), sessions: new Map(), corrupt: 0 };
 }
 
 /** Lower case, trimmed: how administrator emails are compared (`lib/devices/admin.ts`). */
@@ -329,35 +353,41 @@ export class DeviceStore {
   }
 
   /**
-   * Use an enrollment: create an APPROVED device and mint its token. The token
-   * is the whole authorization; no user is involved. Exactly one call can
-   * succeed per enrollment, however many race (see "One enrollment, one
-   * device").
+   * Use an enrollment: create an APPROVED device holding `publicKeySpki`. The
+   * enrollment code is the whole authorization; no user is involved. The
+   * caller has already checked that the device holds the matching private key
+   * (a signed enrollment challenge, `lib/devices/challenges.ts`). Exactly one
+   * call can succeed per enrollment, however many race (see "One enrollment,
+   * one device").
    */
   completeEnrollment(input: {
     token: string;
+    publicKeySpki: string;
     metadata: DeviceMetadata;
     now?: number;
   }): Promise<CompleteResult> {
     return this.serialised(async () => {
       const now = input.now ?? Date.now();
       if (!SECRET_TOKEN.test(input.token)) return { kind: "unknown" };
+      if (!decodePublicKey(input.publicKeySpki)) return { kind: "bad_key" };
       await this.load();
       const lookup = this.classifyEnrollment(this.state.enrollmentByHash.get(hashSecret(input.token)), now);
       if (lookup.kind !== "valid") return { kind: lookup.kind };
       const enrollment = lookup.enrollment;
+      // One key, one device: a key already registered is refused here, before
+      // the enrollment is spent (the file would refuse the line anyway).
+      if ([...this.state.publicKeys.values()].includes(input.publicKeySpki)) return { kind: "bad_key" };
 
       // The race-proof step: exactly one creator of this marker, ever.
       if (!(await this.createMarker(`enrollment-${enrollment.enrollmentId}`))) return { kind: "used" };
 
       const deviceId = await this.allocateDeviceId();
-      const deviceToken = newSecretToken();
       await this.append(
         serializeRecord({
           t: "enrolled",
           eid: enrollment.enrollmentId,
           dev: deviceId,
-          th: hashSecret(deviceToken),
+          pk: input.publicKeySpki,
           name: enrollment.friendlyName ?? input.metadata.friendlyName,
           dtype: input.metadata.deviceType,
           os: input.metadata.os,
@@ -369,7 +399,7 @@ export class DeviceStore {
       await this.load();
       const device = this.state.devices.get(deviceId);
       if (!device) throw new DeviceStoreUnavailableError("The device was written but could not be read back.");
-      return { kind: "enrolled", device, token: deviceToken };
+      return { kind: "enrolled", device };
     });
   }
 
@@ -382,16 +412,37 @@ export class DeviceStore {
 
   /* ── Devices ───────────────────────────────────────────────────────────── */
 
-  /** Check a presented device id and token. The token is compared by hash, in constant time. */
-  async verifyDevice(deviceId: string, token: string): Promise<DeviceVerification> {
-    if (!DEVICE_ID.test(deviceId) || !SECRET_TOKEN.test(token)) return { kind: "unknown" };
+  /** The public key registered for a device at enrollment, or null for an unknown device. */
+  async publicKeyOf(deviceId: string): Promise<string | null> {
+    if (!DEVICE_ID.test(deviceId)) return null;
     await this.load();
-    const device = this.state.devices.get(deviceId);
-    const hash = this.state.tokenHashes.get(deviceId);
-    if (!device || !hash) return { kind: "unknown" };
-    if (!secretMatches(token, hash)) return { kind: "mismatch", deviceId };
-    const view = this.withSeen(device);
-    return device.status === "APPROVED" ? { kind: "approved", device: view } : { kind: "revoked", device: view };
+    return this.state.publicKeys.get(deviceId) ?? null;
+  }
+
+  /**
+   * Record that a session signed in with this device's proof. `sessionFp` is
+   * the FabOrchestrator token's fingerprint (`foFingerprint`), never the token.
+   * Every later request on that session is checked against this device.
+   */
+  bindSession(sessionFp: string, deviceId: string, expiresAt: number, now: number = Date.now()): Promise<void> {
+    if (!SESSION_FP.test(sessionFp) || !DEVICE_ID.test(deviceId)) {
+      return Promise.reject(new TypeError("device store: bad session binding"));
+    }
+    const exp = Math.min(expiresAt, now + MAX_BINDING_MS);
+    return this.serialised(async () => {
+      await this.append(serializeRecord({ t: "bound", sf: sessionFp, dev: deviceId, exp, at: now }));
+      await this.load();
+    });
+  }
+
+  /** The device a session signed in with, while its binding lasts; otherwise null. */
+  async sessionDevice(sessionFp: string, now: number = Date.now()): Promise<Device | null> {
+    if (!SESSION_FP.test(sessionFp)) return null;
+    await this.load();
+    const binding = this.state.sessions.get(sessionFp);
+    if (!binding || binding.exp <= now) return null;
+    const device = this.state.devices.get(binding.deviceId);
+    return device ? this.withSeen(device) : null;
   }
 
   async getDevice(deviceId: string): Promise<Device | null> {
@@ -597,12 +648,16 @@ function fold(content: string): { state: State; badLines: number[] } {
         const enrollment = state.enrollments.get(record.eid);
         // No enrollment, a used one, a used device id or a reused token: no device.
         if (!enrollment || enrollment.usedAt !== null || state.devices.has(record.dev)) return bad(index);
-        if ([...state.tokenHashes.values()].includes(record.th)) return bad(index);
+        // One key, one device: a public key already registered is not registered again.
+        if ([...state.publicKeys.values()].includes(record.pk)) return bad(index);
+        const decoded = decodePublicKey(record.pk);
+        if (!decoded) return bad(index);
         enrollment.usedAt = record.at;
         enrollment.deviceId = record.dev;
         state.devices.set(record.dev, {
           deviceId: record.dev,
           status: "APPROVED",
+          keyFingerprint: decoded.fingerprint,
           site: enrollment.site,
           enrollmentId: record.eid,
           createdBy: enrollment.createdBy,
@@ -617,7 +672,7 @@ function fold(content: string): { state: State; badLines: number[] } {
           browser: record.browser,
           context: record.ctx,
         });
-        state.tokenHashes.set(record.dev, record.th);
+        state.publicKeys.set(record.dev, record.pk);
         return;
       }
       case "revoked": {
@@ -628,6 +683,12 @@ function fold(content: string): { state: State; badLines: number[] } {
         device.revokedAt = record.at;
         device.revokedBy = record.by;
         device.revokeReason = record.reason;
+        return;
+      }
+      case "bound": {
+        if (!state.devices.has(record.dev)) return bad(index);
+        // A fingerprint is bound once; a later line for it is ignored, never re-pointed.
+        if (!state.sessions.has(record.sf)) state.sessions.set(record.sf, { deviceId: record.dev, exp: record.exp });
         return;
       }
       case "seen": {

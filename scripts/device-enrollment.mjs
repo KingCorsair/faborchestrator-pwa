@@ -81,7 +81,7 @@ const site = opts.site?.trim().slice(0, 100) || null;
 const token = randomBytes(32).toString("base64url");
 const now = Date.now();
 const record = {
-  v: 2,
+  v: 3,
   t: "enrollment",
   id: `enr_${randomBytes(32).toString("base64url").slice(0, 16)}`,
   th: createHash("sha256").update(token).digest("base64url"),

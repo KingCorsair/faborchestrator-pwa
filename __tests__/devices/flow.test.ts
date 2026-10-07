@@ -1,50 +1,56 @@
 /**
  * Device enrollment end to end, through the real proxy and route handlers,
- * against a stub FabOrchestrator (`lib/devices/`).
+ * against a stub FabOrchestrator (`lib/devices/`), with the Web Crypto device
+ * stamp (6 October 2026):
  *
- * The architecture these hold (6 October 2026):
+ *   admin creates a one-time enrollment QR → the device (installed app, or the
+ *   browser the QR opened in) generates a non-exportable key pair and registers
+ *   the public key → DEVICE-nnn, APPROVED. No email, no password, no cookie.
  *
- *   admin creates a one-time enrollment QR → a device opens it → the device is
- *   approved at once, with no sign-in → later, the normal front door checks the
- *   device first, then the normal FabOrchestrator sign-in decides who uses it.
+ *   normal use: the sign-in page signs a fresh challenge with the stored key;
+ *   the server checks it against the registered public key and the device's
+ *   status **before** asking FabOrchestrator about the password; the session
+ *   is bound to DEVICE-nnn, and every request on it is checked again, so a
+ *   revoked device is stopped on its next request.
  *
- * The enrollment code authorizes a device; it does not authenticate a person.
- * The scenarios at the bottom are the demo (1–6) written down.
+ * Phones here hold real non-extractable Web Crypto keys (`newPhoneKey`).
  */
 
 import { test, describe, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  browser,
+  bindSession,
   currentStorePath,
-  DEVICE_COOKIE,
   ENROLL_COOKIE,
   foCalls,
+  newPhoneKey,
   redirectedTo,
   request,
   sessionOf,
   setCookie,
   setUp,
+  signChallenge,
   tearDown,
+  type PhoneKey,
 } from "./fixture";
 import { NextResponse } from "next/server";
 import { proxy } from "@/proxy";
-import { credentialValue } from "@/lib/devices/credential";
 import { describeDevice } from "@/lib/devices/metadata";
 import { deviceStore } from "@/lib/devices/store";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { GET as ENROLL_LINK } from "@/app/device-enroll/[token]/route";
+import { POST as START } from "@/app/api/pwa/device-enrollments/start/route";
 import { POST as COMPLETE } from "@/app/api/pwa/device-enrollments/complete/route";
 import { GET as LIST_ENROLLMENTS, POST as CREATE_ENROLLMENT } from "@/app/api/pwa/device-enrollments/route";
 import { GET as LIST_DEVICES } from "@/app/api/pwa/devices/route";
 import { POST as REVOKE } from "@/app/api/pwa/devices/[deviceId]/revoke/route";
+import { POST as CHALLENGE } from "@/app/api/pwa/device-auth/challenge/route";
 import { POST as LOGIN } from "@/app/api/pwa/auth/login/route";
 
 /* ── Logs: captured for every test, and checked for secrets ────────────────── */
 
 let logged: string[] = [];
-/** Every secret a test has seen; none may ever appear in a log line. */
 let secrets: string[] = [];
 
 beforeEach(async () => {
@@ -58,9 +64,7 @@ beforeEach(async () => {
   }
 });
 afterEach(async () => {
-  for (const secret of secrets) {
-    assert.ok(!logged.some((line) => line.includes(secret)), "a secret reached the log");
-  }
+  for (const secret of secrets) assert.ok(!logged.some((line) => line.includes(secret)), "a secret reached the log");
   mock.restoreAll();
   await tearDown();
 });
@@ -68,6 +72,10 @@ afterEach(async () => {
 /* ── Helpers ───────────────────────────────────────────────────────────────── */
 
 type Cookies = Record<string, string | null>;
+interface Phone {
+  key: PhoneKey;
+  deviceId: string | null;
+}
 
 /** What the proxy does with this request: "blocked" by the device gate, or "passed" it. */
 async function gate(path: string, cookies: Cookies = {}, method = "GET") {
@@ -80,189 +88,263 @@ async function gate(path: string, cookies: Cookies = {}, method = "GET") {
   return "passed";
 }
 
-/** A device approved directly in the store, as the bootstrap CLI would: its cookie value. */
-async function bootstrapDevice(): Promise<string> {
+/** A device approved directly in the store (as the bootstrap CLI and a scan would), with its key. */
+async function enrolledPhone(): Promise<Phone> {
+  const key = await newPhoneKey();
   const store = deviceStore();
   const { token } = await store.createEnrollment({ createdBy: "bootstrap-cli", ttlMs: 600_000 });
-  const result = await store.completeEnrollment({
-    token,
-    metadata: describeDevice("Mozilla/5.0 (Windows NT 10.0) Chrome/130", false),
-  });
+  secrets.push(token);
+  const result = await store.completeEnrollment({ token, publicKeySpki: key.spki, metadata: describeDevice("Mozilla/5.0 (Windows NT 10.0) Chrome/130", false) });
   assert.equal(result.kind, "enrolled");
-  const { device, token: deviceToken } = result as Extract<typeof result, { kind: "enrolled" }>;
-  secrets.push(token, deviceToken);
-  return credentialValue(device.deviceId, deviceToken);
+  return { key, deviceId: (result as { device: { deviceId: string } }).device.deviceId };
 }
 
-/** The administrator, signed in on an approved device. */
+/** The administrator: an approved device, signed in, session bound to it. */
 async function adminBrowser() {
-  const device = await bootstrapDevice();
+  const phone = await enrolledPhone();
   const session = sessionOf("admin@plant.example");
-  return { cookies: browser(device, session), bearer: session.bearer };
+  await bindSession(session.foToken, phone.deviceId!);
+  return { phone, cookies: session.cookies, bearer: session.bearer };
 }
 type Admin = Awaited<ReturnType<typeof adminBrowser>>;
 
 async function createEnrollment(admin: Admin, json: Record<string, unknown> = {}) {
-  const res = await CREATE_ENROLLMENT(
-    request("/api/pwa/device-enrollments", { cookies: admin.cookies, headers: { authorization: admin.bearer }, json }),
-  );
-  const body = (await res.json()) as { url: string; qrSvg: string; enrollment: { enrollmentId: string; expiresAt: string } };
+  const res = await CREATE_ENROLLMENT(request("/api/pwa/device-enrollments", { cookies: admin.cookies, headers: { authorization: admin.bearer }, json }));
+  const body = (await res.json()) as { url: string; qrSvg: string; enrollment: { enrollmentId: string } };
   assert.equal(res.status, 201, JSON.stringify(body));
   const token = new URL(body.url).pathname.split("/").pop()!;
   secrets.push(token);
   return { ...body, token };
 }
 
-/** A phone opens the enrollment link (what scanning the QR does): the token moves into a cookie. */
-async function openLink(token: string, cookies: Cookies = {}) {
-  const res = await ENROLL_LINK(request(`/device-enroll/${token}`, { cookies }), { params: Promise.resolve({ token }) });
-  return { res, pending: setCookie(res, ENROLL_COOKIE) };
-}
-
-/** The enrollment page's own automatic POST. No email, no password. */
-async function complete(pending: string | undefined, cookies: Cookies = {}) {
+/**
+ * What the device does when it scans an Enrollment QR (`keystore.enroll`):
+ * start (the code is checked first) → make a key → sign → complete.
+ * `via: "cookie"` is the link path (the code in the pending cookie).
+ */
+async function scanEnrollment(token: string, opts: { key?: PhoneKey; via?: "body" | "cookie"; cookies?: Cookies } = {}) {
+  const key = opts.key ?? (await newPhoneKey());
+  const cookies = { ...(opts.cookies ?? {}), ...(opts.via === "cookie" ? { [ENROLL_COOKIE]: token } : {}) };
+  const tokenBody = opts.via === "cookie" ? {} : { token };
+  const start = await START(request("/api/pwa/device-enrollments/start", { cookies, json: tokenBody }));
+  const s = (await start.json()) as { challengeId?: string; challenge?: string; reason?: string };
+  if (start.status !== 200) return { status: start.status, step: "start" as const, body: s, key, deviceId: null };
   const res = await COMPLETE(
     request("/api/pwa/device-enrollments/complete", {
-      cookies: { ...cookies, [ENROLL_COOKIE]: pending ?? null },
-      json: { installedApp: true },
+      cookies,
+      json: { ...tokenBody, challengeId: s.challengeId, publicKeySpki: key.spki, signature: await signChallenge(key, s.challenge!), installedApp: true },
     }),
   );
-  const body = (await res.json()) as Record<string, unknown>;
-  const device = setCookie(res, DEVICE_COOKIE);
-  if (device) secrets.push(device.split(".")[1]!);
-  return { res, body, device };
+  const body = (await res.json()) as { device?: { deviceId: string; keyFingerprint: string }; reason?: string; code?: string };
+  return { status: res.status, step: "complete" as const, body, key, deviceId: body.device?.deviceId ?? null, res };
 }
 
-/** Scan an enrollment QR on a phone, end to end: the phone's device cookie value. */
-async function scanEnrollment(admin: Admin, cookies: Cookies = {}) {
-  const { token } = await createEnrollment(admin);
-  const { pending } = await openLink(token, cookies);
-  const { res, device } = await complete(pending, cookies);
-  assert.equal(res.status, 200);
-  return device!;
+/** What the sign-in page does: get a challenge for its device, sign it, send it with the password. */
+async function signIn(phone: Phone | null, email: string, password: string, opts: { proof?: Record<string, string> | null } = {}) {
+  let device: Record<string, string> | undefined;
+  if (opts.proof !== undefined) device = opts.proof ?? undefined;
+  else if (phone?.deviceId) {
+    const c = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: phone.deviceId } }));
+    const cb = (await c.json()) as { challengeId: string; challenge: string };
+    device = { deviceId: phone.deviceId, challengeId: cb.challengeId, signature: await signChallenge(phone.key, cb.challenge) };
+  }
+  const res = await LOGIN(request("/api/pwa/auth/login", { json: { email, password, ...(device ? { device } : {}) } }));
+  const body = (await res.json()) as { token?: string; code?: string };
+  const foToken = setCookie(res, FO_TOKEN_COOKIE);
+  return { res, body, device, cookies: { [FO_TOKEN_COOKIE]: foToken ?? null } as Cookies, bearer: body.token ? `Bearer ${body.token}` : null };
 }
-
-const login = (device: string | null, email: string, password: string) =>
-  LOGIN(request("/api/pwa/auth/login", { cookies: { [DEVICE_COOKIE]: device }, json: { email, password } }));
 
 const revoke = (admin: Admin, deviceId: string) =>
-  REVOKE(
-    request(`/api/pwa/devices/${deviceId}/revoke`, { cookies: admin.cookies, headers: { authorization: admin.bearer }, json: {} }),
-    { params: Promise.resolve({ deviceId }) },
-  );
-
-/* ── The everyday device check ─────────────────────────────────────────────── */
-
-describe("everyday device check, in front of everything", () => {
-  test("approved credential → PASS", async () => {
-    const device = await bootstrapDevice();
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: device }), "passed");
-    assert.equal(await gate("/api/pwa/auth/login", { [DEVICE_COOKIE]: device }, "POST"), "passed");
+  REVOKE(request(`/api/pwa/devices/${deviceId}/revoke`, { cookies: admin.cookies, headers: { authorization: admin.bearer }, json: {} }), {
+    params: Promise.resolve({ deviceId }),
   });
 
-  test("missing credential → BLOCK, on documents, sign-in, FabOrchestrator pages, APIs and assets", async () => {
-    for (const path of ["/", "/login", "/home", "/chat", "/device-admin", "/diagnostics", "/reports"]) {
-      const res = await proxy(request(path));
-      assert.equal(redirectedTo(res), "/device-blocked", path);
-      assert.match(res.headers.get("cache-control") ?? "", /no-store/, path);
-    }
-    for (const path of ["/api/pwa/auth/login", "/api/chat", "/api/conversations", "/api/pwa/devices", "/api/pwa/device-enrollments"]) {
-      const res = await proxy(request(path, { method: "POST" }));
-      assert.equal(res.status, 403, path);
-      assert.equal(((await res.json()) as { code: string }).code, "device_not_approved", path);
-    }
-    assert.equal((await proxy(request("/_next/static/chunks/app.js"))).status, 403);
+const foLogins = () => foCalls.filter((c) => c.path === "/api/auth/login").length;
+
+/* ── The gate on every request ─────────────────────────────────────────────── */
+
+describe("every request on a session is checked against the session's device", () => {
+  test("a session that signed in with an approved device's proof passes, documents and APIs", async () => {
+    const phone = await enrolledPhone();
+    const s = sessionOf("alice@plant.example");
+    await bindSession(s.foToken, phone.deviceId!);
+    assert.equal(await gate("/home", s.cookies), "passed");
+    assert.equal(await gate("/api/chat", s.cookies, "POST"), "passed");
   });
 
-  test("invalid token, unknown device, malformed or duplicated cookie → BLOCK", async () => {
-    const device = await bootstrapDevice();
-    const [id] = device.split(".");
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: `${id}.${"A".repeat(43)}` }), "blocked");
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: `DEVICE-404.${"A".repeat(43)}` }), "blocked");
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: "garbage" }), "blocked");
-    // The non-`__Host-` name is a loopback-only fallback; on a real host it is not read.
-    assert.equal(await gate("/", { fo_device: device }), "blocked");
-    const res = await proxy(request("/", { headers: { cookie: `${DEVICE_COOKIE}=${device}; ${DEVICE_COOKIE}=${device}` } }));
+  test("a session that never proved a device is blocked (an old session, or a copied cookie)", async () => {
+    const s = sessionOf("alice@plant.example");
+    const res = await proxy(request("/home", { cookies: s.cookies }));
     assert.equal(redirectedTo(res), "/device-blocked");
+    assert.match(res.headers.get("location") ?? "", /reason=session/);
+    assert.equal(await gate("/api/chat", s.cookies, "POST"), "blocked");
+    assert.equal(await gate("/api/conversations", s.cookies), "blocked");
+    assert.equal((await proxy(request("/_next/static/chunks/app.js", { cookies: s.cookies }))).status, 403);
   });
 
-  test("revoked device → BLOCK", async () => {
-    const device = await bootstrapDevice();
-    await deviceStore().revokeDevice(device.split(".")[0]!, { by: "admin@plant.example", reason: "lost" });
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: device }), "blocked");
+  test("a session whose device was revoked is blocked on its next request", async () => {
+    const phone = await enrolledPhone();
+    const s = sessionOf("alice@plant.example");
+    await bindSession(s.foToken, phone.deviceId!);
+    await deviceStore().revokeDevice(phone.deviceId!, { by: "admin@plant.example", reason: "lost" });
+    const res = await proxy(request("/home", { cookies: s.cookies }));
+    assert.equal(redirectedTo(res), "/device-blocked");
+    assert.match(res.headers.get("location") ?? "", /reason=revoked/);
+    assert.equal(await gate("/api/chat", s.cookies, "POST"), "blocked");
   });
 
-  test("only the blocked page, enrollment, sign-out and install files pass without a device", async () => {
+  test("no session: nothing to check here; documents go to sign-in, where the device must prove itself", async () => {
+    const res = await proxy(request("/home"));
+    assert.equal(redirectedTo(res), "/login");
+    assert.equal(await gate("/login"), "passed");
+  });
+
+  test("sign-in, enrollment, sign-out and the install files are never blocked for a session's device", async () => {
+    const s = sessionOf("alice@plant.example"); // unbound: would be blocked anywhere else
     for (const path of [
       "/device-blocked",
       "/device-enroll",
       `/device-enroll/${"a".repeat(43)}`,
+      "/device-blocked/zxing_reader.wasm",
+      "/api/pwa/device-enrollments/start",
       "/api/pwa/device-enrollments/complete",
+      "/api/pwa/device-auth/challenge",
+      "/login",
+      "/api/pwa/auth/login",
       "/api/pwa/auth/logout",
       "/offline",
       "/sw.js",
       "/manifest.webmanifest",
-      "/icon-192.png",
       "/apple-touch-icon.png",
-      "/pwa-assets/_next/static/chunks/app.js",
     ]) {
-      assert.equal(await gate(path, {}, path.startsWith("/api/") ? "POST" : "GET"), "passed", path);
+      assert.equal(await gate(path, s.cookies, path.startsWith("/api/") ? "POST" : "GET"), "passed", path);
     }
-    assert.equal(await gate("/device-enroll/x/y"), "blocked");
+    assert.equal(await gate("/device-enroll/x/y", s.cookies), "blocked");
   });
 
-  test("a store that cannot be used blocks everything (fails closed), worded as unavailable", async () => {
-    const device = await bootstrapDevice();
+  test("a store that cannot be used blocks sessions (fails closed), worded as unavailable", async () => {
+    const s = sessionOf("alice@plant.example");
     delete process.env.DEVICE_STORE_PATH;
-    const res = await proxy(request("/", { cookies: { [DEVICE_COOKIE]: device } }));
-    assert.equal(redirectedTo(res), "/device-blocked");
-    assert.match(res.headers.get("location") ?? "", /reason=unavailable/);
-    assert.equal((await proxy(request("/api/chat", { cookies: { [DEVICE_COOKIE]: device }, method: "POST" }))).status, 503);
+    const res = await proxy(request("/home", { cookies: s.cookies }));
+    assert.match(res.headers.get("location") ?? "", /\/device-blocked\?reason=unavailable/);
+    assert.equal((await proxy(request("/api/chat", { cookies: s.cookies, method: "POST" }))).status, 503);
   });
 
   test("any DEVICE_GATE value but off/empty enforces; off checks nothing", async () => {
+    const s = sessionOf("alice@plant.example");
     process.env.DEVICE_GATE = "enforced-typo";
-    assert.equal(await gate("/"), "blocked");
+    assert.equal(await gate("/home", s.cookies), "blocked");
     process.env.DEVICE_GATE = "off";
     const res = proxy(request("/login"));
     assert.ok(res instanceof NextResponse, "with the gate off the proxy stays synchronous");
-    assert.equal(redirectedTo(res), null);
   });
 });
 
-/* ── Enrollment: the QR code is the authorization ──────────────────────────── */
+/* ── Enrollment: the QR is the authorization, the key never leaves ─────────── */
 
 describe("enrollment", () => {
-  test("a valid enrollment QR enrolls the device automatically: no FabOrchestrator call, no email, no password, no session", async () => {
+  test("scanning a valid Enrollment QR makes DEVICE-nnn with this device's public key: no FabOrchestrator call, no secret issued, no cookie", async () => {
     const admin = await adminBrowser();
-    const issued = await createEnrollment(admin, { friendlyName: "Line 3 phone" });
+    const issued = await createEnrollment(admin, { friendlyName: "Phone A" });
     assert.match(issued.url, /^https:\/\/pwa\.test\/device-enroll\/[A-Za-z0-9_-]{43}$/);
-    assert.match(issued.qrSvg, /^<svg/);
+    const before = foCalls.length;
+    const result = await scanEnrollment(issued.token);
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.deviceId, "DEVICE-002");
+    assert.equal(foCalls.length, before, "FabOrchestrator is not asked anything");
+    assert.equal(result.res!.headers.get("set-cookie")?.includes("fo_device"), false, "no device cookie");
+    const device = await deviceStore().getDevice("DEVICE-002");
+    assert.equal(device?.status, "APPROVED");
+    assert.equal(device?.friendlyName, "Phone A");
+    assert.equal(await deviceStore().publicKeyOf("DEVICE-002"), result.key.spki, "the server holds the public key");
+  });
 
-    const { res: link, pending } = await openLink(issued.token);
+  test("the link path works too: opening the link moves the code into a cookie, and the page enrolls with it", async () => {
+    const admin = await adminBrowser();
+    const { token } = await createEnrollment(admin);
+    const link = await ENROLL_LINK(request(`/device-enroll/${token}`), { params: Promise.resolve({ token }) });
     assert.equal(link.status, 303);
     assert.equal(redirectedTo(link), "/device-enroll");
-    assert.ok(!(link.headers.get("location") ?? "").includes(issued.token), "token must leave the URL");
-    assert.equal(link.headers.get("referrer-policy"), "no-referrer");
-    assert.match(link.headers.get("set-cookie") ?? "", /__Host-fo_enroll=[^;]+;.*HttpOnly/i);
+    assert.ok(!(link.headers.get("location") ?? "").includes(token), "the code leaves the address bar");
+    const pending = setCookie(link, ENROLL_COOKIE);
+    assert.equal(pending, token);
+    const result = await scanEnrollment(token, { via: "cookie" });
+    assert.equal(result.status, 200);
+    assert.equal(setCookie(result.res!, ENROLL_COOKIE), "", "the pending code is cleared");
+  });
 
-    const { res, body, device } = await complete(pending);
-    assert.equal(res.status, 200);
-    assert.deepEqual(body, { ok: true, device: { deviceId: "DEVICE-002", friendlyName: "Line 3 phone" } });
-    assert.match(device ?? "", /^DEVICE-002\.[A-Za-z0-9_-]{43}$/);
-    assert.equal(setCookie(res, ENROLL_COOKIE), "", "the pending enrollment is cleared");
-    const cookie = (res.headers.get("set-cookie") ?? "").split(/, (?=__Host-)/).find((c) => c.startsWith(`${DEVICE_COOKIE}=`)) ?? "";
-    for (const attribute of [/; HttpOnly/i, /; Secure/i, /; SameSite=lax/i, /; Path=\//]) assert.match(cookie, attribute);
+  test("opening the link alone spends nothing: a link preview cannot burn the QR", async () => {
+    const admin = await adminBrowser();
+    const { token } = await createEnrollment(admin);
+    await ENROLL_LINK(request(`/device-enroll/${token}`), { params: Promise.resolve({ token }) });
+    await ENROLL_LINK(request(`/device-enroll/${token}`), { params: Promise.resolve({ token }) });
+    assert.equal((await deviceStore().lookupEnrollment(token)).kind, "valid");
+  });
 
-    assert.equal(foCalls.length, 0, "FabOrchestrator is not asked anything during enrollment");
-    assert.equal(setCookie(res, FO_TOKEN_COOKIE), undefined, "enrollment signs nobody in");
-    assert.ok(!("token" in body), "no session token");
+  test("a used QR fails at the first step, before any key would be made; so does an expired one", async () => {
+    const admin = await adminBrowser();
+    const { token } = await createEnrollment(admin);
+    assert.equal((await scanEnrollment(token)).status, 200);
+    const again = await scanEnrollment(token);
+    assert.equal(again.step, "start");
+    assert.equal(again.status, 410);
+    assert.equal((again.body as { reason?: string }).reason, "used");
 
-    const listed = (await deviceStore().listDevices()).find((d) => d.deviceId === "DEVICE-002")!;
-    assert.equal(listed.status, "APPROVED");
-    assert.equal(listed.createdBy, "admin@plant.example");
-    assert.equal(listed.context, "installed-app");
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: device! }), "passed");
+    const second = await createEnrollment(admin);
+    const realNow = Date.now;
+    Date.now = () => realNow() + 11 * 60 * 1000;
+    try {
+      const expired = await scanEnrollment(second.token);
+      assert.equal(expired.status, 410);
+      assert.equal((expired.body as { reason?: string }).reason, "expired");
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  test("enrollment needs proof of the private key: a signature by another key is refused and the QR stays unused", async () => {
+    const admin = await adminBrowser();
+    const { token } = await createEnrollment(admin);
+    const claimed = await newPhoneKey();
+    const other = await newPhoneKey();
+    const s = (await (await START(request("/api/pwa/device-enrollments/start", { json: { token } }))).json()) as { challengeId: string; challenge: string };
+    const res = await COMPLETE(
+      request("/api/pwa/device-enrollments/complete", {
+        json: { token, challengeId: s.challengeId, publicKeySpki: claimed.spki, signature: await signChallenge(other, s.challenge) },
+      }),
+    );
+    assert.equal(res.status, 401);
+    assert.equal((await deviceStore().lookupEnrollment(token)).kind, "valid");
+  });
+
+  test("only EC P-256 keys are registered", async () => {
+    const admin = await adminBrowser();
+    const { token } = await createEnrollment(admin);
+    const key = await newPhoneKey("P-384");
+    const s = (await (await START(request("/api/pwa/device-enrollments/start", { json: { token } }))).json()) as { challengeId: string; challenge: string };
+    const res = await COMPLETE(
+      request("/api/pwa/device-enrollments/complete", { json: { token, challengeId: s.challengeId, publicKeySpki: key.spki, signature: "A".repeat(86) } }),
+    );
+    assert.notEqual(res.status, 200);
+  });
+
+  test("simultaneous use of one QR by several phones: exactly one becomes a device", async () => {
+    const admin = await adminBrowser();
+    const { token } = await createEnrollment(admin);
+    const keys = await Promise.all(Array.from({ length: 6 }, () => newPhoneKey()));
+    const starts = await Promise.all(keys.map(async () => (await (await START(request("/api/pwa/device-enrollments/start", { json: { token } }))).json()) as { challengeId: string; challenge: string }));
+    const results = await Promise.all(
+      keys.map(async (key, i) =>
+        COMPLETE(
+          request("/api/pwa/device-enrollments/complete", {
+            json: { token, challengeId: starts[i]!.challengeId, publicKeySpki: key.spki, signature: await signChallenge(key, starts[i]!.challenge) },
+          }),
+        ),
+      ),
+    );
+    assert.equal(results.filter((r) => r.status === 200).length, 1);
+    assert.equal(results.filter((r) => r.status === 410).length, 5);
+    assert.equal((await deviceStore().listDevices()).length, 2, "the admin's device and exactly one new one");
   });
 
   test("an enrollment cannot be tied to a user: a request naming one is refused", async () => {
@@ -273,261 +355,172 @@ describe("enrollment", () => {
     assert.equal(res.status, 400);
   });
 
-  test("opening the link alone spends nothing: a link preview cannot burn the QR", async () => {
-    const admin = await adminBrowser();
-    const { token } = await createEnrollment(admin);
-    await openLink(token); // e.g. a chat app's preview fetcher
-    await openLink(token);
-    assert.equal((await deviceStore().lookupEnrollment(token)).kind, "valid");
-    const { pending } = await openLink(token);
-    assert.equal((await complete(pending)).res.status, 200);
-  });
-
-  test("expired QR fails", async () => {
-    const admin = await adminBrowser();
-    const { token } = await createEnrollment(admin);
-    const { pending } = await openLink(token);
-    const realNow = Date.now;
-    Date.now = () => realNow() + 11 * 60 * 1000;
-    try {
-      const { res, device } = await complete(pending);
-      assert.equal(res.status, 410);
-      assert.equal(device, undefined);
-      const { res: link } = await openLink(token);
-      assert.match(link.headers.get("location") ?? "", /link=invalid/);
-    } finally {
-      Date.now = realNow;
-    }
-  });
-
-  test("reused QR fails: the link, and the old pending cookie replayed", async () => {
-    const admin = await adminBrowser();
-    const { token } = await createEnrollment(admin);
-    const first = await openLink(token);
-    assert.equal((await complete(first.pending)).res.status, 200);
-    const again = await openLink(token, {});
-    assert.match(again.res.headers.get("location") ?? "", /link=invalid/);
-    assert.equal(again.pending, "", "no pending cookie for a used link");
-    const replay = await complete(first.pending);
-    assert.equal(replay.res.status, 410);
-    assert.equal(replay.device, undefined);
-  });
-
-  test("simultaneous use of one QR (two phones at once) permits exactly one enrollment", async () => {
-    const admin = await adminBrowser();
-    const { token } = await createEnrollment(admin);
-    const { pending } = await openLink(token);
-    const results = await Promise.all(Array.from({ length: 8 }, () => complete(pending)));
-    assert.equal(results.filter((r) => r.res.status === 200).length, 1);
-    assert.equal(results.filter((r) => r.device).length, 1);
-    assert.equal(results.filter((r) => r.res.status === 410).length, 7);
-    assert.equal((await deviceStore().listDevices()).length, 2, "the admin's device and exactly one new one");
-  });
-
-  test("without a pending enrollment, or from another site, nothing happens", async () => {
-    assert.equal((await complete(undefined)).res.status, 410);
-    const res = await COMPLETE(
-      request("/api/pwa/device-enrollments/complete", {
-        headers: { "sec-fetch-site": "cross-site" },
-        cookies: { [ENROLL_COOKIE]: "a".repeat(43) },
-        json: {},
-      }),
-    );
-    assert.equal(res.status, 403);
-  });
-
   test("guessing enrollment codes is rate-limited per address", async () => {
-    const ip = { "fly-client-ip": "10.77.0.1" };
     let last = 0;
     for (let i = 0; i < 10; i += 1) {
-      const res = await COMPLETE(
-        request("/api/pwa/device-enrollments/complete", { headers: ip, cookies: { [ENROLL_COOKIE]: `${i}`.padEnd(43, "x") }, json: {} }),
-      );
+      const res = await START(request("/api/pwa/device-enrollments/start", { headers: { "fly-client-ip": "10.77.0.1" }, json: { token: `${i}`.padEnd(43, "x") } }));
       last = res.status;
     }
     assert.equal(last, 429);
   });
+
+  test("from another site, nothing happens", async () => {
+    const res = await START(request("/api/pwa/device-enrollments/start", { headers: { "sec-fetch-site": "cross-site" }, json: {} }));
+    assert.equal(res.status, 403);
+  });
 });
 
-/* ── Administration: authorization ─────────────────────────────────────────── */
+/* ── Sign-in: the device first, then the person ────────────────────────────── */
+
+describe("sign-in requires the device's proof, checked before the password", () => {
+  test("no proof → refused, and FabOrchestrator is never asked about the password", async () => {
+    const result = await signIn(null, "alice@plant.example", "alice-pass");
+    assert.equal(result.res.status, 403);
+    assert.equal(result.body.code, "device_not_approved");
+    assert.equal(foLogins(), 0);
+    assert.equal(setCookie(result.res, FO_TOKEN_COOKIE), undefined);
+  });
+
+  test("an enrolled device's proof → signed in, and the session is bound to that device", async () => {
+    const phone = await enrolledPhone();
+    const result = await signIn(phone, "alice@plant.example", "alice-pass");
+    assert.equal(result.res.status, 200);
+    assert.equal(await gate("/home", result.cookies), "passed");
+    assert.equal((await deviceStore().sessionDevice((await import("@/lib/auth")).foFingerprint(result.cookies[FO_TOKEN_COOKIE]!)))?.deviceId, phone.deviceId);
+  });
+
+  test("the device belongs to no user: different accounts sign in on the same approved device", async () => {
+    const phone = await enrolledPhone();
+    assert.equal((await signIn(phone, "alice@plant.example", "alice-pass")).res.status, 200);
+    assert.equal((await signIn(phone, "bob@plant.example", "bob-pass")).res.status, 200);
+  });
+
+  test("knowing a device's id is not enough: another key's signature is refused before the password", async () => {
+    const phone = await enrolledPhone();
+    const thief = { key: await newPhoneKey(), deviceId: phone.deviceId };
+    const result = await signIn(thief, "alice@plant.example", "alice-pass");
+    assert.equal(result.res.status, 403);
+    assert.equal(foLogins(), 0);
+  });
+
+  test("a proof is single-use: replaying it is refused", async () => {
+    const phone = await enrolledPhone();
+    const first = await signIn(phone, "alice@plant.example", "alice-pass");
+    assert.equal(first.res.status, 200);
+    const replay = await signIn(null, "alice@plant.example", "alice-pass", { proof: first.device! });
+    assert.equal(replay.res.status, 403);
+  });
+
+  test("a revoked device's valid signature is refused (device_revoked), before the password", async () => {
+    const phone = await enrolledPhone();
+    await deviceStore().revokeDevice(phone.deviceId!, { by: "admin@plant.example", reason: "lost" });
+    const result = await signIn(phone, "alice@plant.example", "alice-pass");
+    assert.equal(result.res.status, 403);
+    assert.equal(result.body.code, "device_revoked");
+    assert.equal(foLogins(), 0);
+  });
+
+  test("a wrong password on an approved device is still a wrong password", async () => {
+    const phone = await enrolledPhone();
+    assert.equal((await signIn(phone, "alice@plant.example", "nope")).res.status, 401);
+  });
+
+  test("a challenge for an unknown device is refused", async () => {
+    const res = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: "DEVICE-404" } }));
+    assert.equal(res.status, 404);
+  });
+
+  test("with the gate off, sign-in works without a proof, and a proof still binds the session", async () => {
+    process.env.DEVICE_GATE = "off";
+    assert.equal((await signIn(null, "alice@plant.example", "alice-pass")).res.status, 200);
+    const phone = await enrolledPhone();
+    const bound = await signIn(phone, "alice@plant.example", "alice-pass");
+    assert.equal(bound.res.status, 200);
+    process.env.DEVICE_GATE = "enforce";
+    assert.equal(await gate("/home", bound.cookies), "passed", "already bound when the gate is turned on");
+  });
+});
+
+/* ── Administration ─────────────────────────────────────────────────────────── */
 
 describe("admin endpoints require an approved device, a session and the allowlist", () => {
-  test("no session → 401; a non-admin → 403; an admin on an unapproved device → blocked; an admin on an approved one → OK", async () => {
-    const alice = sessionOf("alice@plant.example");
-    const aliceDevice = await bootstrapDevice();
-    const admin = sessionOf("admin@plant.example");
-    const adminDevice = await bootstrapDevice();
+  test("no session → refused; a non-admin → 403; an admin whose session never proved a device → blocked; a proved admin → OK", async () => {
     const call = (cookies: Cookies, bearer?: string) =>
-      CREATE_ENROLLMENT(
-        request("/api/pwa/device-enrollments", { cookies, json: {}, headers: bearer ? { authorization: bearer } : {} }),
-      );
+      CREATE_ENROLLMENT(request("/api/pwa/device-enrollments", { cookies, json: {}, headers: bearer ? { authorization: bearer } : {} }));
+    assert.equal((await call({})).status, 403);
 
-    assert.equal((await call(browser(adminDevice))).status, 401);
-    assert.equal((await call(browser(aliceDevice, alice), alice.bearer)).status, 403);
-    const unapproved = await call(browser(null, admin), admin.bearer);
-    assert.equal(unapproved.status, 403);
-    assert.equal(((await unapproved.json()) as { code: string }).code, "device_not_approved");
-    assert.equal((await call(browser(adminDevice, admin), admin.bearer)).status, 201);
+    const alicePhone = await enrolledPhone();
+    const alice = sessionOf("alice@plant.example");
+    await bindSession(alice.foToken, alicePhone.deviceId!);
+    assert.equal(((await (await call(alice.cookies, alice.bearer)).json()) as { code: string }).code, "forbidden");
+
+    const unproved = sessionOf("admin@plant.example");
+    assert.equal(((await (await call(unproved.cookies, unproved.bearer)).json()) as { code: string }).code, "device_not_approved");
+
+    const admin = await adminBrowser();
+    assert.equal((await call(admin.cookies, admin.bearer)).status, 201);
 
     for (const handler of [
-      () => LIST_DEVICES(request("/api/pwa/devices", { cookies: browser(aliceDevice, alice), headers: { authorization: alice.bearer } })),
-      () => LIST_ENROLLMENTS(request("/api/pwa/device-enrollments", { cookies: browser(aliceDevice, alice), headers: { authorization: alice.bearer } })),
-      () =>
-        REVOKE(
-          request("/api/pwa/devices/DEVICE-001/revoke", { cookies: browser(aliceDevice, alice), headers: { authorization: alice.bearer }, json: {} }),
-          { params: Promise.resolve({ deviceId: "DEVICE-001" }) },
-        ),
+      () => LIST_DEVICES(request("/api/pwa/devices", { cookies: alice.cookies, headers: { authorization: alice.bearer } })),
+      () => LIST_ENROLLMENTS(request("/api/pwa/device-enrollments", { cookies: alice.cookies, headers: { authorization: alice.bearer } })),
+      () => REVOKE(request("/api/pwa/devices/DEVICE-001/revoke", { cookies: alice.cookies, headers: { authorization: alice.bearer }, json: {} }), { params: Promise.resolve({ deviceId: "DEVICE-001" }) }),
     ]) {
       assert.equal((await handler()).status, 403);
     }
-    assert.equal((await deviceStore().getDevice("DEVICE-001"))?.status, "APPROVED");
   });
 
-  test("the device list carries no token and no hash", async () => {
+  test("the device list shows key fingerprints, never keys or hashes", async () => {
     const admin = await adminBrowser();
-    await scanEnrollment(admin);
-    const res = await LIST_DEVICES(request("/api/pwa/devices", { cookies: admin.cookies, headers: { authorization: admin.bearer } }));
-    const text = await res.text();
+    const { token } = await createEnrollment(admin);
+    const phone = await scanEnrollment(token);
+    const text = await (await LIST_DEVICES(request("/api/pwa/devices", { cookies: admin.cookies, headers: { authorization: admin.bearer } }))).text();
+    assert.match(text, /"deviceId":"DEVICE-002"/);
+    assert.match(text, /"keyFingerprint":"[0-9a-f]{32}"/);
+    assert.ok(!text.includes(phone.key.spki), "not even the public key itself");
     const file = readFileSync(currentStorePath(), "utf8");
-    const hashes = [...file.matchAll(/"th":"([^"]+)"/g)].map((m) => m[1]!);
-    assert.ok(hashes.length >= 2);
-    for (const value of [...hashes, ...secrets]) assert.ok(!text.includes(value));
-    assert.match(text, /"deviceId":"DEVICE-002","friendlyName":"[^"]+","status":"APPROVED"/);
-  });
-
-  test("an enrollment link is never built from the Host header", async () => {
-    const admin = await adminBrowser();
-    delete process.env.PUBLIC_ORIGIN;
-    try {
-      const res = await CREATE_ENROLLMENT(
-        request("/api/pwa/device-enrollments", { cookies: admin.cookies, headers: { authorization: admin.bearer, host: "evil.example" }, json: {} }),
-      );
-      assert.equal(res.status, 503);
-    } finally {
-      process.env.PUBLIC_ORIGIN = "https://pwa.test";
-    }
+    for (const hash of [...file.matchAll(/"th":"([^"]+)"/g)].map((m) => m[1]!)) assert.ok(!text.includes(hash));
   });
 });
 
-/* ── Revocation and replacement ────────────────────────────────────────────── */
+/* ── The demonstration ─────────────────────────────────────────────────────── */
 
-describe("revocation", () => {
-  test("works before revoke; admin revokes; the same credential fails afterwards, on its very next request", async () => {
-    const admin = await adminBrowser();
-    const phone = await scanEnrollment(admin);
-    const alice = sessionOf("alice@plant.example");
-    assert.equal(await gate("/home", browser(phone, alice)), "passed");
-
-    const res = await revoke(admin, "DEVICE-002");
-    assert.equal(res.status, 200);
-    const body = (await res.json()) as { device: { status: string; revokedBy: string; revokedAt: string | null } };
-    assert.equal(body.device.status, "REVOKED");
-    assert.equal(body.device.revokedBy, "admin@plant.example");
-    assert.ok(body.device.revokedAt);
-
-    assert.equal(await gate("/home", browser(phone, alice)), "blocked");
-    assert.equal(await gate("/api/chat", browser(phone, alice), "POST"), "blocked");
-    assert.equal(await gate("/api/pwa/auth/login", browser(phone), "POST"), "blocked");
-    assert.ok(logged.some((l) => l.includes('"action":"DEVICE_REVOKED"') && l.includes('"actor":"admin@plant.example"')));
-  });
-
-  test("replacement: old device revoked, new device enrolled, new works, old stays blocked", async () => {
-    const admin = await adminBrowser();
-    const oldPhone = await scanEnrollment(admin);
-    await revoke(admin, "DEVICE-002");
-    const newPhone = await scanEnrollment(admin);
-    assert.match(newPhone, /^DEVICE-003\./);
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: newPhone }), "passed");
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: oldPhone }), "blocked");
-  });
-
-  test("re-enrolling a browser that holds an approved credential revokes the credential it replaces", async () => {
-    const admin = await adminBrowser();
-    const first = await scanEnrollment(admin);
-    const second = await scanEnrollment(admin, { [DEVICE_COOKIE]: first });
-    assert.notEqual(first, second);
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: first }), "blocked");
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: second }), "passed");
-    assert.ok(logged.some((l) => l.includes('"action":"DEVICE_REENROLLED"')));
-  });
-});
-
-/* ── Sign-in stays a separate step ─────────────────────────────────────────── */
-
-describe("user sign-in remains separate from device approval", () => {
-  test("an approved device does not sign anyone in; sign-in is its own step, with FabOrchestrator's password", async () => {
-    const admin = await adminBrowser();
-    const phone = await scanEnrollment(admin);
-    // Approved, but no session: the front door leads to sign-in, not into FabOrchestrator.
-    assert.equal(redirectedTo(await proxy(request("/", { cookies: { [DEVICE_COOKIE]: phone } }))), "/login");
-    assert.equal((await login(phone, "alice@plant.example", "wrong")).status, 401);
-    const res = await login(phone, "alice@plant.example", "alice-pass");
-    assert.equal(res.status, 200);
-    assert.equal(setCookie(res, DEVICE_COOKIE), phone, "the device credential is renewed");
-    assert.ok(setCookie(res, FO_TOKEN_COOKIE));
-  });
-
-  test("the device belongs to no user: different FabOrchestrator accounts may sign in on the same approved device", async () => {
-    const admin = await adminBrowser();
-    const phone = await scanEnrollment(admin);
-    assert.equal((await login(phone, "alice@plant.example", "alice-pass")).status, 200);
-    assert.equal((await login(phone, "bob@plant.example", "bob-pass")).status, 200);
-  });
-
-  test("the sign-in route refuses an unapproved device itself, not only behind the proxy", async () => {
-    const res = await login(null, "alice@plant.example", "alice-pass");
-    assert.equal(res.status, 403);
-    assert.equal(setCookie(res, FO_TOKEN_COOKIE), undefined);
-    assert.ok(foCalls.some((c) => c.path === "/api/auth/logout"), "the FabOrchestrator token just issued is revoked");
-  });
-});
-
-/* ── The demo scenarios ────────────────────────────────────────────────────── */
-
-describe("demo scenarios 1–6", () => {
-  test("1–6", async () => {
+describe("demo: normal access to the Fly app depends on the enrollment QR", () => {
+  test("Phone A blocked → enrolled by QR → signs in → Phone B blocked → Phone A revoked → blocked", async () => {
     const admin = await adminBrowser(); // DEVICE-001 is the administrator's own
 
-    // 1. Phone A, no device stamp, opens the normal FO access URL → BLOCKED.
-    assert.equal(await gate("/"), "blocked");
+    // 1. Phone A, no device key: the sign-in page sends it to "not approved",
+    //    and the server refuses a sign-in without a device proof.
+    assert.equal((await signIn(null, "alice@plant.example", "alice-pass")).res.status, 403);
 
-    // 2. The admin generates a one-time enrollment QR at /device-admin.
-    const issued = await createEnrollment(admin, { friendlyName: "Phone A" });
+    // 2. The admin creates an Enrollment QR at /device-admin.
+    const { token } = await createEnrollment(admin, { friendlyName: "Phone A" });
 
-    // 3. Phone A scans it: no email, no password; the device stamp is issued,
-    //    it shows as APPROVED, and the QR is spent.
-    const { pending } = await openLink(issued.token);
-    const enrolled = await complete(pending);
-    assert.equal(enrolled.res.status, 200);
-    const phoneA = enrolled.device!;
-    assert.match(phoneA, /^DEVICE-002\./);
-    assert.equal(foCalls.length, 0);
-    const listed = await LIST_DEVICES(request("/api/pwa/devices", { cookies: admin.cookies, headers: { authorization: admin.bearer } }));
-    assert.match(await listed.text(), /"deviceId":"DEVICE-002","friendlyName":"Phone A","status":"APPROVED"/);
-    assert.match((await openLink(issued.token)).res.headers.get("location") ?? "", /link=invalid/);
+    // 3. Phone A scans it: a key is made, the public key registered → DEVICE-002.
+    const enrolled = await scanEnrollment(token);
+    assert.equal(enrolled.status, 200);
+    const phoneA: Phone = { key: enrolled.key, deviceId: enrolled.deviceId };
+    assert.equal(phoneA.deviceId, "DEVICE-002");
+    //    The QR is spent.
+    assert.equal((await scanEnrollment(token)).status, 410);
 
-    // 4. Phone A opens normal FO access again → device check passes → the
-    //    normal sign-in → the user signs in → FabOrchestrator.
-    assert.equal(redirectedTo(await proxy(request("/", { cookies: { [DEVICE_COOKIE]: phoneA } }))), "/login");
-    const signIn = await login(phoneA, "alice@plant.example", "alice-pass");
-    assert.equal(signIn.status, 200);
-    const foCookie = setCookie(signIn, FO_TOKEN_COOKIE)!;
-    assert.equal(await gate("/home", { [DEVICE_COOKIE]: phoneA, [FO_TOKEN_COOKIE]: foCookie }), "passed");
+    // 4. Phone A opens the normal FO URL → device proof → normal sign-in → FO.
+    const signedIn = await signIn(phoneA, "alice@plant.example", "alice-pass");
+    assert.equal(signedIn.res.status, 200);
+    assert.equal(await gate("/home", signedIn.cookies), "passed");
+    assert.equal(await gate("/api/chat", signedIn.cookies, "POST"), "passed");
 
-    // 5. Phone B, no enrollment → BLOCKED, even with valid FO credentials and
-    //    even holding Phone A's FO session cookie.
-    assert.equal(await gate("/"), "blocked");
-    assert.equal(await gate("/api/pwa/auth/login", {}, "POST"), "blocked");
-    assert.equal((await login(null, "alice@plant.example", "alice-pass")).status, 403);
-    assert.equal(await gate("/home", { [FO_TOKEN_COOKIE]: foCookie }), "blocked");
+    // 5. Phone B, never enrolled, knows Alice's password: blocked, even with Phone A's id.
+    assert.equal((await signIn(null, "alice@plant.example", "alice-pass")).res.status, 403);
+    assert.equal((await signIn({ key: await newPhoneKey(), deviceId: "DEVICE-002" }, "alice@plant.example", "alice-pass")).res.status, 403);
 
-    // 6. The admin revokes DEVICE-002 → Phone A is BLOCKED although its old
-    //    device cookie is still there.
+    // 6. The admin revokes DEVICE-002 → Phone A's session stops, and it cannot sign in again.
     assert.equal((await revoke(admin, "DEVICE-002")).status, 200);
-    assert.equal(await gate("/", { [DEVICE_COOKIE]: phoneA }), "blocked");
-    assert.equal(await gate("/home", { [DEVICE_COOKIE]: phoneA, [FO_TOKEN_COOKIE]: foCookie }), "blocked");
+    assert.equal(await gate("/home", signedIn.cookies), "blocked");
+    const again = await signIn(phoneA, "alice@plant.example", "alice-pass");
+    assert.equal(again.res.status, 403);
+    assert.equal(again.body.code, "device_revoked");
 
-    for (const action of ["DEVICE_ENROLLMENT_CREATED", "DEVICE_ENROLLED", "DEVICE_ACCESS_BLOCKED", "DEVICE_ACCESS_ALLOWED", "DEVICE_REVOKED"]) {
+    for (const action of ["DEVICE_ENROLLMENT_CREATED", "DEVICE_ENROLLED", "DEVICE_ACCESS_ALLOWED", "DEVICE_ACCESS_BLOCKED", "DEVICE_REVOKED", "DEVICE_LOGIN_REFUSED"]) {
       assert.ok(logged.some((l) => l.includes(`"action":"${action}"`)), action);
     }
   });

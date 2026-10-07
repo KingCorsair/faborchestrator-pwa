@@ -13,6 +13,7 @@ export function deviceView(d: Device) {
     deviceId: d.deviceId,
     friendlyName: d.friendlyName,
     status: d.status,
+    keyFingerprint: d.keyFingerprint,
     deviceType: d.deviceType,
     os: d.os,
     browser: d.browser,

@@ -9,9 +9,23 @@
 import { z } from "zod";
 import { MAX_REQUEST_BODY_BYTES } from "./gateway/body-limit";
 
+/**
+ * A device's proof for sign-in (`lib/devices/proof.ts`): its id, a challenge
+ * from `/api/pwa/device-auth/challenge`, and its signature over that challenge.
+ */
+export const DeviceProofSchema = z
+  .object({
+    deviceId: z.string().regex(/^DEVICE-\d{3,9}$/),
+    challengeId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
+    signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
+  })
+  .strict();
+
 export const LoginSchema = z.object({
   email: z.string().min(1, "Email is required").max(255),
   password: z.string().min(1, "Password is required").max(128),
+  /** Required while the device gate is enforced (`lib/devices/gate.ts`). */
+  device: DeviceProofSchema.optional(),
 });
 
 /**
@@ -235,10 +249,34 @@ export const CreateEnrollmentSchema = z
   .strict();
 
 /** The enrollment page completes the enrollment by itself; the token is in its cookie, not here. */
+/**
+ * Step 1 of enrollment: ask for a challenge. The code comes from the in-app
+ * scanner (`token`) or from the pending-enrollment cookie the link set.
+ */
+export const StartEnrollmentSchema = z
+  .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
+  })
+  .strict();
+
+/**
+ * Step 2: the device's public key and its signature over the enrollment
+ * challenge, proving it holds the private key it just generated.
+ */
 export const CompleteEnrollmentSchema = z
   .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
+    challengeId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
+    publicKeySpki: z.string().regex(/^[A-Za-z0-9_-]{80,400}$/),
+    signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
     /** Whether the page was opened in the installed app (display-mode: standalone). Descriptive only. */
     installedApp: z.boolean().optional(),
+  })
+  .strict();
+
+export const DeviceChallengeSchema = z
+  .object({
+    deviceId: z.string().regex(/^DEVICE-\d{3,9}$/),
   })
   .strict();
 

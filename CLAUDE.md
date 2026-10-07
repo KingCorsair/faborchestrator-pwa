@@ -107,14 +107,16 @@ current tier works cleanly end to end.
 
 ## Approved devices (6 October 2026)
 
-With `DEVICE_GATE=enforce`, `proxy.ts` refuses every request from a browser
-that has not been through a one-time enrollment, **before** the sign-in gate
-(`lib/devices/`). The credential is a bearer token this app issues, in the
-httpOnly `__Host-fo_device` cookie; the server keeps only its hash, in an
-append-only store like the seat store (`DEVICE_STORE_PATH`). It identifies a
-browser or installed app, not a physical phone. Design, limits (iOS Safari vs
-the Home Screen app), rollout and the acceptance test:
-`docs/DEVICE_ENROLLMENT.md`. Keep the device check and the user session
+With `DEVICE_GATE=enforce`, only a device approved by a one-time enrollment QR
+can sign in (`lib/devices/`). The device stamp is `DEVICE-nnn` plus an ECDSA
+P-256 private key the device generated with Web Crypto, non-extractable, kept
+in its own IndexedDB; the server holds only the public key, in an append-only
+store like the seat store (`DEVICE_STORE_PATH`). Sign-in requires a signed
+challenge, checked before the password reaches FabOrchestrator; the session is
+then bound to the device and `proxy.ts` checks its status on every request.
+**No device cookie.** It identifies a browser or installed app, not a physical
+phone. Design, limits (iOS Safari vs the Home Screen app), rollout and the
+acceptance test: `docs/DEVICE_ENROLLMENT.md`. Keep the device check and the user session
 separate, and keep the exempt list in `lib/devices/gate.ts` free of anything
 that returns FabOrchestrator data.
 

@@ -176,7 +176,12 @@ export function DeviceAdmin() {
                 {devices.map((d) => (
                   <tr key={d.deviceId} style={{ borderTop: "1px solid var(--border-light)" }}>
                     <td className="py-2 pr-3">{d.friendlyName}</td>
-                    <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">{d.deviceId}</td>
+                    <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">
+                      {d.deviceId}
+                      <span className="block text-[11px] font-normal" style={{ color: "var(--text-subtle)" }} title="Public-key fingerprint">
+                        key {d.keyFingerprint.slice(0, 12)}
+                      </span>
+                    </td>
                     <td className="py-2 pr-3">
                       {d.deviceType} · {d.os} · {d.browser} · {d.context}
                     </td>
@@ -283,8 +288,9 @@ function IssuedEnrollment({ issued, onDone }: { issued: Issued; onDone: () => vo
           )}
         </span>
         <span className="text-[12px]" style={{ color: "var(--text-subtle)" }}>
-          Scan it on the device to approve it. It works once. The link, for pasting into the installed app on an
-          iPhone:
+          Works once. A phone camera approves the browser it opens in; to approve an installed app, use the app&rsquo;s
+          own &ldquo;Scan enrollment QR&rdquo; (on an iPhone this matters: Safari and the app are separate). The link,
+          for pasting instead:
         </span>
         <code className="break-all text-[12px]">{issued.url}</code>
         <div className="flex gap-2">

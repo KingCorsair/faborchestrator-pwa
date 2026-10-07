@@ -177,6 +177,8 @@ describe("every request on a session is checked against the session's device", (
     const res = await proxy(request("/home", { cookies: s.cookies }));
     assert.equal(redirectedTo(res), "/device-blocked");
     assert.match(res.headers.get("location") ?? "", /reason=session/);
+    // Absolute: Next's proxy refuses a relative Location with "Invalid URL" (500 in production).
+    assert.doesNotThrow(() => new URL(res.headers.get("location") ?? ""), "the proxy's redirect must be an absolute URL");
     assert.equal(await gate("/api/chat", s.cookies, "POST"), "blocked");
     assert.equal(await gate("/api/conversations", s.cookies), "blocked");
     assert.equal((await proxy(request("/_next/static/chunks/app.js", { cookies: s.cookies }))).status, 403);

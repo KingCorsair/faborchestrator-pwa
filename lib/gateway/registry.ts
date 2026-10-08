@@ -138,6 +138,9 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/chat",
   "/api/conversations",
   "/api/mcp/connections",
+  // The cockpit's agent status and its "Check now" (8 October 2026). Without
+  // it, FabOrchestrator's home page shows every agent as "Status unknown".
+  "/api/mcp/health",
   "/api/user",
   "/api/memory",
   "/api/messages/feedback",
@@ -149,6 +152,14 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/modeling-agent",
   "/api/cmf",
   "/api/platform-theme",
+  // The downtime banner every FabOrchestrator page shows (Admin → Downtime
+  // Notices; 8 October 2026). Read-only, and public at FabOrchestrator too.
+  "/api/platform-notice",
+  // FabOrchestrator's pages send their browser log records here, into its
+  // server log (8 October 2026). It limits them per browser tab, not per
+  // address, so every operator arriving from this app's one address is fine.
+  // Signed in only: an anonymous body is refused by the gateway.
+  "/api/client-log",
   "/api/health",
 ];
 

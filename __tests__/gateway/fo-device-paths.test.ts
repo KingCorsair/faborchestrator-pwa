@@ -106,8 +106,11 @@ describe("bodies without a session", () => {
   });
 
   test("any other API body without a session is still refused before FabOrchestrator is asked", async () => {
-    const res = await call(POST, "POST", "/api/chat", { body: "{}" });
-    assert.equal(res.status, 401);
+    // `/api/client-log` included: FabOrchestrator's browser log is for signed-in pages only.
+    for (const path of ["/api/chat", "/api/client-log"]) {
+      const res = await call(POST, "POST", path, { body: "{}" });
+      assert.equal(res.status, 401, path);
+    }
     assert.equal(seen.length, 0);
   });
 

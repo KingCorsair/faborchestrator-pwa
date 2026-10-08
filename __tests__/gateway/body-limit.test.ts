@@ -20,7 +20,6 @@ import assert from "node:assert/strict";
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
 process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL = "https://fo.test";
-process.env.FO_EMBED_MODE = "whole";
 
 import { NextRequest } from "next/server";
 import nextConfig from "@/next.config";

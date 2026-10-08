@@ -50,12 +50,6 @@ primary_region = "sjc"
   FO_UI_BASE_URL = "http://faborch-fo-ui-preview.internal:3000"
   FO_UI_SPLIT_ALLOWED = "1"
 
-  # Whole-application embedding, as on the embedding preview.
-  FO_EMBED_MODE = "whole"
-
-  # Kept for the rollback to "surfaces"; ignored while the mode is "whole".
-  FO_EMBED_SURFACES = "/chat,/reports"
-
   # ── Which device started which conversation (1 October 2026) ───────────────
   #
   # Several people may sign in with the same FabOrchestrator account, and each
@@ -65,15 +59,8 @@ primary_region = "sjc"
   # Without this variable every conversation route answers 503: there is no
   # in-memory fallback.
   SEAT_STORE_PATH = "/data/seat-store/conversations.log"
-  # Approved-device enrollment (`lib/devices/`). The store sits on the same
-  # volume. ENFORCED since 7 October 2026, after the administrator's computer
-  # was enrolled (Amay's go-ahead): only devices approved by a one-time
-  # enrollment QR can sign in. Rollback: "off" and redeploy. Locked out of
-  # /device-admin? `flyctl ssh console -C "su-exec nextjs:nodejs node
-  # scripts/device-enrollment.mjs --name 'Admin laptop'"` prints a one-time link.
-  # Administrators: `flyctl secrets set DEVICE_ADMIN_EMAILS=a@x,b@y`.
-  DEVICE_STORE_PATH = "/data/devices/devices.log"
-  DEVICE_GATE = "enforce"
+  # This app's own address, for its same-origin checks. Approved devices are
+  # FabOrchestrator's (its Admin → Devices); this app keeps no device list.
   PUBLIC_ORIGIN = "https://faborch-pwa-amay-hardening.fly.dev"
 
 [build]

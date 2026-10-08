@@ -28,8 +28,7 @@
  * The FabOrchestrator token is read from the httpOnly cookie on the server and
  * written onto the upstream request. It is never returned downstream, never
  * placed in a response header, and never reaches client JavaScript — which is
- * the property `lib/faborch/session.ts` exists to keep and
- * `scripts/security-review.mjs` asserts against the deployment.
+ * the property `lib/faborch/session.ts` exists to keep.
  *
  * ── Why a missing bearer is forwarded rather than refused ───────────────────
  * Some FabOrchestrator endpoints are public — `/api/platform-theme` is fetched
@@ -121,9 +120,7 @@ export function endsTheSession(pathname: string, upstreamStatus: number): boolea
  * FabOrchestrator evicts a session after 30 minutes idle and expires it
  * absolutely at 30 days. Either way the token in the cookie has stopped
  * working, and keeping it would leave the operator holding a session that
- * passes this app's gate and cannot answer a single question — the exact
- * failure `app/api/faborch/[agent]/chat/route.ts` already handles for the
- * screens this app draws itself.
+ * passes this app's gate and cannot answer a single question.
  */
 export function expiredUpstream(injected: boolean, upstreamStatus: number): boolean {
   return injected && upstreamStatus === 401;

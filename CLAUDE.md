@@ -1,5 +1,28 @@
 # CLAUDE.md — FabOrchestrator PWA Demo (Production Order Exception Assistant)
 
+> **Branch `chetan-lean` (7 October 2026).** Made from
+> `pwa/amay-embed-fo-production-hardening` at `238b881`. The app is now only:
+> sign-in (`app/api/pwa/auth`), the gateway that serves FabOrchestrator's own
+> pages and API with its protections (`proxy.ts`, `app/fo-gateway`,
+> `lib/gateway`: the 20 MiB body policy, deadlines, conversation ownership,
+> answer keep-reading and seats), the install files, the error pages,
+> `/diagnostics` and `/offline`. Approved devices are FabOrchestrator's (see
+> "Approved devices" below).
+>
+> Removed on this branch:
+> - the PWA's own chat, cockpit and reports screens and their API
+>   (`/api/faborch`), with their tests and check scripts (plan RP8's list);
+> - the `FO_EMBED_MODE` / `FO_EMBED_SURFACES` switch: FabOrchestrator's pages
+>   are always served, and `/fabinsight` and `/backend-agent` redirect to
+>   `/chat`;
+> - this app's own approved-device system (`lib/devices`, its `/device-*`
+>   pages and `/api/pwa/device*` routes, `DEVICE_GATE`), replaced by
+>   FabOrchestrator's;
+> - the developer-only device-key test page, `docs/probes` and the root
+>   screenshots.
+>
+> Much of the history below describes code that is no longer here.
+
 ## What this project is
 
 A PWA demo. A shop-floor supervisor searches or scans a production order, sees
@@ -105,20 +128,21 @@ current tier works cleanly end to end.
    Approve / Reject / Escalate buttons record the decision only (in-memory or
    simple log at first).
 
-## Approved devices (6 October 2026)
+## Approved devices
 
-With `DEVICE_GATE=enforce`, only a device approved by a one-time enrollment QR
-can sign in (`lib/devices/`). The device stamp is `DEVICE-nnn` plus an ECDSA
-P-256 private key the device generated with Web Crypto, non-extractable, kept
-in its own IndexedDB; the server holds only the public key, in an append-only
-store like the seat store (`DEVICE_STORE_PATH`). Sign-in requires a signed
-challenge, checked before the password reaches FabOrchestrator; the session is
-then bound to the device and `proxy.ts` checks its status on every request.
-**No device cookie.** It identifies a browser or installed app, not a physical
-phone. Design, limits (iOS Safari vs the Home Screen app), rollout and the
-acceptance test: `docs/DEVICE_ENROLLMENT.md`. Keep the device check and the user session
-separate, and keep the exempt list in `lib/devices/gate.ts` free of anything
-that returns FabOrchestrator data.
+FabOrchestrator owns them (its Admin → Devices and `shared/lib/device-approval.ts`
+there); this app keeps no device list. What this app does:
+- **Sign-in** (`components/login-page.tsx`): a phone holding FO's device key
+  (`lib/fo-device-key.ts` reads it; FO's own `/device-enroll` page writes it)
+  signs FO's challenge and sends the proof with the password; `foLogin` passes
+  it to FO, which checks it before the password. FO's device refusal comes back
+  as `FoDeviceRefusedError` and is shown in FO's words, not as a wrong password.
+- **Gateway** (`lib/gateway/registry.ts`): FO's `/device-enroll` page (public,
+  `proxy.ts`), `/api/auth/device-challenge`, `/api/auth/device-enroll` (the one
+  API row that takes a body without a session, read up to 16 KiB) and
+  `/api/admin/devices` pass through.
+- A device key belongs to the web address it was made on, so a phone that uses
+  this app gets its QR from the Devices page opened inside this app.
 
 ## Architecture design workflow (the RP process)
 

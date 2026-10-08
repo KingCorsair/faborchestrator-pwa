@@ -5,18 +5,13 @@ import {
   foMe,
   isFabOrchConfigured,
   FabOrchRequestError,
+  FoDeviceRefusedError,
   type FoSession,
 } from "@/lib/faborch/client";
-import { foFingerprint } from "@/lib/auth";
-import { deviceAudit } from "@/lib/devices/audit";
-import { DEVICE_NOT_APPROVED, deviceGateMode } from "@/lib/devices/gate";
-import { verifyDeviceSignIn } from "@/lib/devices/proof";
-import { deviceStore, DeviceStoreUnavailableError, type Device } from "@/lib/devices/store";
 import { deviceKeyFrom, newDeviceKey, seatIdFor, setDeviceCookie } from "@/lib/faborch/device";
 import { revokeFoSession, sessionConfigProblems, type SessionEndReason } from "@/lib/faborch/end-session";
 import { clearPasswordChangeMark, passwordChangeMarkedFor } from "@/lib/faborch/password-mark";
 import { foTokenFrom, sessionCookieGraceSeconds, setFoTokenCookie } from "@/lib/faborch/session";
-import { classify, readRegistry } from "@/lib/gateway/registry";
 import { reportError } from "@/lib/report-error";
 import { readJsonBody } from "@/lib/request-body";
 import { publicOrigin, sameOriginVerdict } from "@/lib/same-origin";
@@ -151,46 +146,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { email, password } = parsed.data;
-
-  // ── Step 0: the device, before the person (device enrollment, 6 October) ──
-  // The device proves itself first: a signature over a fresh challenge with
-  // the private key it generated at enrollment, checked against the public
-  // key registered then (`lib/devices/proof.ts`). With the gate enforced, no
-  // proof or a failed one ends here, before FabOrchestrator is asked anything
-  // about the password. With the gate off, a valid proof is still recorded, so
-  // sessions are already bound to their devices when the gate is turned on.
-  let device: Device | null = null;
-  const gate = deviceGateMode();
-  if (parsed.data.device || gate === "enforce") {
-    if (!parsed.data.device) {
-      deviceAudit("DEVICE_LOGIN_REFUSED", { reason: "no_device_proof", address });
-      return NextResponse.json(DEVICE_NOT_APPROVED, { status: 403, headers: NO_STORE });
-    }
-    try {
-      const proof = await verifyDeviceSignIn(parsed.data.device, deviceStore());
-      if (proof.ok) {
-        device = proof.device;
-      } else if (gate === "enforce") {
-        deviceAudit("DEVICE_LOGIN_REFUSED", { deviceId: proof.deviceId, reason: proof.reason, address });
-        return NextResponse.json(
-          proof.reason === "revoked"
-            ? { code: "device_revoked", error: `This device (${proof.deviceId}) has been revoked. Contact your administrator.` }
-            : DEVICE_NOT_APPROVED,
-          { status: 403, headers: NO_STORE },
-        );
-      }
-    } catch (error) {
-      if (!(error instanceof DeviceStoreUnavailableError)) throw error;
-      reportError("auth/device-proof", error);
-      if (gate === "enforce") {
-        return NextResponse.json(
-          { code: "device_check_unavailable", error: "This device could not be checked just now. Try again shortly." },
-          { status: 503, headers: NO_STORE },
-        );
-      }
-    }
-  }
+  const { email, password, device } = parsed.data;
 
   // No FabOrchestrator, no sign-in. This is a **deployment fault, not a bad
   // password**, and saying "incorrect email or password" here would send an
@@ -213,8 +169,17 @@ export async function POST(req: NextRequest) {
 
   let fo: FoSession | null;
   try {
-    fo = await foLogin(email, password);
+    // The phone's device proof, if it has one, goes to FabOrchestrator as it
+    // came: FO's approved devices (its Admin → Devices) decide, before the password.
+    fo = await foLogin(email, password, device);
   } catch (error) {
+    // FabOrchestrator refused the device, not the person: say so, in FO's words.
+    if (error instanceof FoDeviceRefusedError) {
+      return NextResponse.json(
+        { code: error.code === "DEVICE_REVOKED" ? "device_revoked" : "device_not_approved", error: error.message },
+        { status: 403, headers: NO_STORE },
+      );
+    }
     // FO being down must not read as a wrong password: somebody typing their
     // own credentials correctly and being told they are wrong will spend the
     // demo re-typing them. The sentence is fixed and never FabOrchestrator's
@@ -243,7 +208,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const res = await completeSignIn(req, fo, device);
+    const res = await completeSignIn(req, fo);
     if (res.status === 200) clearLoginFailures(address);
     return res;
   } catch (error) {
@@ -259,7 +224,7 @@ export async function POST(req: NextRequest) {
 }
 
 /** Steps 2 to 5, once FabOrchestrator has accepted the password. */
-async function completeSignIn(req: NextRequest, fo: FoSession, device: Device | null): Promise<NextResponse> {
+async function completeSignIn(req: NextRequest, fo: FoSession): Promise<NextResponse> {
   // ── Step 2: the `/me` probe, with the token FO just issued ────────────────
   // FO's login has just set its idle clock, so this extends nothing.
   //  - 403 "no longer active" after a correct password: a coded failure, not
@@ -329,10 +294,9 @@ async function completeSignIn(req: NextRequest, fo: FoSession, device: Device | 
   );
 
   // ── Step 5: the answer ─────────────────────────────────────────────────────
-  // FabOrchestrator's change page is named only where this origin serves it
-  // (`whole` mode, or `surfaces` listing it); anywhere else it would be a 404.
-  const next =
-    forcedChange && classify(FORCED_CHANGE_PAGE, readRegistry()) === "fo-document" ? FORCED_CHANGE_PAGE : null;
+  // An account that must change its password is sent to FabOrchestrator's
+  // change page, served here like every other FabOrchestrator document.
+  const next = forcedChange ? FORCED_CHANGE_PAGE : null;
 
   const res = NextResponse.json(
     {
@@ -358,19 +322,6 @@ async function completeSignIn(req: NextRequest, fo: FoSession, device: Device | 
   setFoTokenCookie(req, res, fo.token, session.expiresAt);
   // The same browser returns to the same seat at its next sign-in.
   setDeviceCookie(req, res, deviceKey);
-  // The session belongs to the device that proved itself (step 0): from now on
-  // every request on it is checked against that device's status
-  // (`lib/devices/gate.ts`), so revoking the device ends this session's access.
-  // Recorded by the FO token's fingerprint, never the token. If it cannot be
-  // recorded, the sign-in fails (the caller revokes FabOrchestrator's token).
-  if (device) {
-    await deviceStore().bindSession(
-      foFingerprint(fo.token),
-      device.deviceId,
-      new Date(session.expiresAt).getTime() + sessionCookieGraceSeconds() * 1000,
-    );
-    deviceAudit("DEVICE_ACCESS_ALLOWED", { deviceId: device.deviceId, userId: fo.user.id, reason: "sign_in" });
-  }
   // FabOrchestrator no longer holds this user for a change: the mark from an
   // earlier change has done its job.
   if (!forcedChange && passwordChangeMarkedFor(req, fo.user.id)) clearPasswordChangeMark(res);

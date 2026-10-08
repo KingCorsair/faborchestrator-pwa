@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { LoginPage } from "@/components/login-page";
-import { deviceGateMode } from "@/lib/devices/gate";
 import { safeReturnPath } from "@/lib/return-path";
 
 /**
@@ -46,7 +45,5 @@ export default async function Page({
   const params = await searchParams;
   const next = safeReturnPath(params.next);
 
-  // With the device gate on, the page checks this device's key before showing
-  // the form (`lib/devices/gate.ts`).
-  return <LoginPage next={next} deviceRequired={deviceGateMode() === "enforce"} />;
+  return <LoginPage next={next} />;
 }

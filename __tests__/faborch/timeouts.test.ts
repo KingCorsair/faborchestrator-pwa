@@ -6,13 +6,9 @@
  *
  *   a bounded call is abandoned at FO_CALL_TIMEOUTS.bounded, as a 504
  *   the limit covers the body too, so a response that starts and stalls is caught
- *   an answer gets FO_CALL_TIMEOUTS.streamStart to begin, and no limit once it has
  *   a revoke gives up at FO_CALL_TIMEOUTS.revoke
- *   the operator's own cancel is not mistaken for FabOrchestrator failing
  *
- * Left behind: the end-to-end native chat case (it depends on the native
- * screens' tool and ownership caches, which were not ported). The sign-out
- * route's own behaviour is pinned in `logout.test.ts`.
+ * The sign-out route's own behaviour is pinned in `logout.test.ts`.
  *
  * The stub behaves as a real `fetch` does with a signal: it rejects when the
  * signal aborts, and errors a body it is still sending.
@@ -25,7 +21,7 @@ process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign"
 process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL = "https://fo.test";
 
-import { FO_CALL_TIMEOUTS, FabOrchRequestError, foChat, foLogout, foPinnedReports } from "@/lib/faborch/client";
+import { FO_CALL_TIMEOUTS, FabOrchRequestError, foLogout, foMe } from "@/lib/faborch/client";
 
 const TOKEN = "fo-token-not-real";
 const realFetch = globalThis.fetch;
@@ -99,7 +95,7 @@ afterEach(() => {
 describe("a bounded call FabOrchestrator never answers", () => {
   test("is abandoned at the limit, not a moment before", async () => {
     neverAnswers();
-    const pending = foPinnedReports(TOKEN);
+    const pending = foMe(TOKEN);
     const state = track(pending);
 
     await advance(FO_CALL_TIMEOUTS.bounded - 1000);
@@ -116,7 +112,7 @@ describe("a bounded call FabOrchestrator never answers", () => {
 
   test("is reported, once, as a timeout, with the path as a pattern", async () => {
     neverAnswers();
-    const failure = failureOf(foPinnedReports(TOKEN));
+    const failure = failureOf(foMe(TOKEN));
     await advance(FO_CALL_TIMEOUTS.bounded);
     assert.ok((await failure) instanceof FabOrchRequestError);
     const lines = logged.filter((line) => line.includes('"where":"faborch/timeout"'));
@@ -126,7 +122,7 @@ describe("a bounded call FabOrchestrator never answers", () => {
 
   test("a response that starts and then stalls is caught by the same limit", async () => {
     answersThenStalls();
-    const failure = failureOf(foPinnedReports(TOKEN));
+    const failure = failureOf(foMe(TOKEN));
     await advance(FO_CALL_TIMEOUTS.bounded);
     const error = await failure;
     assert.ok(error instanceof FabOrchRequestError);
@@ -139,7 +135,7 @@ describe("a bounded call FabOrchestrator never answers", () => {
         cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
       });
     }) as typeof fetch;
-    const error = await failureOf(foPinnedReports(TOKEN));
+    const error = await failureOf(foMe(TOKEN));
     assert.ok(error instanceof FabOrchRequestError);
     assert.equal(error.status, 503);
     const line = logged.find((l) => l.includes('"where":"faborch/unreachable"'));
@@ -148,58 +144,6 @@ describe("a bounded call FabOrchestrator never answers", () => {
   });
 });
 
-describe("an answer", () => {
-  const ask = (signal?: AbortSignal) =>
-    foChat({
-      token: TOKEN,
-      messages: [{ role: "user", parts: [{ type: "text", text: "Yield?" }] }],
-      activeMcpIds: [],
-      signal,
-    });
-
-  test("gets FO_CALL_TIMEOUTS.streamStart to begin", async () => {
-    neverAnswers();
-    const pending = ask();
-    const state = track(pending);
-
-    await advance(FO_CALL_TIMEOUTS.streamStart - 1000);
-    assert.equal(state.settled, false, "a slow start is not a failed one");
-
-    await advance(1000);
-    await assert.rejects(pending, /did not answer within 60 seconds/);
-  });
-
-  test("once begun, streams for as long as it takes", async () => {
-    let signal: AbortSignal | null | undefined;
-    globalThis.fetch = (async (_input: RequestInfo | URL, init: RequestInit = {}) => {
-      signal = init.signal;
-      return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
-        headers: { "Content-Type": "text/event-stream" },
-      });
-    }) as typeof fetch;
-
-    const res = await ask();
-    assert.equal(res.status, 200);
-    await advance(FO_CALL_TIMEOUTS.streamStart * 3);
-    assert.equal(signal?.aborted, false, "the limit must end when the answer begins");
-  });
-
-  test("the operator's own cancel is not reported as FabOrchestrator failing", async () => {
-    neverAnswers();
-    const controller = new AbortController();
-    const pending = ask(controller.signal);
-    controller.abort();
-    await assert.rejects(pending, (error: unknown) => {
-      assert.ok(error instanceof FabOrchRequestError);
-      assert.equal(error.status, 499);
-      return true;
-    });
-    assert.ok(
-      !logged.some((line) => /faborch\/(timeout|unreachable)/.test(line)),
-      "pressing Stop is not an incident",
-    );
-  });
-});
 
 describe("revoking an FO session", () => {
   test("gives up at the revoke limit and reports false", async () => {

@@ -54,9 +54,7 @@
  * A middleware can rewrite to an external URL, but it cannot see the upstream
  * response: it could not override FO's year-long HTML cache header, drop the
  * ALB cookies, rewrite a `Location`, or (in WP2) clear this app's cookie when
- * FO says the session is dead. This handler can, and it is the same
- * pipe-the-body pattern `app/api/faborch/[agent]/chat/route.ts` has proven
- * against the deployment since WP1 of the demo.
+ * FO says the session is dead. This handler can.
  */
 
 import { NextResponse, type NextRequest } from "next/server";
@@ -83,7 +81,7 @@ import {
   rememberFromList,
 } from "@/lib/gateway/ownership";
 import { safeGatewayPath } from "@/lib/gateway/path";
-import { classify, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
+import { classify, FO_ANONYMOUS_BODY_PATHS, GATEWAY_MARKER_HEADER, isForwardable } from "@/lib/gateway/registry";
 import {
   claimCreatedConversation,
   conversationIdInChatBody,
@@ -122,6 +120,9 @@ export const dynamic = "force-dynamic";
 
 const BODYLESS_STATUSES = new Set([101, 204, 205, 304]);
 
+/** The most an anonymous body may be (a device QR code's request is a few hundred bytes). */
+const ANONYMOUS_BODY_LIMIT_BYTES = 16 * 1024;
+
 async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   // Only the middleware's rewrite carries the marker. A request that reached
   // this path any other way is answered as if the path did not exist.
@@ -130,7 +131,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   const segments = (await ctx.params).path ?? [];
   const pathname = safeGatewayPath(`/${segments.join("/")}`);
   if (!pathname) return notFound(null);
-  const owner = classify(pathname, readRegistry());
+  const owner = classify(pathname);
   if (!isForwardable(owner)) return notFound(pathname);
 
   // ── The single-login bridge (WP2) ────────────────────────────────────────
@@ -245,21 +246,22 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (hasBody) {
     // ── No session, a body, an API row: refused before a byte is read ──────
     //
-    // No API row takes an unauthenticated POST, PUT, PATCH or DELETE: the two
-    // public rows are GETs and FabOrchestrator's own login is denied here. So
-    // an anonymous body to `fo-api` is never legitimate, and until 30 September
-    // 2026 it was read whole (twice) and forwarded to FabOrchestrator before
-    // FO answered its own 401: eight 20 MiB uploads took one 512 MB machine
-    // past its memory (review of c193e9e, blocking issue 2). Refusing here
-    // saves the gateway's copies and the forward. It does **not** save Next's
-    // own buffer, which fills before any route runs: that is RP10-B's thin
-    // server entry, still to be built.
-    if (owner === "fo-api" && verdict.action === "forward-anonymous") {
+    // Only one API row takes an unauthenticated POST, PUT, PATCH or DELETE:
+    // FabOrchestrator's device QR code (`FO_ANONYMOUS_BODY_PATHS`), read here
+    // only up to a few kilobytes. Any other anonymous body to `fo-api` is never
+    // legitimate, and until 30 September 2026 it was read whole (twice) and
+    // forwarded to FabOrchestrator before FO answered its own 401: eight 20 MiB
+    // uploads took one 512 MB machine past its memory (review of c193e9e,
+    // blocking issue 2). Refusing here saves the gateway's copies and the
+    // forward. It does **not** save Next's own buffer, which fills before any
+    // route runs: that is RP10-B's thin server entry, still to be built.
+    const anonymous = owner === "fo-api" && verdict.action === "forward-anonymous";
+    if (anonymous && !FO_ANONYMOUS_BODY_PATHS.includes(pathname)) {
       logEvent("warn", "gateway_refused", { path: pathname, reason: "anonymous_body", method });
       return coded(401, SESSION_INVALID.code, SESSION_INVALID.error);
     }
 
-    const read = await readBodyWithinLimit(req, MAX_REQUEST_BODY_BYTES);
+    const read = await readBodyWithinLimit(req, anonymous ? ANONYMOUS_BODY_LIMIT_BYTES : MAX_REQUEST_BODY_BYTES);
     if (read.tooLarge) {
       logEvent("warn", "body_too_large", { path: pathname, limit: MAX_REQUEST_BODY_BYTES });
       const tooLarge = bodyTooLargeBody();
@@ -454,9 +456,7 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   // Signing out from FabOrchestrator's own sidebar, and FabOrchestrator
   // evicting an idle session, both leave this app holding a cookie that
   // authenticates nothing. Dropping it here is what makes the next navigation
-  // meet the sign-in gate instead of a cockpit the operator can no longer use
-  // — and it is the same thing `app/api/faborch/[agent]/chat/route.ts` already
-  // does for the screens this app draws itself.
+  // meet the sign-in gate instead of a page the operator can no longer use.
   if (
     endsTheSession(pathname, upstream.status) ||
     expiredUpstream(verdict.action === "inject", upstream.status)

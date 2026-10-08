@@ -69,45 +69,6 @@ primary_region = "sjc"
   #   FO_UI_SPLIT_ALLOWED = "1"
   #   FO_UI_BASE_URL = "http://faborch-fo-ui-preview.internal:3000"
 
-  # ── The switch this preview exists to exercise ──────────────────────────────
-  #
-  # Set here and **only** here. Production's `fly.toml` deliberately leaves it
-  # out, which means off, which means every FabOrchestrator path is unreachable
-  # there and the app is exactly what it was before the embedding work.
-  #
-  # `/chat` came from WP1 and `/reports` from WP7 — and **adding the second one
-  # was this entire line's worth of work**, which is the point WP7 exists to
-  # demonstrate. No page, no proxy route, no parser, no screen: the Dashboard
-  # is FabOrchestrator's own `/reports`, and everything it needs
-  # (`/api/fabinsight/pinned`, `/api/fabinsight/render`, its own `/_next`
-  # chunks) was already forwarded and already authenticated by the WP2 bridge.
-  #
-  # `/reports` is also the one path both sides claim. This flag decides which
-  # one the URL serves: listed, FabOrchestrator's page; absent, the app's own
-  # read-only screen, unchanged and still in the tree until WP9. That is the
-  # rollback, and `__tests__/gateway/registry.test.ts` holds both directions.
-  # ── Whole-application embedding (audit, 9 September) ───────────────────────
-  #
-  # `surfaces` served two of FabOrchestrator ten pages while forty-eight of its
-  # fifty-two API routes already went through. The gateway was built general and
-  # pointed at two paths, so a page FabOrchestrator shipped was a 404 here until
-  # somebody listed it — which is how its own Back button came to point at a
-  # dead page.
-  #
-  #   off       no FabOrchestrator on this origin. The app of 7 September.
-  #   surfaces  WP1-WP9 behaviour, driven by FO_EMBED_SURFACES below.
-  #   whole     FabOrchestrator owns the documents on this origin except the
-  #             ones this app reserves and the ones explicitly denied.
-  #
-  # **Documents only.** The API stays an explicit allow-list in every mode, so a
-  # page their team deploys appears by itself but an endpoint they add is looked
-  # at by a person first. See lib/gateway/registry.ts.
-  FO_EMBED_MODE = "whole"
-
-  # Kept for the rollback: set FO_EMBED_MODE to "surfaces" and this decides
-  # again, exactly as it did through WP9. Ignored while the mode is "whole".
-  FO_EMBED_SURFACES = "/chat,/reports"
-
 [build]
 
 [http_service]

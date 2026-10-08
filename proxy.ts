@@ -1,20 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
-import {
-  classify,
-  GATEWAY_INTERNAL_PREFIX,
-  GATEWAY_MARKER_HEADER,
-  readRegistry,
-  type Owner,
-} from "@/lib/gateway/registry";
-import { closedNativeApi, frontDoorRedirect, retiredScreenRedirect } from "@/lib/gateway/destinations";
-import {
-  DEVICE_BLOCKED_PAGE,
-  DEVICE_ENROLL_PAGE,
-  deviceGate,
-  deviceGateMode,
-  isDeviceExempt,
-} from "@/lib/devices/gate";
+import { classify, GATEWAY_INTERNAL_PREFIX, GATEWAY_MARKER_HEADER, type Owner } from "@/lib/gateway/registry";
+import { frontDoorRedirect, retiredScreenRedirect } from "@/lib/gateway/destinations";
 import { safeGatewayPath } from "@/lib/gateway/path";
 import { safeReturnPath } from "@/lib/return-path";
 
@@ -46,9 +33,9 @@ import { safeReturnPath } from "@/lib/return-path";
  * A forged cookie buys the cockpit's placeholder metrics and nothing else; the
  * first real request still meets `requireAuth`.
  *
- * **2. Ownership (2026-09-08, WP1).** With `FO_EMBED_SURFACES` set, some paths
- * on this origin are FabOrchestrator's. `lib/gateway/registry.ts` decides
- * which; this file acts on the decision:
+ * **2. Ownership (2026-09-08, WP1).** Most paths on this origin are
+ * FabOrchestrator's. `lib/gateway/registry.ts` decides which; this file acts
+ * on the decision:
  *
  *   pwa          → this app serves it (the gate applies to documents)
  *   fo-document  → the gate applies, then the request is rewritten to the
@@ -57,9 +44,6 @@ import { safeReturnPath } from "@/lib/return-path";
  *   fo-static      token is missing; static assets are public on FO too)
  *   denied       → 404
  *   unknown      → 404, deny by default
- *
- * With the variable unset or empty, `classify` returns `pwa` for everything
- * and this file behaves exactly as it did before WP1. That is the rollback.
  *
  * ── Why the matcher now covers everything ───────────────────────────────────
  * Until WP1 the matcher excluded `/api/`, `/_next/` and any path with a file
@@ -75,8 +59,7 @@ import { safeReturnPath } from "@/lib/return-path";
  * ask for their chunks at `/pwa-assets/_next/…` and bare `/_next/…` is
  * unambiguously FabOrchestrator's. Next does not serve the prefixed path by
  * itself; the rewrite below maps it back onto the real `/_next/…` internally,
- * before the ownership decision, so it holds whether the registry is on or
- * off.
+ * before the ownership decision, so it holds for every request.
  */
 
 /**
@@ -88,22 +71,11 @@ import { safeReturnPath } from "@/lib/return-path";
  *    possible offline screen.
  *  - `/diagnostics` — the page you open when the app is not working, and
  *    "log in first" is not a diagnostic.
+ *  - `/device-enroll` — FabOrchestrator's page for a device QR code from its
+ *    Admin → Devices, served through the gateway. The phone that opens it has
+ *    no session yet; the one-time code in the link is the permission.
  */
-const PUBLIC = new Set(["/login", "/offline", "/diagnostics", DEVICE_BLOCKED_PAGE, DEVICE_ENROLL_PAGE]);
-
-/**
- * `PUBLIC`, plus the enrollment link `/device-enroll/<token>`: an unenrolled
- * phone opening it has, by definition, no session yet.
- */
-function isPublic(pathname: string): boolean {
-  return (
-    PUBLIC.has(pathname) ||
-    pathname.startsWith(`${DEVICE_ENROLL_PAGE}/`) ||
-    // The developer-only crypto feasibility test, which renders nothing but
-    // itself and answers 404 unless DEVICE_CRYPTO_TEST=1.
-    pathname === "/device-crypto-test"
-  );
-}
+const PUBLIC = new Set(["/login", "/offline", "/diagnostics", "/device-enroll"]);
 
 /** This app's chunk prefix, from `next.config.ts`. */
 const PWA_ASSET_PREFIX = "/pwa-assets";
@@ -130,7 +102,7 @@ function isDocument(pathname: string): boolean {
   return true;
 }
 
-export function proxy(req: NextRequest): NextResponse | Promise<NextResponse> {
+export function proxy(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
 
   // The gateway's internal path is never reachable directly. The handler also
@@ -140,58 +112,18 @@ export function proxy(req: NextRequest): NextResponse | Promise<NextResponse> {
   }
 
   // This app's own chunks, from the prefix back to where Next keeps them.
-  // Content-hashed build output, no data: the blocked and enrollment pages
-  // need them on a device that is not approved.
   if (pathname.startsWith(`${PWA_ASSET_PREFIX}/_next/`)) {
     const url = req.nextUrl.clone();
     url.pathname = pathname.slice(PWA_ASSET_PREFIX.length);
     return NextResponse.rewrite(url);
   }
 
-  // ── The approved-device check comes first (6 October 2026) ───────────────
+  // ── This app's removed chat screens (WP9 cutover, 9 September) ───────────
   //
-  // Before the sign-in gate, before this app's pages and APIs, and before
-  // anything is handed to FabOrchestrator: a device that has not been through
-  // a one-time enrollment reaches only the blocked page, the enrollment flow
-  // and the files needed to install the app (`lib/devices/gate.ts`). With
-  // `DEVICE_GATE` off this is skipped and the proxy stays synchronous, exactly
-  // as before.
-  if (deviceGateMode() === "enforce" && !isDeviceExempt(pathname)) {
-    return deviceGate(req).then((blocked) => blocked ?? route(req));
-  }
-  return route(req);
-}
-
-/** Everything after the device check: ownership, redirects and the sign-in gate. */
-function route(req: NextRequest): NextResponse {
-  const { pathname } = req.nextUrl;
-  const registry = readRegistry();
-
-  // ── The native API routes are closed in `whole` mode (plan RP8) ──────────
-  //
-  // In `whole` mode no screen of this app's that calls `/api/faborch/*` can be
-  // reached: its chat screens and cockpit redirect into FabOrchestrator's. So
-  // the least-hardened routes in the system answer a `no-store` 404 for the
-  // whole soak rather than staying reachable behind the redirect. `surfaces`
-  // and `off` keep them open, because there the native screens still render
-  // (with only `/chat` embedded, the native `/reports` page still calls its
-  // API). Turning the flag back restores them immediately, like the redirects.
-  if (closedNativeApi(pathname, registry)) {
-    return NextResponse.json(
-      { code: "not_found", error: "Not found." },
-      { status: 404, headers: { "Cache-Control": "no-store" } },
-    );
-  }
-
-  // ── The WP9 cutover: this app's retired chat screens (9 September) ────────
-  //
-  // While the gateway is serving FabOrchestrator's own `/chat`, this app's
-  // `/fabinsight` and `/backend-agent` are duplicates of it, and every link
-  // that used to point at them now points at the real thing. The screens stay
-  // in the tree, built and tested, and arriving at one lands on
-  // FabOrchestrator's instead — so a bookmark, a shared link or a home-screen
-  // shortcut made before the cutover keeps working rather than opening a
-  // screen the rest of the app has stopped pointing at.
+  // `/fabinsight` and `/backend-agent` were this app's own chat screens. They
+  // are gone, and arriving at one lands on FabOrchestrator's `/chat` instead,
+  // so a bookmark, a shared link or a Home Screen shortcut made before the
+  // cutover keeps working.
   //
   // It is a redirect rather than a rewrite on purpose: the operator should end
   // up *at* `/chat`, with `/chat` in the address bar, so that reloading,
@@ -199,7 +131,7 @@ function route(req: NextRequest): NextResponse {
   //
   // Gated first, so an unauthenticated request meets the sign-in gate and its
   // `?next=` rather than being bounced to a URL it cannot open yet.
-  const retired = retiredScreenRedirect(pathname, registry);
+  const retired = retiredScreenRedirect(pathname);
   if (retired) {
     const gated = gate(req);
     if (gated.status !== 200) return gated;
@@ -212,9 +144,8 @@ function route(req: NextRequest): NextResponse {
     // nothing reads.
     url.search = "";
     const res = NextResponse.redirect(url, 307);
-    // 307 and `no-store` for the same reason the sign-in gate uses them: a
-    // cached redirect would outlive the flag that caused it, and turning the
-    // embedding off must restore these screens immediately.
+    // 307 and `no-store`, as the sign-in gate uses them: a cached redirect on
+    // a phone outlives whatever caused it.
     res.headers.set("Cache-Control", "no-store");
     return res;
   }
@@ -236,7 +167,7 @@ function route(req: NextRequest): NextResponse {
   // case, where FabOrchestrator clears its storage after 30 minutes without any
   // request, so no upstream 401 ever reaches `expiredUpstream()`.
   // `scripts/fo-auth-loop-check.mjs` drives an expired session through it.
-  const frontDoor = frontDoorRedirect(pathname, registry);
+  const frontDoor = frontDoorRedirect(pathname);
   if (frontDoor) {
     const gated = gate(req);
     if (gated.status !== 200) return gated;
@@ -247,7 +178,7 @@ function route(req: NextRequest): NextResponse {
     return res;
   }
 
-  const owner: Owner = classify(pathname, registry);
+  const owner: Owner = classify(pathname);
 
   switch (owner) {
     case "pwa":
@@ -270,7 +201,7 @@ function route(req: NextRequest): NextResponse {
 function gate(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
   if (!isDocument(pathname)) return NextResponse.next();
-  if (isPublic(pathname)) return NextResponse.next();
+  if (PUBLIC.has(pathname)) return NextResponse.next();
 
   // An empty value is what `clearFoTokenCookie` leaves behind on the way out,
   // and some browsers send the emptied cookie back before dropping it. A
@@ -341,8 +272,7 @@ function notFound(req: NextRequest): NextResponse {
 export const config = {
   /**
    * Every path. See "Why the matcher now covers everything" above; the
-   * document-only rule the old matcher expressed now lives in `isDocument`,
-   * and `scripts/gate-live-check.mjs` still proves it over the wire.
+   * document-only rule the old matcher expressed now lives in `isDocument`.
    */
   matcher: ["/(.*)"],
 };

@@ -155,14 +155,6 @@
      the product it copies. Running prose is capped separately: a 1180px line
      of 14px text is roughly 140 characters, about twice a comfortable measure,
      so text blocks inside cards carry `--measure` instead of filling. */
-  /* — the shell header's height —
-     The sticky top nav is `py-[10px]` around a 34px control row plus a 1px
-     border. Anything that docks beneath it needs this exact number, or content
-     shows through the seam. It is a token because it is not one component's
-     business: `app/globals.css` uses it for the decision dock and the review
-     panel, and a fourth thing will want it eventually. */
-  --shell-h: 55px;
-
   --page-width: 1180px;
   /* 52ch, not 72ch — design review F-04, 2026-08-12. `ch` is the advance of
      "0", which is 11.7px in Plus Jakarta at 16px, well above the face's average

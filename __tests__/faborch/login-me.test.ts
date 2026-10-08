@@ -63,8 +63,6 @@ const roleOf = async (res: Response) => {
 beforeEach(() => {
   paths = [];
   process.env.FABORCH_BASE_URL = "https://fo.test";
-  // FabOrchestrator's change page is served only when the app embeds it.
-  process.env.FO_EMBED_MODE = "whole";
   console.error = () => {};
 });
 afterEach(() => {
@@ -115,17 +113,6 @@ describe("answers that change the outcome", () => {
     assert.equal(((await res.json()) as { next: string | null }).next, "/force-password-change");
     assert.ok(res.headers.get("set-cookie")?.includes("faborch_token=fo-session-token"));
     assert.ok(!paths.includes("/api/auth/logout"), "the session is kept for the change");
-  });
-
-  test("where this app does not serve FabOrchestrator's change page, no next page is named", async () => {
-    // `off` mode: the app's own screens, and no FabOrchestrator documents.
-    process.env.FO_EMBED_MODE = "off";
-    stubFo(() =>
-      Response.json({ error: "Password change required", code: "FORCE_PASSWORD_CHANGE" }, { status: 403 }),
-    );
-    const res = await signIn();
-    assert.equal(res.status, 200);
-    assert.equal(((await res.json()) as { next: string | null }).next, null, "never a link to a 404");
   });
 
   test("an ordinary sign-in names no next page", async () => {

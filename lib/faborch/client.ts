@@ -3,28 +3,23 @@
  * contract.**
  *
  * ── What this is, and what it deliberately is not ───────────────────────────
- * FabInsight is not reimplemented here. It is AGENT · 01 on the shipped
- * cockpit (`claudeai_athena/components/cockpit/agent-cards.tsx:32`, `route:
- * "/chat"`), it runs inside the FabOrchestrator app against that app's MCP
- * tools, model registry, roles, quotas and prompt audit, and this file does
- * exactly three things: sign in, ask which tools that user has, and forward a
- * prompt. Every answer the PWA renders was computed by FO.
- *
- * There is no yield calculation, no MES query, no system prompt and no model
- * call in this directory. If one appears here, the PWA has stopped being a
- * client and started being a second product.
+ * FabOrchestrator's own pages do the work; this app serves them through its
+ * gateway (`app/fo-gateway/[...path]/route.ts`). This file is the handful of
+ * calls this app makes to FabOrchestrator **itself**: sign in, ask who the
+ * operator is, sign out, and, for the gateway's checks, ask whether a
+ * conversation is the caller's and delete one the seat rule could not record.
+ * There is no MES query, no system prompt and no model call in this directory.
  *
  * ── Every endpoint below was read from the running product ──────────────────
- * All three are in `claudeai_athena/` in the FabOrchestrator product
- * repository (`LLM-AT-SCALE/FabOrchestrator_product_code`):
+ * All are in `claudeai_athena/` in the FabOrchestrator product repository
+ * (`LLM-AT-SCALE/FabOrchestrator_product_code`):
  *
  *   POST /api/auth/login       app/api/auth/login/route.ts:80
  *                              {email, password} → {user, token, expiresAt}
- *   GET  /api/mcp/connections  app/api/mcp/connections/route.ts:12
- *                              → personal + role MCPs, each with `status`
- *   POST /api/chat             app/api/chat/route.ts:139
- *                              Bearer + {messages, model, activeMcpIds, …}
- *                              → an AI SDK UI-message stream (SSE)
+ *   GET  /api/auth/me          app/api/auth/me/route.ts
+ *   POST /api/auth/logout      app/api/auth/logout/route.ts
+ *   GET, DELETE /api/conversations/{id}
+ *                              app/api/conversations/[id]/route.ts
  *
  * Nothing here was invented. If FO's contract changes, this file is the whole
  * blast radius.
@@ -42,15 +37,6 @@
  */
 import { z } from "zod";
 import { reportError } from "../report-error";
-
-/**
- * FO's own default, from `GET /api/chat`'s response body
- * (`app/api/chat/route.ts:1185`: `defaultModel: 'claude-opus-4-8'`, listed as
- * "FabOrchestrator 2.0"). Overridable because FO validates the id against its
- * `model_registry` table and a deployment may allow a different set — but the
- * default is FO's, not ours, so the PWA answers like the product does.
- */
-export const FO_DEFAULT_MODEL = process.env.FABORCH_MODEL || "claude-opus-4-8";
 
 /** Thrown when the integration is not configured. Never a bad password. */
 export class FabOrchNotConfiguredError extends Error {}
@@ -73,17 +59,16 @@ export class FabOrchRequestError extends Error {
  * it for Node's own default, five minutes, and sign-out sat on "Signing out…"
  * for as long as the call hung.
  *
- * The three limits are named after the call classes of the architecture plan
+ * The limits are named after the call classes of the architecture plan
  * (RP4, `docs/architectural_review_issues/PWA_ARCHITECTURAL_REMEDIATION_PLAN.md`)
  * so the full lifecycle design can take them over without renaming callers.
  * **The values are provisional**: RP4 leaves every budget to checkpoint CP3,
  * bounded by the edge's own origin timeout (§9 question 48). Each can be set
  * from the environment in the meantime.
  *
- * This covers the calls this app makes to FO itself (sign-in, `/me`,
- * sign-out, and the native screens' calls). **It does not cover the gateway**
- * (`app/fo-gateway/[...path]/route.ts`), whose forwarding has its own `fetch`
- * and still has no deadline: RP4's finding G1, which stays open.
+ * This covers the calls this app makes to FO itself. **It does not cover the
+ * gateway's forwarding** (`app/fo-gateway/[...path]/route.ts`), which has its
+ * own deadlines (`lib/gateway/deadline.ts`).
  */
 function limitFromEnv(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -93,14 +78,6 @@ function limitFromEnv(name: string, fallback: number): number {
 export const FO_CALL_TIMEOUTS = {
   /** RP4 `bounded`: a lookup, a sign-in, `/me`: headers **and** body. */
   bounded: limitFromEnv("FO_TIMEOUT_BOUNDED_MS", 15_000),
-  /**
-   * RP4 `stream` headers: how long an answer may take to *begin*. Sixty
-   * seconds because the CloudFront distribution in front of production FO
-   * abandons a silent origin at sixty (FO's own `app/api/chat/route.ts`
-   * comment). The body then streams unbounded here; the native chat screen's
-   * reader watches it.
-   */
-  streamStart: limitFromEnv("FO_TIMEOUT_STREAM_START_MS", 60_000),
   /** RP4 `revoke`: FO's `/api/auth/logout`. Nobody should wait on it. */
   revoke: limitFromEnv("FO_TIMEOUT_REVOKE_MS", 5_000),
 } as const;
@@ -188,6 +165,23 @@ export function isFabOrchConfigured(): boolean {
   return !!process.env.FABORCH_BASE_URL?.trim();
 }
 
+/** A phone's proof for FabOrchestrator's approved devices: its id, FO's challenge, and its signature. */
+export interface FoDeviceProof {
+  deviceId: string;
+  challenge: string;
+  signature: string;
+}
+
+/** FabOrchestrator refused the device a sign-in came from (not approved, or revoked). Carries FO's own message. */
+export class FoDeviceRefusedError extends Error {
+  constructor(
+    readonly code: "DEVICE_NOT_APPROVED" | "DEVICE_REVOKED",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export interface FoSession {
   token: string;
   expiresAt: string;
@@ -202,21 +196,37 @@ export interface FoSession {
 /**
  * Sign in to FabOrchestrator with the operator's own FO credentials.
  *
+ * `device` is the phone's proof for FabOrchestrator's approved devices (its
+ * Admin → Devices), passed through untouched; FO checks it before the password.
+ *
  * Returns null for 401/403 — bad credentials, suspended, deleted. FO
  * distinguishes those three in its message; the caller does not pass that on,
  * for the same reason `lib/auth.ts` does not say which half was wrong.
+ * FO refusing the **device** is different and is thrown as
+ * `FoDeviceRefusedError`: it is checked before the password, so saying so
+ * reveals nothing about the account, and it tells the person what to do.
  *
  * Throws for anything else, because "FO is down" and "your password is wrong"
  * must not read the same to somebody standing at the line.
  */
-export async function foLogin(email: string, password: string): Promise<FoSession | null> {
+export async function foLogin(email: string, password: string, device?: FoDeviceProof): Promise<FoSession | null> {
   const res = await fetchFo("/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(device ? { device } : {}) }),
   });
 
-  if (res.status === 401 || res.status === 403) return null;
+  if (res.status === 403) {
+    const body = (await res.json().catch(() => null)) as { code?: unknown; error?: unknown } | null;
+    if (body?.code === "DEVICE_NOT_APPROVED" || body?.code === "DEVICE_REVOKED") {
+      throw new FoDeviceRefusedError(
+        body.code,
+        typeof body.error === "string" && body.error ? body.error : "This device is not approved for FabOrchestrator.",
+      );
+    }
+    return null;
+  }
+  if (res.status === 401) return null;
   if (!res.ok) {
     throw new FabOrchRequestError(await foErrorTextOf(res, "FabOrchestrator rejected the sign-in"), res.status);
   }
@@ -226,125 +236,6 @@ export async function foLogin(email: string, password: string): Promise<FoSessio
     throw new FabOrchRequestError("FabOrchestrator returned no session token", 502);
   }
   return data;
-}
-
-/**
- * The MCP connections this FO user may use, filtered to the ones FO reports as
- * connected.
- *
- * **This is the call that decides whether "give me the yield for the last two
- * days" reaches real data.** `/api/chat` loads tools from `activeMcpIds` and
- * nothing else, so an empty list gets a model with no way to look anything up.
- * The product's own chat app does exactly this on mount and enables all of them
- * by default (`components/full-chat-app.tsx:722-746`); the PWA follows it
- * rather than inventing a selection rule.
- *
- * The cockpit's ask bar hardcodes `activeMcpIds: []` and therefore answers
- * without tools. That is the one thing on the cockpit this client does not
- * copy, and the reason is that a demo asking for yield needs the tools.
- *
- * A failure here is not fatal: FO answers without tools rather than not at all,
- * which is the product's own behaviour (it swallows this error too).
- */
-export async function foConnectedMcpIds(token: string): Promise<string[]> {
-  try {
-    const res = await fetchFo("/api/mcp/connections", { headers: authHeader(token) });
-    if (!res.ok) return [];
-    const connections = (await res.json()) as { id: string; status: string }[];
-    return Array.isArray(connections)
-      ? connections.filter((c) => c?.status === "connected").map((c) => c.id)
-      : [];
-  } catch {
-    return [];
-  }
-}
-
-/* ── Pinned reports ───────────────────────────────────────────────────────
- *
- * FabOrchestrator's rule, read from `lib/fabinsight/access.ts` and the two
- * routes below: **an administrator creates and pins a dashboard; every
- * authenticated role may read one.** `GET /api/fabinsight/pinned` and
- * `GET /api/fabinsight/pinned/[id]` are behind `requireAuth` and nothing else.
- *
- * Only those two are wrapped here, deliberately. Three neighbouring routes are
- * left alone:
- *
- *  - `POST /pinned` and `DELETE /pinned/[id]` are `isDashboardAdmin`-gated.
- *    This app has no reason to call them.
- *  - `POST /pinned/[id]/refresh` is **not** gated, and that is exactly why it
- *    is not wrapped: it re-queries the MES and OVERWRITES the shared snapshot
- *    every reader sees. A read-only screen must not carry a control that
- *    rewrites what everyone else is looking at.
- */
-
-/** One pinned report, as the list endpoint describes it. */
-export interface FoPinnedSummary {
-  id: string;
-  title: string;
-  dashboardId: string;
-  kind: string;
-  createdAt: string;
-  /** When the shared snapshot was last taken. Null means never. */
-  refreshedAt: string | null;
-  hasCache: boolean;
-  createdBy: string;
-}
-
-/** The stored snapshot for one report. */
-export interface FoPinnedReport {
-  id: string;
-  title: string;
-  dashboardId: string;
-  /** The rendered dashboard. Null when no snapshot has been taken yet. */
-  html: string | null;
-  summary: string | null;
-  refreshedAt: string | null;
-  status: string | null;
-}
-
-/**
- * Every pinned report this operator may read.
- *
- * `canManage` comes back too — FO computes it from the caller's own role. It is
- * returned rather than dropped so the screen can say *why* it offers no
- * controls, instead of silently looking like a broken version of FO's page.
- */
-export async function foPinnedReports(
-  token: string,
-): Promise<{ dashboards: FoPinnedSummary[]; canManage: boolean }> {
-  const res = await fetchFo("/api/fabinsight/pinned", { headers: authHeader(token) });
-  if (!res.ok) {
-    throw new FabOrchRequestError(
-      await foErrorTextOf(res, "Could not load reports from FabOrchestrator."),
-      res.status,
-    );
-  }
-  const body = (await res.json()) as {
-    dashboards?: FoPinnedSummary[];
-    canManage?: boolean;
-  };
-  return {
-    dashboards: Array.isArray(body.dashboards) ? body.dashboards : [],
-    canManage: body.canManage === true,
-  };
-}
-
-/** One report's stored snapshot, or null if FO does not have it. */
-export async function foPinnedReport(
-  token: string,
-  id: string,
-): Promise<FoPinnedReport | null> {
-  const res = await fetchFo(`/api/fabinsight/pinned/${encodeURIComponent(id)}`, {
-    headers: authHeader(token),
-  });
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    throw new FabOrchRequestError(
-      await foErrorTextOf(res, "Could not load that report from FabOrchestrator."),
-      res.status,
-    );
-  }
-  return (await res.json()) as FoPinnedReport;
 }
 
 /**
@@ -454,66 +345,6 @@ export async function foDeleteConversation(token: string, id: string): Promise<b
   }
 }
 
-/** One turn of a conversation, in the shape `ChatRequestSchema` accepts. */
-export interface FoUiMessage {
-  role: "user" | "assistant";
-  parts: { type: "text"; text: string }[];
-}
-
-/* ── Conversations ───────────────────────────────────────────────────────────
- *
- * FabOrchestrator owns conversation history outright: two Prisma tables, an
- * ownership check on every route, soft deletes, pinning. This app stores
- * nothing and adds nothing — these four functions reach into what the product
- * already keeps, over the same bearer token `foChat` uses.
- *
- * The `agent` column partitions the store (`prisma/schema.prisma:109`).
- * `"chat"` is FabInsight's bucket **and the one the FabOrchestrator website
- * reads**, which is the entire point: a thread started on a phone appears in
- * the website's sidebar, and one started there opens here.
- *
- * Each returns raw JSON. Reducing it to what a screen may see is
- * `lib/faborch/history.ts`, deliberately separate: the shape FO stores and the
- * shape this app renders are different problems, and the second is where a
- * 1.3 MB thread becomes a few kilobytes.
- * ───────────────────────────────────────────────────────────────────────────── */
-
-/** Every conversation this operator owns: pinned first, then newest. */
-export async function foConversations(token: string, agent = "chat"): Promise<unknown> {
-  const res = await fetchFo(`/api/conversations?agent=${encodeURIComponent(agent)}`, {
-    headers: authHeader(token),
-  });
-  if (!res.ok) {
-    throw new FabOrchRequestError(
-      await foErrorTextOf(res, "Could not load your conversations from FabOrchestrator."),
-      res.status,
-    );
-  }
-  return res.json();
-}
-
-/**
- * One conversation with its messages, or null when it is not this caller's.
- *
- * FO answers 404 for a thread that never existed and 403 for one belonging to
- * somebody else. Both mean "not yours to read" here, and both become null —
- * the screen has the same thing to say either way, and distinguishing them out
- * loud would confirm to a caller that somebody else's thread exists.
- */
-export async function foConversation(token: string, id: string): Promise<unknown | null> {
-  const res = await fetchFo(`/api/conversations/${encodeURIComponent(id)}`, {
-    headers: authHeader(token),
-  });
-  if (res.status === 404 || res.status === 403) return null;
-  if (!res.ok) {
-    throw new FabOrchRequestError(
-      await foErrorTextOf(res, "Could not load that conversation from FabOrchestrator."),
-      res.status,
-    );
-  }
-  return res.json();
-}
-
 /**
  * Does this token own that conversation? FabOrchestrator's own answer, per id
  * (plan RP6 part 3), for the gateway's ownership check.
@@ -555,140 +386,6 @@ export async function foConversationProof(token: string, id: string): Promise<Co
     : { kind: "unavailable", status: res.status };
 }
 
-/**
- * Start a conversation in FabOrchestrator and return its id.
- *
- * Called on the **first send**, never when New chat is pressed — which is what
- * FO's own client does (`full-chat-app.tsx:1425`), and the reason is visible in
- * the product: a conversation created per button press fills the website's
- * sidebar with identical empty "New Chat" rows.
- *
- * The title is the question's first fifty characters, formed exactly as FO
- * forms it. FO also has an endpoint that writes a better one with a model; this
- * app does not call it, because this app makes no model calls.
- */
-export async function foCreateConversation(
-  token: string,
-  title: string,
-  agent = "chat",
-): Promise<string | null> {
-  const trimmed = title.trim();
-  const res = await fetchFo("/api/conversations", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeader(token) },
-    body: JSON.stringify({
-      title: trimmed.slice(0, 50) + (trimmed.length > 50 ? "..." : ""),
-      model: FO_DEFAULT_MODEL,
-      agent,
-    }),
-  });
-  // A failure here must not cost the operator their question, so this reports
-  // rather than throws: the caller sends the turn unpersisted and the answer
-  // still arrives. History is an enhancement; answering is the product.
-  if (!res.ok) return null;
-  const body = (await res.json().catch(() => null)) as { id?: unknown } | null;
-  return typeof body?.id === "string" ? body.id : null;
-}
-
-/**
- * Pin or unpin a conversation.
- *
- * The only write this app makes to a conversation's own record. FO's PATCH also
- * accepts `title`, `model` and `isShared`; none is sent. Renaming is not
- * offered, the model is not this app's to choose, and `isShared` points at
- * `/share/<id>` — a page that exists in no upstream branch.
- */
-export async function foSetPinned(token: string, id: string, isPinned: boolean): Promise<boolean> {
-  const res = await fetchFo(`/api/conversations/${encodeURIComponent(id)}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeader(token) },
-    body: JSON.stringify({ isPinned }),
-  });
-  return res.ok;
-}
-
-/**
- * Forward a prompt to FabInsight and hand back FO's response **untouched**.
- *
- * The return value is the raw `Response` so the caller can pipe the body
- * through without buffering it: FO streams, tool calls can run for minutes, and
- * anything that waits for the whole answer before showing a character would
- * turn a live conversation into a spinner.
- *
- * `messages` carries the whole conversation. That is not a shortcut — FO's
- * route builds the model's context from the request body
- * (`convertToModelMessages(uiMessages)`), not from its database, so a thread
- * resumed from history is resumed by **sending it back**, not by pointing at an
- * id. `conversationId` decides only whether FO writes the turn down.
- */
-export async function foChat(options: {
-  token: string;
-  messages: FoUiMessage[];
-  model?: string;
-  /**
-   * The FO conversation to write this turn into, or null/absent for a turn
-   * that is not persisted.
-   *
-   * **`/api/chat` does not check that this id belongs to the caller.** That
-   * route has no `getConversation` and no `userId` comparison — it passes the
-   * value straight to `addMessage` and to the S3-reference lookup. Every other
-   * conversation route in FabOrchestrator checks ownership; that one does not.
-   *
-   * So an id reaching here must already have been proved to belong to the
-   * caller. `app/api/faborch/[agent]/chat/route.ts` checks it against that
-   * caller's own conversation list first. Never pass a value straight out of a
-   * request body.
-   */
-  conversationId?: string | null;
-  /** `null` for the agents that build their own tools server-side. */
-  activeMcpIds: string[] | null;
-  /**
-   * The agent's endpoint. Every agent this app exposes is on `/api/chat`;
-   * the field exists because FO has others. Comes from `FO_AGENTS`, never from
-   * a request.
-   */
-  path?: string;
-  signal?: AbortSignal;
-}): Promise<Response> {
-  // Different agents take different bodies, and sending a field an endpoint
-  // does not read is not free: `model` and `activeMcpIds` are `/api/chat`'s
-  // levers over which model answers and which tools it may call, and putting
-  // them on a request to an agent that ignores them would make this file claim
-  // an influence it does not have.
-  const body: Record<string, unknown> =
-    options.activeMcpIds === null
-      ? { messages: options.messages }
-      : {
-          messages: options.messages,
-          model: options.model || FO_DEFAULT_MODEL,
-          activeMcpIds: options.activeMcpIds,
-          // Both are FO's own defaults for a plain conversation, sent explicitly
-          // so this request says what it is rather than depending on a default
-          // we do not control. Web search is off; adaptive thinking is on for
-          // the models that support it, which is what the product's chat does.
-          webSearch: false,
-          enableReasoning: true,
-        };
-
-  // Omitted entirely when absent, rather than sent as null: `/api/chat` gates
-  // every write on `if (!conversationId) return`, and a field that is not there
-  // is the clearest possible way to say "do not persist this turn".
-  if (options.conversationId) body.conversationId = options.conversationId;
-
-  return fetchFo(
-    options.path ?? "/api/chat",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeader(options.token) },
-      body: JSON.stringify(body),
-      signal: options.signal,
-    },
-    // The limit covers the wait for the answer to begin, and nothing after:
-    // the body is handed back unread, to stream for as long as it takes.
-    { timeoutMs: FO_CALL_TIMEOUTS.streamStart, stream: true },
-  );
-}
-
 function authHeader(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
@@ -697,15 +394,13 @@ function authHeader(token: string): Record<string, string> {
  * Every call to FabOrchestrator, with its time limit.
  *
  * `no-store` on every call: Next caches `fetch` in route handlers by default,
- * and a cached sign-in or a cached conversation turn is a defect, not a saving.
+ * and a cached sign-in is a defect, not a saving.
  *
- * ── The limit covers the body too, unless the body is a stream ──────────────
+ * ── The limit covers the body too ───────────────────────────────────────────
  * `fetch` resolves when the headers arrive, so a limit that stopped there would
- * still let a response that starts and then stalls hang its caller. Ordinary
- * calls are therefore read to the end *inside* the limit and handed back
- * already buffered, so a caller's `res.json()` cannot hang after this returns.
- * Only `stream: true` (an answer) is returned unread, with the limit covering
- * the wait for it to begin.
+ * still let a response that starts and then stalls hang its caller. Every call
+ * is therefore read to the end *inside* the limit and handed back already
+ * buffered, so a caller's `res.json()` cannot hang after this returns.
  *
  * ── Three ways it fails, told apart ─────────────────────────────────────────
  *   too slow        → 504, and reported
@@ -716,7 +411,7 @@ function authHeader(token: string): Record<string, string> {
 async function fetchFo(
   path: string,
   init: RequestInit,
-  { timeoutMs = FO_CALL_TIMEOUTS.bounded, stream = false }: { timeoutMs?: number; stream?: boolean } = {},
+  { timeoutMs = FO_CALL_TIMEOUTS.bounded }: { timeoutMs?: number } = {},
 ): Promise<Response> {
   const url = `${foBaseUrl()}${path}`;
   const deadline = new AbortController();
@@ -725,7 +420,6 @@ async function fetchFo(
 
   try {
     const res = await fetch(url, { ...init, signal, cache: "no-store" });
-    if (stream) return res;
 
     const body = await res.arrayBuffer();
     return new Response(NULL_BODY_STATUSES.has(res.status) ? null : body, {

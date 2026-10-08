@@ -44,7 +44,6 @@ beforeEach(() => {
   foAccepts = true;
   resetRecentRevokes();
   process.env.FABORCH_BASE_URL = "https://fo.test";
-  process.env.FO_EMBED_MODE = "whole";
   console.error = () => {};
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname;

@@ -27,11 +27,9 @@ app = "faborch-demo"
 # (Singapore) is the nearest reliable fallback.
 primary_region = "sin"
 
-# ── FabInsight ────────────────────────────────────────────────────────────────
+# ── FabOrchestrator ───────────────────────────────────────────────────────────
 #
-# The FabOrchestrator this demo forwards prompts to. FabInsight is not built in
-# this app: `/fabinsight` sends the prompt to the running FO application, whose
-# agent and approved MCP tools answer it, and the answer is streamed back here.
+# The FabOrchestrator whose own pages this app serves through its gateway.
 #
 # `[env]`, not `flyctl secrets`, because it is not a secret — it is the public
 # CloudFront distribution `docs/05-deployment-and-ci.md` names as the end-user
@@ -42,9 +40,6 @@ primary_region = "sin"
 # on plain http, and pointing at it directly would put FabOrchestrator passwords
 # and session tokens in cleartext across the public internet. CloudFront
 # terminates TLS.
-#
-# Unset, `/fabinsight` says it is not connected to a FabOrchestrator and the
-# production order workflow is unaffected.
 [env]
   FABORCH_BASE_URL = "https://d7y8a8whrch88.cloudfront.net"
 
@@ -56,13 +51,9 @@ primary_region = "sin"
 
   # ── Embedding gateway ────────────────────────────────────────────────────────
   #
-  # **Deliberately absent here, which means off.** With no FO_EMBED_MODE the
-  # gateway is disabled and every path is this app's own — the rollback at every
-  # stage. Production turns to `whole` only at the cutover the plan's CP5
-  # checkpoint decides; the embedded app is proven on the preview first
-  # (`fly.preview.toml`). See `lib/gateway/registry.ts`.
-  #
-  #   FO_EMBED_MODE = "whole"
+  # There is no switch on this branch: the app always serves FabOrchestrator's
+  # own pages (`lib/gateway/registry.ts`). Deploying it here replaces the app's
+  # own screens that this production app still shows.
 
 [build]
 

@@ -7,25 +7,26 @@
  */
 
 import { z } from "zod";
-import { MAX_REQUEST_BODY_BYTES } from "./gateway/body-limit";
 
 /**
- * A device's proof for sign-in (`lib/devices/proof.ts`): its id, a challenge
- * from `/api/pwa/device-auth/challenge`, and its signature over that challenge.
+ * A phone's proof for FabOrchestrator's approved devices (its Admin → Devices):
+ * the device id, a challenge from FO's `/api/auth/device-challenge`, and the
+ * device's signature over it (`lib/fo-device-key.ts`). Passed to FO untouched;
+ * FO checks it.
  */
-export const DeviceProofSchema = z
+export const FoDeviceProofSchema = z
   .object({
-    deviceId: z.string().regex(/^DEVICE-\d{3,9}$/),
-    challengeId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
-    signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
+    deviceId: z.string().min(1).max(64),
+    challenge: z.string().min(1).max(200),
+    signature: z.string().regex(/^[A-Za-z0-9_-]{1,200}$/),
   })
   .strict();
 
 export const LoginSchema = z.object({
   email: z.string().min(1, "Email is required").max(255),
   password: z.string().min(1, "Password is required").max(128),
-  /** Required while the device gate is enforced (`lib/devices/gate.ts`). */
-  device: DeviceProofSchema.optional(),
+  /** Sent when this phone holds a FabOrchestrator device key; FO requires it while its device approval is on. */
+  device: FoDeviceProofSchema.optional(),
 });
 
 /**
@@ -35,253 +36,3 @@ export const LoginSchema = z.object({
  * a real sign-in sends comes near it.
  */
 export const LOGIN_BODY_LIMIT = 16 * 1024;
-
-/** The plan's `small-json` body class (RP1 part 3 item 7): 16 KiB. */
-export const SMALL_JSON_BODY_LIMIT = 16 * 1024;
-
-/**
- * The native chat route's body limit: the plan's one request policy, 20 MiB
- * (provisional, RP1), shared with the gateway so the two cannot drift. The
- * route is B5's containment until it retires (RP8). Next hands the app up to
- * `REQUEST_BODY_CEILING_BYTES` (`next.config.ts`), above this, so a larger
- * body is measured and refused rather than arriving cut short.
- */
-export const CHAT_BODY_LIMIT = MAX_REQUEST_BODY_BYTES;
-
-/**
- * Creating a conversation: derived from `CreateConversationSchema`, so the
- * longest legal title (20,000 characters, up to six bytes each once JSON
- * escapes it) always fits. `small-json` would refuse a long first question.
- */
-export const CREATE_CONVERSATION_BODY_LIMIT = 20_000 * 6 + 1024;
-
-export const OrderStatusSchema = z.enum([
-  "RELEASED",
-  "IN_PROGRESS",
-  "ON_HOLD",
-  "COMPLETED",
-  "CANCELLED",
-]);
-
-export const OrderSearchSchema = z.object({
-  text: z.string().max(64).optional(),
-  /** Repeated `status` query params, one per selected filter. */
-  statuses: z.array(OrderStatusSchema).max(5).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
-});
-
-/**
- * Order numbers are `PO-` plus digits. Constrained rather than free text
- * because this value is a lookup key — a permissive one would be the seam a
- * real adapter's query builder gets injected through in Tier 4.
- */
-export const OrderNumberSchema = z
-  .string()
-  .regex(/^PO-\d{1,10}$/i, "Order number must look like PO-10382");
-
-/** `DEC-0007`. Constrained for the same reason `OrderNumberSchema` is: it is a key. */
-export const DecisionIdSchema = z
-  .string()
-  .regex(/^DEC-\d{1,10}$/i, "Decision id must look like DEC-0007");
-
-/**
- * Recording a supervisor's decision, or overriding one already recorded.
- *
- * `decidedByEmail` is deliberately absent — it comes from the session, never
- * from the request body. A client that can name the decider can forge one.
- *
- * The two shapes differ in what the client must supply:
- *
- *  - **A first decision** is made in front of an analysis, so it carries the
- *    recommendation and whether that analysis was live or cached.
- *  - **An override** names the decision it replaces and the client sends
- *    neither: the route inherits both from the superseded record. Letting a
- *    client restate the recommendation on an override is how the audit trail
- *    acquires a row claiming the AI advised something it never advised.
- *
- * A `note` is optional on a first decision and **required on an override**. An
- * override with no reason is precisely the row nobody can act on later — it
- * says a manager disagreed and not why.
- */
-export const DecisionSchema = z
-  .object({
-    decision: z.enum(["APPROVE", "REJECT", "ESCALATE"]),
-    note: z.string().max(2000).optional(),
-    /** The recommendation on screen when they decided, so the two stay together. */
-    recommendedAction: z.string().min(1).max(2000).optional(),
-    /**
-     * `"none"` means there was no analysis on screen. It is required rather
-     * than inferred from an absent `recommendedAction`, so a client that simply
-     * forgot to send the recommendation is rejected instead of silently
-     * recording "decided without asking the model" — which would be a lie in
-     * the audit trail rather than a missing field.
-     */
-    analysisSource: z.enum(["live", "cached", "none"]).optional(),
-    /** Present only on an override. */
-    supersedesId: DecisionIdSchema.optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.supersedesId) {
-      if (!value.note?.trim()) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["note"],
-          message: "An override needs a reason",
-        });
-      }
-      return;
-    }
-    if (!value.analysisSource) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["analysisSource"],
-        message: "analysisSource is required",
-      });
-      return;
-    }
-    // Only a decision taken *with* an analysis has a recommendation to record.
-    if (value.analysisSource !== "none" && !value.recommendedAction) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recommendedAction"],
-        message: "recommendedAction is required",
-      });
-    }
-    // And one taken without an analysis cannot have one. Rejecting rather than
-    // dropping it: a client sending both is confused about which it did, and
-    // quietly picking one for it puts the wrong story in the log.
-    if (value.analysisSource === "none" && value.recommendedAction) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["recommendedAction"],
-        message: "recommendedAction cannot accompany analysisSource \"none\"",
-      });
-    }
-  });
-
-/**
- * One turn sent to FabInsight.
- *
- * ── This is a narrowing of FO's own schema, not a new one ───────────────────
- * `claudeai_athena/lib/validation.ts:143` (`ChatRequestSchema`) accepts
- * `parts: z.array(z.unknown())`, because the product's chat sends file parts,
- * tool parts and reasoning parts through the same field. This interface sends
- * text and nothing else, so it says so — an unknown part shape reaching FO from
- * here would be a bug in this app, and a schema that accepts anything cannot
- * report it.
- *
- * **What is deliberately not accepted: `model` and `activeMcpIds`.** Both are
- * decided server-side in `app/api/faborch/chat/route.ts`. A client that could
- * name the model could pick one the operator's FO role forbids and get a 400
- * from FO instead of an answer; a client that could name `activeMcpIds` could
- * name a connection belonging to somebody else. FO checks both, so this is
- * defence in depth — but it is also the same rule the explain route already
- * follows: the client does not get to say which facts the model was given.
- */
-export const FabInsightRequestSchema = z.object({
-  messages: z
-    .array(
-      z.object({
-        role: z.enum(["user", "assistant"]),
-        parts: z
-          .array(z.object({ type: z.literal("text"), text: z.string().max(20_000) }))
-          .min(1)
-          .max(64),
-      }),
-    )
-    .min(1)
-    // A conversation long enough to hit this is one FO would trim anyway
-    // (`fitMessagesToContextWindow`); the cap is here so an unbounded body
-    // cannot be posted at an authenticated route.
-    .max(100),
-
-  /**
-   * Which FabOrchestrator conversation to write this turn into.
-   *
-   * **Accepting this field is not the same as trusting it.** `/api/chat` in
-   * FabOrchestrator does not verify that a `conversationId` belongs to the
-   * caller — it has no `getConversation` and no `userId` comparison, and passes
-   * the value straight to `addMessage` and to the S3-reference lookup. Every
-   * other conversation route there checks ownership. That one does not.
-   *
-   * So the shape is validated here and the **ownership is proved in the route**,
-   * against the caller's own conversation list, before anything is forwarded.
-   * A uuid that parses is still not a uuid this operator may write to.
-   */
-  conversationId: z.string().uuid().nullish(),
-});
-
-/**
- * Creating a conversation: the question it starts with, and nothing else.
- *
- * `model` and `agent` are **not** accepted. Both are decided server-side, for
- * the same reason the chat route decides `model` and `activeMcpIds`: a client
- * that could name the agent bucket could write rows into the Modeling Agent's
- * history, which this app does not open and has no business creating.
- */
-export const CreateConversationSchema = z.object({
-  title: z.string().min(1).max(20_000),
-});
-
-/**
- * Updating a conversation: pinning, and only pinning.
- *
- * FO's PATCH also takes `title`, `model` and `isShared`. None is accepted here.
- * `isShared` in particular flips a flag whose only consumer is `/share/<id>`, a
- * page that exists in no upstream branch — an app that offered it would be
- * offering a link that goes nowhere.
- */
-export const UpdateConversationSchema = z.object({
-  isPinned: z.boolean(),
-});
-
-/* ── Device enrollment (6 October 2026, `lib/devices/`) ───────────────────── */
-
-/**
- * An administrator issues a one-time enrollment. It names no user: the code
- * authorizes one device, and sign-in decides who uses it.
- */
-export const CreateEnrollmentSchema = z
-  .object({
-    site: z.string().trim().max(100).optional(),
-    friendlyName: z.string().trim().max(100).optional(),
-  })
-  .strict();
-
-/** The enrollment page completes the enrollment by itself; the token is in its cookie, not here. */
-/**
- * Step 1 of enrollment: ask for a challenge. The code comes from the in-app
- * scanner (`token`) or from the pending-enrollment cookie the link set.
- */
-export const StartEnrollmentSchema = z
-  .object({
-    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
-  })
-  .strict();
-
-/**
- * Step 2: the device's public key and its signature over the enrollment
- * challenge, proving it holds the private key it just generated.
- */
-export const CompleteEnrollmentSchema = z
-  .object({
-    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
-    challengeId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
-    publicKeySpki: z.string().regex(/^[A-Za-z0-9_-]{80,400}$/),
-    signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
-    /** Whether the page was opened in the installed app (display-mode: standalone). Descriptive only. */
-    installedApp: z.boolean().optional(),
-  })
-  .strict();
-
-export const DeviceChallengeSchema = z
-  .object({
-    deviceId: z.string().regex(/^DEVICE-\d{3,9}$/),
-  })
-  .strict();
-
-export const RevokeDeviceSchema = z
-  .object({
-    reason: z.string().trim().max(200).optional(),
-  })
-  .strict();

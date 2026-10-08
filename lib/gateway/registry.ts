@@ -2,73 +2,31 @@
  * The ownership registry: which paths on this origin are this app's, which
  * are FabOrchestrator's, and which are refused.
  *
- * ── The one switch ──────────────────────────────────────────────────────────
- * `FO_EMBED_SURFACES` lists the FabOrchestrator documents this origin opens,
- * as a comma-separated set of paths from the catalogue below, for example
- * `/chat,/reports`. **Unset or empty means the registry is disabled** and
- * every path belongs to this app exactly as before the embedding work: no
- * FO document, asset or API is reachable, and `proxy.ts` behaves as it did on
- * 2026-09-04. That is the rollback at every stage of the plan.
+ * This app serves FabOrchestrator's own pages for every document it does not
+ * reserve itself. There is no switch: the native screens that an "off" or
+ * "surfaces" mode used to fall back on were removed on this branch.
  *
  * ── Order of precedence ─────────────────────────────────────────────────────
- * When enabled, a path is classified in this order, first match wins:
+ * A path is classified in this order, first match wins:
  *
- *   1. `/` is always this app's front door. FabOrchestrator's own `/` is its
- *      sign-in page and is never served here: one login, on this app's form.
- *   2. A document listed in `FO_EMBED_SURFACES` (by path prefix) is FO's.
- *      This is what lets `/reports` move from this app's own screen to FO's
- *      page by configuration alone (WP7).
- *   3. This app's reserved paths: its screens, its API, its build output
- *      under the asset prefix, its install files.
- *   4. FabOrchestrator paths that are refused outright: the credential
+ *   1. This app's reserved paths: its front door `/`, its sign-in, its API,
+ *      its build output under the asset prefix, its install files.
+ *      FabOrchestrator's own `/` is its sign-in page and is never served here:
+ *      one login, on this app's form.
+ *   2. FabOrchestrator paths that are refused outright: the credential
  *      endpoints (this app's rate-limited form is the only way in) and FO's
  *      scheduler tick.
- *   5. FabOrchestrator API prefixes the embedded pages call.
- *   6. FabOrchestrator static assets: everything under `/_next/`, and the
+ *   3. FabOrchestrator API prefixes the embedded pages call. Any other `/api/`
+ *      path is unknown, and unknown is 404.
+ *   4. FabOrchestrator static assets: everything under `/_next/`, and the
  *      handful of files FO serves from its `public/` (verified 2026-09-08).
- *   7. Anything else is unknown, and unknown is 404. Deny by default.
+ *   5. Any other document is FabOrchestrator's.
  *
- * ── What is deliberately not here ───────────────────────────────────────────
- * FO's `/api/auth/*` is this app's in WP1: the sign-in, sign-out and session
- * routes at those paths are this app's own and stay so until WP2 moves them.
- * FO's `/home` and `/modeling-agent` are in the catalogue but not in any
- * default; the plan keeps the desktop cockpit and the Master Data Load agent
- * off phones unless a later decision lists them.
- *
- * Verified against production on 2026-09-08
- * (`docs/probes/2026-09-08-wp0-embedding-baseline.md`): FO ships no manifest,
- * no service worker and no icons, so this app's own at those paths collide
- * with nothing.
+ * Verified against production on 2026-09-08: FO ships no manifest, no service
+ * worker and no icons, so this app's own at those paths collide with nothing.
  */
 
 export type Owner = "pwa" | "fo-document" | "fo-api" | "fo-static" | "denied" | "unknown";
-
-export interface Registry {
-  /** How much of FabOrchestrator this origin serves. See `EmbedMode`. */
-  mode: EmbedMode;
-  /** False only in `off` mode. */
-  enabled: boolean;
-  /** The FO documents this origin opens, in catalogue order. */
-  surfaces: string[];
-  /** Entries in the variable that are not in the catalogue, for a warning. */
-  ignored: string[];
-}
-
-/**
- * The FabOrchestrator documents this app knows how to open. A value in
- * `FO_EMBED_SURFACES` that is not here is ignored, so a typo cannot proxy an
- * unexpected page. `/settings` is included although FO answers it with a
- * client-side redirect to `/chat` (verified 2026-09-08): listing it keeps a
- * bookmarked or linked `/settings` working the way it does on FO.
- */
-export const FO_DOCUMENT_CATALOGUE: readonly string[] = [
-  "/chat",
-  "/reports",
-  "/settings",
-  "/home",
-  "/modeling-agent",
-  "/force-password-change",
-];
 
 /**
  * This app's own paths, matched by prefix boundary.
@@ -92,37 +50,14 @@ export const PWA_RESERVED_PREFIXES: readonly string[] = [
   "/login",
   "/offline",
   "/diagnostics",
-  // This app's own agent screens. FabOrchestrator has no page at either path,
-  // so forwarding them in `whole` mode would proxy a 404. They stay this app's
-  // and `lib/gateway/destinations.ts` sends them on to `/chat` (WP9).
+  // The old addresses of this app's removed chat screens. FabOrchestrator has
+  // no page at either path; `lib/gateway/destinations.ts` sends them on to
+  // `/chat`, so an old bookmark or Home Screen shortcut still lands somewhere.
   "/fabinsight",
   "/backend-agent",
   "/api/pwa",
-  "/api/faborch",
   "/pwa-assets",
-  // Device enrollment (6 October 2026, `lib/devices/`): the blocked page, the
-  // enrollment page and its link, and device administration. FabOrchestrator
-  // has none of these paths.
-  "/device-blocked",
-  "/device-enroll",
-  "/device-admin",
-  // The developer-only device-credential feasibility test (404 unless
-  // DEVICE_CRYPTO_TEST=1).
-  "/device-crypto-test",
 ];
-
-/**
- * The paths **both applications have a page for**, where the mode decides.
- *
- * `/reports` is the only one. This app draws a read-only dashboard list there
- * and FabOrchestrator serves its own Reports page at the same path — the
- * collision WP7 resolved with a flag. It cannot sit in the always-reserved list
- * above, because then FabOrchestrator could never have it; it cannot be
- * unreserved either, because with the embedding off this app must still answer
- * it. So it is checked *after* the document rules: FabOrchestrator wins when the
- * surface is listed or the mode is `whole`, and this app answers otherwise.
- */
-export const PWA_CONTESTED_PREFIXES: readonly string[] = ["/reports"];
 
 /** This app's own files, matched exactly. */
 export const PWA_RESERVED_EXACT: readonly string[] = [
@@ -192,6 +127,14 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/auth/me",
   "/api/auth/logout",
   "/api/auth/change-password",
+  // Approved devices, owned by FabOrchestrator (its Admin → Devices). The
+  // challenge an approved device signs at sign-in (this app's `/login` asks for
+  // it), the one-time QR code a device uses on `/device-enroll`, and the admin
+  // calls of the Devices page, so a QR made inside this app opens here: a
+  // device key belongs to the web address it was made on.
+  "/api/auth/device-challenge",
+  "/api/auth/device-enroll",
+  "/api/admin/devices",
   "/api/chat",
   "/api/conversations",
   "/api/mcp/connections",
@@ -208,6 +151,13 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/platform-theme",
   "/api/health",
 ];
+
+/**
+ * The one API row that takes a body with no session: a phone using a device QR
+ * code has, by definition, not signed in. Every other body to an API row needs
+ * a session (`app/fo-gateway/[...path]/route.ts`).
+ */
+export const FO_ANONYMOUS_BODY_PATHS: readonly string[] = ["/api/auth/device-enroll"];
 
 /** FabOrchestrator static prefixes. */
 export const FO_STATIC_PREFIXES: readonly string[] = ["/_next", "/logos"];
@@ -278,105 +228,40 @@ export function underPrefix(p: string, prefix: string): boolean {
 }
 
 /**
- * How much of FabOrchestrator this origin serves.
- *
- * ── Why this replaced a list of surfaces (audit, 9 September) ───────────────
- * WP1 named its variable `FO_EMBED_SURFACES` — *a list of surfaces* — and every
- * package after it inherited the assumption inside that name. The audit found
- * what it cost: **two of FabOrchestrator's ten pages were served, while
- * forty-eight of its fifty-two API routes already were.** The gateway had been
- * built general and pointed at two paths. A page FabOrchestrator shipped was a
- * 404 here until somebody remembered to list it, which is how its own Back
- * button came to point at a dead page.
- *
- * The product is an installable delivery of FabOrchestrator, not a separate
- * cockpit linking to a few of its pages. So the default inverts:
- *
- *   off       no FabOrchestrator on this origin. Exactly the app of 7 September.
- *   surfaces  WP1–WP9 behaviour: only the documents named in
- *             `FO_EMBED_SURFACES` are FabOrchestrator's. Kept so the migration
- *             is reversible one step at a time rather than all at once.
- *   whole     FabOrchestrator owns this origin's documents except the ones this
- *             app reserves and the ones explicitly denied.
- *
- * **`whole` changes the default for documents only.** The API policy does not
- * invert — see `FO_API_PREFIXES` and `FO_DENIED_PREFIXES`. That asymmetry is
- * deliberate and is the security constraint Amay set: a page
- * FabOrchestrator's team deploys should appear by itself, but an *endpoint*
- * they add should be looked at by a person first.
- */
-export type EmbedMode = "off" | "surfaces" | "whole";
-
-/**
- * Parse `FO_EMBED_MODE` and `FO_EMBED_SURFACES`. Pure; takes the environment so
- * tests can pass their own.
- *
- * `FO_EMBED_MODE` wins when set. With it unset the old variable still decides,
- * so a deployment carrying only `FO_EMBED_SURFACES` behaves exactly as it did
- * before this change — which is what makes the migration reversible by
- * configuration rather than by revert.
- */
-export function readRegistry(env: Record<string, string | undefined> = process.env): Registry {
-  const rawMode = (env.FO_EMBED_MODE ?? "").trim().toLowerCase();
-  const raw = (env.FO_EMBED_SURFACES ?? "").trim();
-
-  const wanted = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  const surfaces = FO_DOCUMENT_CATALOGUE.filter((s) => wanted.includes(s));
-  const ignored = wanted.filter((w) => !FO_DOCUMENT_CATALOGUE.includes(w));
-
-  if (rawMode === "whole") return { mode: "whole", enabled: true, surfaces, ignored };
-  if (rawMode === "off") return { mode: "off", enabled: false, surfaces: [], ignored };
-
-  // Unset, or any value this app does not recognise: fall back to the surface
-  // list. An unrecognised mode must not silently open the whole application.
-  const enabled = surfaces.length > 0;
-  return { mode: enabled ? "surfaces" : "off", enabled, surfaces, ignored };
-}
-
-/**
  * Who owns `pathname` on this origin.
  *
- * The order of these tests **is** the security policy, and it does not change
- * between modes: what this app reserves is decided first, what is denied is
- * decided before anything is forwarded, and the API allow-list is consulted
- * before any default applies. Only the last step differs — in `whole` mode a
- * document nobody claimed goes to FabOrchestrator instead of being denied.
+ * The order of these tests **is** the security policy: what this app reserves
+ * is decided first, what is denied is decided before anything is forwarded,
+ * and the API allow-list is consulted before the document default applies.
+ * Documents and APIs are deliberately treated differently, the constraint Amay
+ * set: a page FabOrchestrator's team deploys appears here by itself, but an
+ * *endpoint* they add must be looked at and listed by a person first.
  */
-export function classify(pathname: string, registry: Registry): Owner {
-  if (!registry.enabled) return "pwa";
-
-  // 1. This app's own paths, always, in every mode. The front door, its
-  //    session, its build output, its installability and its offline screen are
-  //    the things this app exists to provide and can never be handed over.
+export function classify(pathname: string): Owner {
+  // 1. This app's own paths. The front door, its session, its build output,
+  //    its installability and its offline screen are the things this app
+  //    exists to provide and can never be handed over.
   if (PWA_RESERVED_EXACT.includes(pathname)) return "pwa";
   if (PWA_RESERVED_PREFIXES.some((p) => underPrefix(pathname, p))) return "pwa";
 
-  // 2. Denied before forwarded, in every mode. Credential, registration,
-  //    recovery, scheduled and development-only endpoints, and the two
-  //    password-recovery documents. Nothing below can reach them.
+  // 2. Denied before forwarded. Credential, registration, recovery, scheduled
+  //    and development-only endpoints, and the two password-recovery
+  //    documents. Nothing below can reach them.
   if (FO_DENIED_PREFIXES.some((p) => underPrefix(pathname, p))) return "denied";
 
-  // 3. FabOrchestrator's API — an explicit allow-list in **both** modes. This
-  //    is the half that deliberately does not invert.
+  // 3. FabOrchestrator's API: an explicit allow-list. Anything else under
+  //    `/api/` is unknown: a new FabOrchestrator endpoint is a decision, not a
+  //    deployment side effect.
   if (FO_API_PREFIXES.some((p) => underPrefix(pathname, p))) return "fo-api";
-  //    Anything else under `/api/` is unknown, whatever the mode. A new
-  //    FabOrchestrator endpoint is a decision, not a deployment side effect.
   if (pathname === "/api" || pathname.startsWith("/api/")) return "unknown";
 
   // 4. FabOrchestrator's static output.
   if (FO_STATIC_EXACT.includes(pathname)) return "fo-static";
   if (FO_STATIC_PREFIXES.some((p) => underPrefix(pathname, p))) return "fo-static";
 
-  // 5. Documents. In `surfaces` mode only what was named; in `whole` mode
-  //    whatever is left, which is what lets a page FabOrchestrator's team
-  //    deploys appear here without an edit.
-  if (registry.surfaces.some((s) => underPrefix(pathname, s))) return "fo-document";
-  if (registry.mode === "whole") return "fo-document";
-
-  // 6. A path both applications claim, which FabOrchestrator did not win above.
-  if (PWA_CONTESTED_PREFIXES.some((c) => underPrefix(pathname, c))) return "pwa";
-
-  return "unknown";
+  // 5. Every other document is FabOrchestrator's, which is what lets a page
+  //    FabOrchestrator's team deploys appear here without an edit.
+  return "fo-document";
 }
 
 /** True for the owners the gateway route is allowed to forward. */

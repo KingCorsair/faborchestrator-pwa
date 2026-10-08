@@ -23,18 +23,13 @@
 
 import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 process.env.SESSION_SIGNING_SECRET ??= "test-secret-that-is-long-enough-to-sign";
 process.env.SESSION_SIGNING_KEY_ID ??= "test-key";
 process.env.FABORCH_BASE_URL ??= "https://fo.test";
 
 import { NextRequest, NextResponse } from "next/server";
-import { proxy as proxyMaybeAsync } from "@/proxy";
-
-// With `DEVICE_GATE` unset the proxy answers synchronously, as it always did;
-// the device gate's asynchronous path is held by `__tests__/devices/`.
-const proxy = (req: NextRequest) => proxyMaybeAsync(req) as NextResponse;
+import { proxy } from "@/proxy";
 import { sessionFor } from "@/lib/auth";
 import { FO_TOKEN_COOKIE } from "@/lib/faborch/session";
 import { GET as me } from "@/app/api/pwa/auth/me/route";
@@ -137,15 +132,17 @@ describe("a launch with no session never reaches the cockpit", () => {
 });
 
 describe("a launch with a session is not interrupted", () => {
-  test("a signed-in operator opening / gets the cockpit, untouched", () => {
+  test("a signed-in operator opening / goes straight on to FabOrchestrator's cockpit", () => {
     const res = proxy(signedIn("/"));
-    assert.equal(redirectedTo(res), null);
-    assert.ok(res.status < 300, `status ${res.status}`);
+    assert.equal(res.status, 307);
+    assert.equal(redirectedTo(res), "/home");
   });
 
-  test("and every screen behind it", () => {
-    for (const path of ["/fabinsight", "/backend-agent", "/reports"]) {
-      assert.equal(redirectedTo(proxy(signedIn(path))), null, path);
+  test("and FabOrchestrator's pages are handed to the gateway, not bounced", () => {
+    for (const path of ["/home", "/chat", "/reports"]) {
+      const res = proxy(signedIn(path));
+      assert.equal(redirectedTo(res), null, path);
+      assert.ok(res.headers.get("x-middleware-rewrite")?.includes(`/fo-gateway${path}`), path);
     }
   });
 });
@@ -277,17 +274,10 @@ describe("the API refuses what the gate only redirects", () => {
 
 describe("not found, in the shape the caller can use (plan RP5, G8)", () => {
   test("an unknown API path is a coded JSON 404, never an HTML page", async () => {
-    const before = process.env.FO_EMBED_MODE;
-    process.env.FO_EMBED_MODE = "whole";
-    try {
-      const res = proxy(signedIn("/api/no-such-thing"));
-      assert.equal(res.status, 404);
-      assert.equal(res.headers.get("cache-control"), "no-store");
-      assert.equal(((await res.json()) as { code: string }).code, "not_found");
-    } finally {
-      if (before === undefined) delete process.env.FO_EMBED_MODE;
-      else process.env.FO_EMBED_MODE = before;
-    }
+    const res = proxy(signedIn("/api/no-such-thing"));
+    assert.equal(res.status, 404);
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal(((await res.json()) as { code: string }).code, "not_found");
   });
 
   test("an unreachable document still gets the app's own 404 page", () => {
@@ -296,39 +286,22 @@ describe("not found, in the shape the caller can use (plan RP5, G8)", () => {
   });
 });
 
-/* ── The WP9 cutover, at the router ──────────────────────────────────────── */
+/* ── The removed chat screens, at the router ─────────────────────────────── */
 
 /**
- * `/fabinsight` and `/backend-agent` are this app's own duplicates of
- * FabOrchestrator's chat. Once the gateway serves the real one, arriving at
- * either lands on it instead — so a bookmark, a shared link or a home-screen
- * shortcut made before the cutover keeps working.
- *
- * Two things are pinned here that a unit test of `destinations.ts` cannot see:
- * the redirect happens **behind the session gate**, and it **disappears
- * entirely** when the flag does. The second is the rollback, and it is the
- * reason the old screens were left in the tree rather than deleted.
+ * `/fabinsight` and `/backend-agent` were this app's own chat screens. They are
+ * gone, and arriving at either lands on FabOrchestrator's `/chat` instead — so a
+ * bookmark, a shared link or a Home Screen shortcut made before the cutover
+ * keeps working. Pinned here because a unit test of `destinations.ts` cannot
+ * see it: the redirect happens **behind the session gate**.
  */
-describe("the retired chat screens, once FabOrchestrator serves the real one", () => {
-  const embedOn = (fn: () => void) => {
-    const before = process.env.FO_EMBED_SURFACES;
-    process.env.FO_EMBED_SURFACES = "/chat,/reports";
-    try {
-      fn();
-    } finally {
-      if (before === undefined) delete process.env.FO_EMBED_SURFACES;
-      else process.env.FO_EMBED_SURFACES = before;
-    }
-  };
-
+describe("the removed chat screens", () => {
   test("a signed-in operator is sent to FabOrchestrator's chat", () => {
-    embedOn(() => {
-      for (const screen of ["/fabinsight", "/backend-agent"]) {
-        const res = proxy(signedIn(screen));
-        assert.equal(res.status, 307, `${screen} should redirect`);
-        assert.equal(redirectedTo(res), "/chat");
-      }
-    });
+    for (const screen of ["/fabinsight", "/backend-agent"]) {
+      const res = proxy(signedIn(screen));
+      assert.equal(res.status, 307, `${screen} should redirect`);
+      assert.equal(redirectedTo(res), "/chat");
+    }
   });
 
   test("the question in the URL is dropped rather than carried nowhere", () => {
@@ -336,74 +309,19 @@ describe("the retired chat screens, once FabOrchestrator serves the real one", (
     // `?prompt=` were all verified against production with the composer left
     // empty — so carrying `?q=` would put a parameter in the address bar that
     // nothing reads.
-    embedOn(() => {
-      assert.equal(redirectedTo(proxy(signedIn("/fabinsight?q=Give%20me%20the%20yield"))), "/chat");
-    });
+    assert.equal(redirectedTo(proxy(signedIn("/fabinsight?q=Give%20me%20the%20yield"))), "/chat");
   });
 
-  test("and it is never cached, so turning the flag off takes effect at once", () => {
-    embedOn(() => {
-      assert.equal(proxy(signedIn("/fabinsight")).headers.get("Cache-Control"), "no-store");
-    });
+  test("and it is never cached", () => {
+    assert.equal(proxy(signedIn("/fabinsight")).headers.get("Cache-Control"), "no-store");
   });
 
   test("a signed-out visitor still meets sign-in first, with somewhere to return to", () => {
-    // The gate runs before the cutover: bouncing an unauthenticated request
+    // The gate runs before the redirect: bouncing an unauthenticated request
     // straight to `/chat` would send it to a URL it cannot open yet, and lose
     // the return path on the way.
-    embedOn(() => {
-      const res = proxy(navigation("/fabinsight"));
-      assert.equal(res.status, 307);
-      assert.equal(redirectedTo(res), "/login?next=%2Ffabinsight");
-    });
-  });
-
-  test("with the flag off the screens answer for themselves — the rollback", () => {
-    for (const screen of ["/fabinsight", "/backend-agent"]) {
-      const res = proxy(signedIn(screen));
-      assert.equal(res.headers.get("location"), null, `${screen} must not redirect`);
-      assert.equal(res.status, 200);
-    }
-  });
-
-  test("the cockpit and Reports are untouched by the cutover either way", () => {
-    embedOn(() => {
-      assert.equal(proxy(signedIn("/")).headers.get("location"), null);
-    });
-    assert.equal(proxy(signedIn("/")).headers.get("location"), null);
-    assert.equal(proxy(signedIn("/reports")).headers.get("location"), null);
-  });
-});
-
-/**
- * The front door must read the embedding flag per request, not per build.
- *
- * `app/page.tsx` decides where every door on the cockpit points by reading
- * `FO_EMBED_SURFACES`. Statically prerendered, it would read that variable once
- * during `next build` — in a Docker build where it is unset — and bake
- * `/fabinsight` into the HTML for the life of the image. The cutover would work
- * locally and silently do nothing on the deployment, and the rollback would
- * stop being a flag and become a rebuild.
- *
- * Asserted against the source because that is where the property lives: a
- * missing export produces no error, no warning and no failing request. It just
- * quietly stops the front door moving.
- */
-describe("the cockpit is rendered per request, so the flag can still decide", () => {
-  const page = readFileSync(new URL("../../app/page.tsx", import.meta.url), "utf8");
-
-  test("it opts out of static prerendering", () => {
-    assert.match(page, /export const dynamic = "force-dynamic"/);
-  });
-
-  test("and it is the page that reads the destination", () => {
-    // If the read ever moves elsewhere, this test is pinning the wrong file —
-    // which is worth knowing, so it fails rather than passing vacuously.
-    const landing = readFileSync(
-      new URL("../../components/fab/screens/landing.tsx", import.meta.url),
-      "utf8",
-    );
-    assert.match(landing, /chatHref\(\)/);
-    assert.match(landing, /from "@\/lib\/gateway\/destinations"/);
+    const res = proxy(navigation("/fabinsight"));
+    assert.equal(res.status, 307);
+    assert.equal(redirectedTo(res), "/login?next=%2Ffabinsight");
   });
 });

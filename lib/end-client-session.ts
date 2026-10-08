@@ -29,8 +29,7 @@ export type ClientEndReason =
   | "fo_expired"
   | "token_missing"
   | "storage_unavailable"
-  | "fo_signed_out"
-  | "device_blocked";
+  | "fo_signed_out";
 
 export function endClientSession(
   reason: ClientEndReason,

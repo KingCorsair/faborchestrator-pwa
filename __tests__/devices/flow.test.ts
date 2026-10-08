@@ -140,19 +140,27 @@ async function scanEnrollment(token: string, opts: { key?: PhoneKey; via?: "body
   return { status: res.status, step: "complete" as const, body, key, deviceId: body.device?.deviceId ?? null, res };
 }
 
-/** What the sign-in page does: get a challenge for its device, sign it, send it with the password. */
+type Answer = { token?: string; code?: string; error?: string; challengeId?: string; challenge?: string };
+
+/**
+ * What the sign-in page does: get a challenge for its device, sign it, send it
+ * with the password. A refused challenge (a revoked device) ends it there, as
+ * it does on the page; `stage` says which answer `res` is.
+ */
 async function signIn(phone: Phone | null, email: string, password: string, opts: { proof?: Record<string, string> | null } = {}) {
   let device: Record<string, string> | undefined;
   if (opts.proof !== undefined) device = opts.proof ?? undefined;
   else if (phone?.deviceId) {
     const c = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: phone.deviceId } }));
-    const cb = (await c.json()) as { challengeId: string; challenge: string };
-    device = { deviceId: phone.deviceId, challengeId: cb.challengeId, signature: await signChallenge(phone.key, cb.challenge) };
+    const cb = (await c.json()) as Answer;
+    if (c.status !== 200) return { res: c, body: cb, device, cookies: { [FO_TOKEN_COOKIE]: null } as Cookies, bearer: null, stage: "challenge" as const };
+    device = { deviceId: phone.deviceId, challengeId: cb.challengeId!, signature: await signChallenge(phone.key, cb.challenge!) };
   }
   const res = await LOGIN(request("/api/pwa/auth/login", { json: { email, password, ...(device ? { device } : {}) } }));
-  const body = (await res.json()) as { token?: string; code?: string };
+  const body = (await res.json()) as Answer;
   const foToken = setCookie(res, FO_TOKEN_COOKIE);
-  return { res, body, device, cookies: { [FO_TOKEN_COOKIE]: foToken ?? null } as Cookies, bearer: body.token ? `Bearer ${body.token}` : null };
+  const bearer = body.token ? `Bearer ${body.token}` : null;
+  return { res, body, device, cookies: { [FO_TOKEN_COOKIE]: foToken ?? null } as Cookies, bearer, stage: "sign-in" as const };
 }
 
 const revoke = (admin: Admin, deviceId: string) =>
@@ -416,10 +424,46 @@ describe("sign-in requires the device's proof, checked before the password", () 
     assert.equal(replay.res.status, 403);
   });
 
-  test("a revoked device's valid signature is refused (device_revoked), before the password", async () => {
+  test("a revoked device is refused its sign-in challenge (device_revoked): the sign-in page can say so before the password", async () => {
+    // The phone keeps its key after a revocation; this answer is how its
+    // sign-in page learns to show the revoked page instead of "Approved device".
     const phone = await enrolledPhone();
     await deviceStore().revokeDevice(phone.deviceId!, { by: "admin@plant.example", reason: "lost" });
+    const res = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: phone.deviceId } }));
+    const body = (await res.json()) as Answer;
+    assert.equal(res.status, 403);
+    assert.equal(body.code, "device_revoked");
+    assert.ok(body.error?.includes(`(${phone.deviceId}) has been revoked`), body.error);
+    assert.equal(body.challenge, undefined);
     const result = await signIn(phone, "alice@plant.example", "alice-pass");
+    assert.equal(result.stage, "challenge");
+    assert.equal(result.body.code, "device_revoked");
+    assert.equal(foLogins(), 0);
+  });
+
+  test("a revoked phone opening the app again and again does not lock its address out, and is logged once a minute", async () => {
+    const phone = await enrolledPhone();
+    const other = await enrolledPhone();
+    await deviceStore().revokeDevice(phone.deviceId!, { by: "admin@plant.example", reason: "lost" });
+    const from = { "fly-client-ip": "10.77.0.1" };
+    for (let i = 0; i < 12; i += 1) {
+      const res = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: phone.deviceId }, headers: from }));
+      assert.equal(res.status, 403, `attempt ${i + 1}`);
+    }
+    const approved = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: other.deviceId }, headers: from }));
+    assert.equal(approved.status, 200, "the address is not rate-limited");
+    const lines = logged.filter((l) => l.includes(`"action":"DEVICE_ACCESS_BLOCKED"`) && l.includes(phone.deviceId!));
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0]!.includes(`"reason":"revoked"`));
+  });
+
+  test("a proof signed before the revocation is still refused at sign-in (device_revoked), before the password", async () => {
+    const phone = await enrolledPhone();
+    const c = await CHALLENGE(request("/api/pwa/device-auth/challenge", { json: { deviceId: phone.deviceId } }));
+    const cb = (await c.json()) as Answer;
+    const proof = { deviceId: phone.deviceId!, challengeId: cb.challengeId!, signature: await signChallenge(phone.key, cb.challenge!) };
+    await deviceStore().revokeDevice(phone.deviceId!, { by: "admin@plant.example", reason: "lost" });
+    const result = await signIn(null, "alice@plant.example", "alice-pass", { proof });
     assert.equal(result.res.status, 403);
     assert.equal(result.body.code, "device_revoked");
     assert.equal(foLogins(), 0);

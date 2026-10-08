@@ -9,7 +9,7 @@ import {
 } from "@/lib/faborch/client";
 import { foFingerprint } from "@/lib/auth";
 import { deviceAudit } from "@/lib/devices/audit";
-import { DEVICE_NOT_APPROVED, deviceGateMode } from "@/lib/devices/gate";
+import { DEVICE_NOT_APPROVED, deviceGateMode, deviceRevoked } from "@/lib/devices/gate";
 import { verifyDeviceSignIn } from "@/lib/devices/proof";
 import { deviceStore, DeviceStoreUnavailableError, type Device } from "@/lib/devices/store";
 import { deviceKeyFrom, newDeviceKey, seatIdFor, setDeviceCookie } from "@/lib/faborch/device";
@@ -173,12 +173,10 @@ export async function POST(req: NextRequest) {
         device = proof.device;
       } else if (gate === "enforce") {
         deviceAudit("DEVICE_LOGIN_REFUSED", { deviceId: proof.deviceId, reason: proof.reason, address });
-        return NextResponse.json(
-          proof.reason === "revoked"
-            ? { code: "device_revoked", error: `This device (${proof.deviceId}) has been revoked. Contact your administrator.` }
-            : DEVICE_NOT_APPROVED,
-          { status: 403, headers: NO_STORE },
-        );
+        return NextResponse.json(proof.reason === "revoked" ? deviceRevoked(proof.deviceId) : DEVICE_NOT_APPROVED, {
+          status: 403,
+          headers: NO_STORE,
+        });
       }
     } catch (error) {
       if (!(error instanceof DeviceStoreUnavailableError)) throw error;

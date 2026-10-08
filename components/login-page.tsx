@@ -22,7 +22,7 @@ import { submittedCredentials } from "@/lib/credentials";
 import { endClientSession } from "@/lib/end-client-session";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 import { AUTH_TOKEN_KEY, readStored, storeSession, type StoredUser } from "@/lib/stored-session";
-import { signInProof, storedDevice } from "@/lib/devices/keystore";
+import { deviceStatus, signInProof, storedDevice } from "@/lib/devices/keystore";
 
 export interface LoginPageProps {
   /**
@@ -33,8 +33,9 @@ export interface LoginPageProps {
   next?: string;
   /**
    * Whether this deployment requires an approved device (`DEVICE_GATE`,
-   * `lib/devices/gate.ts`). Then the page checks this device's key before it
-   * shows the form, and sends a device without one to `/device-blocked`.
+   * `lib/devices/gate.ts`). Then the page checks this device's key, and asks
+   * the server about it, before it enables the form, and sends a device
+   * without one, or with a revoked one, to `/device-blocked`.
    */
   deviceRequired?: boolean;
 }
@@ -71,18 +72,37 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
    * 2026). The device's key lives in this browser's IndexedDB
    * (`lib/devices/keystore.ts`); without one there is nothing to sign in with,
    * so the form is never shown and the device goes to the device-check page.
-   * `null` while unknown; with the gate off nothing is required and the form
-   * shows at once.
+   * `"checking"` while unknown; with the gate off nothing is required and the
+   * form shows at once.
+   *
+   * A key here says which device this is, **not** that it is still approved:
+   * it outlives a revocation, which only the server knows about. So the page
+   * asks (`deviceStatus`) before it says "Approved device", and a revoked
+   * device goes to the revoked page. Until 8 October 2026 a revoked phone that
+   * reopened the app was shown "Approved device: DEVICE-nnn" and refused only
+   * after it had typed its password. `approved: false` is a key the server
+   * could not be asked about just now: no label, and sign-in checks it anyway.
    */
-  const [device, setDevice] = React.useState<string | null | "checking">(deviceRequired ? "checking" : null);
+  const [device, setDevice] = React.useState<{ id: string; approved: boolean } | null | "checking">(
+    deviceRequired ? "checking" : null,
+  );
   React.useEffect(() => {
     let cancelled = false;
-    void storedDevice().then((stored) => {
+    void (async () => {
+      const stored = await storedDevice();
       if (cancelled) return;
-      if (stored.kind === "enrolled") setDevice(stored.credential.deviceId);
-      else if (deviceRequired) window.location.replace("/device-blocked");
+      if (stored.kind !== "enrolled") {
+        if (deviceRequired) window.location.replace("/device-blocked");
+        else setDevice(null);
+        return;
+      }
+      const id = stored.credential.deviceId;
+      const status = await deviceStatus(id);
+      if (cancelled) return;
+      if (status === "approved" || status === "unavailable") setDevice({ id, approved: status === "approved" });
+      else if (deviceRequired) window.location.replace(status === "revoked" ? "/device-blocked?reason=revoked" : "/device-blocked");
       else setDevice(null);
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -232,7 +252,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
           if (proof.reason === "unavailable") {
             setError(proof.detail ?? "This device could not be checked just now. Try again shortly.");
           } else {
-            window.location.replace("/device-blocked");
+            window.location.replace(proof.reason === "revoked" ? "/device-blocked?reason=revoked" : "/device-blocked");
           }
           return;
         }
@@ -352,9 +372,9 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
               visitor who does not know which one they have opened cannot tell
               from anything else here. */}
           <h1 className="text-[26px]">Sign in to FabOrchestrator PWA</h1>
-          {device && device !== "checking" ? (
+          {device && device !== "checking" && device.approved ? (
             <p data-testid="approved-device" className="m-0 -mt-[8px] text-[12px]" style={{ color: "var(--text-muted-cool)" }}>
-              Approved device: <strong>{device}</strong>
+              Approved device: <strong>{device.id}</strong>
             </p>
           ) : null}
 

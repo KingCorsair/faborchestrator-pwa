@@ -114,6 +114,9 @@ in its own IndexedDB; the server holds only the public key, in an append-only
 store like the seat store (`DEVICE_STORE_PATH`). Sign-in requires a signed
 challenge, checked before the password reaches FabOrchestrator; the session is
 then bound to the device and `proxy.ts` checks its status on every request.
+A key on a device outlives its revocation, so never show a device as approved
+from its key alone: the sign-in page and `/device-blocked` ask the server
+first (`deviceStatus`; the challenge is refused for a revoked device).
 **No device cookie.** It identifies a browser or installed app, not a physical
 phone. Design, limits (iOS Safari vs the Home Screen app), rollout and the
 acceptance test: `docs/DEVICE_ENROLLMENT.md`. Keep the device check and the user session

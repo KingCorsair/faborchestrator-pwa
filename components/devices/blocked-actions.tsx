@@ -6,11 +6,15 @@
  * 1. **Ends whatever session this browser holds**, once, on arrival
  *    (`endClientSession`): a revoked device's session, or one that never
  *    proved its device, stops here and is revoked at FabOrchestrator too.
- * 2. **Says what this device holds**:
- *    - an enrolled key, not revoked → "Sign in" (the sign-in page proves the
+ * 2. **Says what this device holds**, as the server reports it (`deviceStatus`;
+ *    a key outlives its revocation, and `?reason=` is only as good as the link
+ *    that brought the device here, 8 October 2026):
+ *    - an enrolled key, still approved → "Sign in" (the sign-in page proves the
  *      device with it);
  *    - an enrolled key whose device was revoked → refused;
- *    - nothing → "This device is not approved".
+ *    - a key the server could not be asked about → "Sign in", which checks it,
+ *      unless `?reason=revoked` says the server refused it a moment ago;
+ *    - nothing, or a key the server does not know → "This device is not approved".
  * 3. **Enrolls this device here**: "Scan enrollment QR" opens the camera inside
  *    this page, or a pasted enrollment link does the same. The key is made in
  *    this page's own storage, which in an installed app is the app's: the only
@@ -21,11 +25,17 @@
 import * as React from "react";
 import { Button, Label } from "@/components/fab/primitives";
 import { endClientSession } from "@/lib/end-client-session";
-import { enroll, isInstalledApp, isIos, storedDevice } from "@/lib/devices/keystore";
+import { deviceStatus, enroll, isInstalledApp, isIos, storedDevice } from "@/lib/devices/keystore";
 import { cameraAvailable, createScanner, enrollmentCodeFrom, type Scanner } from "@/lib/devices/scanner";
 import { fieldInput, fieldShell, Notice } from "./device-card";
 
-type Held = { kind: "loading" } | { kind: "enrolled"; deviceId: string } | { kind: "none" };
+type Held =
+  | { kind: "loading" }
+  | { kind: "approved"; deviceId: string }
+  | { kind: "revoked"; deviceId: string }
+  /** A key is here, but the server could not be asked about it just now. */
+  | { kind: "unchecked"; deviceId: string }
+  | { kind: "none" };
 
 export function BlockedActions({ reason }: { reason: "revoked" | "session" | "unavailable" | null }) {
   const [held, setHeld] = React.useState<Held>({ kind: "loading" });
@@ -41,7 +51,13 @@ export function BlockedActions({ reason }: { reason: "revoked" | "session" | "un
     setIos(isIos());
     setInstalled(isInstalledApp());
     setCamera(cameraAvailable());
-    void storedDevice().then((s) => setHeld(s.kind === "enrolled" ? { kind: "enrolled", deviceId: s.credential.deviceId } : { kind: "none" }));
+    void (async () => {
+      const stored = await storedDevice();
+      if (stored.kind !== "enrolled") return setHeld({ kind: "none" });
+      const deviceId = stored.credential.deviceId;
+      const status = await deviceStatus(deviceId);
+      setHeld(status === "unknown" ? { kind: "none" } : { kind: status === "unavailable" ? "unchecked" : status, deviceId });
+    })();
   }, []);
 
   const runEnrollment = React.useCallback(async (code: string) => {
@@ -51,7 +67,7 @@ export function BlockedActions({ reason }: { reason: "revoked" | "session" | "un
     try {
       const result = await enroll(code);
       if (result.ok) {
-        setHeld({ kind: "enrolled", deviceId: result.deviceId });
+        setHeld({ kind: "approved", deviceId: result.deviceId });
         setMessage({ tone: "ok", text: `Device enrolled successfully. This device is now approved as ${result.deviceId}.` });
       } else {
         setMessage({ tone: "error", text: result.error });
@@ -75,7 +91,8 @@ export function BlockedActions({ reason }: { reason: "revoked" | "session" | "un
     [runEnrollment],
   );
 
-  const revoked = reason === "revoked" && held.kind === "enrolled" && message?.tone !== "ok";
+  // The server's answer wins; `?reason=revoked` speaks only when it could not be asked.
+  const revoked = held.kind === "revoked" || (held.kind === "unchecked" && reason === "revoked");
   const canEnroll = held.kind === "none" || revoked;
 
   return (
@@ -85,12 +102,19 @@ export function BlockedActions({ reason }: { reason: "revoked" | "session" | "un
           This device ({held.deviceId}) has been revoked. It can no longer access FabOrchestrator. Contact your
           administrator; they can approve it again with a new enrollment QR.
         </Notice>
-      ) : held.kind === "enrolled" ? (
+      ) : held.kind === "approved" || held.kind === "unchecked" ? (
         <>
-          <Notice tone="ok">
-            This device is approved as <strong className="whitespace-nowrap">{held.deviceId}</strong>.
-            {reason === "session" ? " Your previous session was signed out; sign in again." : ""}
-          </Notice>
+          {held.kind === "approved" ? (
+            <Notice tone="ok">
+              This device is approved as <strong className="whitespace-nowrap">{held.deviceId}</strong>.
+              {reason === "session" ? " Your previous session was signed out; sign in again." : ""}
+            </Notice>
+          ) : (
+            <Notice tone="info">
+              This device is <strong className="whitespace-nowrap">{held.deviceId}</strong>, but it could not be checked
+              just now. Sign in to try again.
+            </Notice>
+          )}
           <Button
             variant="primary"
             className="w-full justify-center py-[15px] text-[16px]"

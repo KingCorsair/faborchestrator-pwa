@@ -144,6 +144,11 @@ export const DEVICE_NOT_APPROVED = {
   error: "This device is not approved to access FabOrchestrator. Contact your administrator to enroll it.",
 } as const;
 
+/** The refusal for a revoked device: sign-in and its challenge word it the same. */
+export function deviceRevoked(deviceId: string) {
+  return { code: "device_revoked", error: `This device (${deviceId}) has been revoked. Contact your administrator.` } as const;
+}
+
 /**
  * The refusal, in the shape the caller can use. A document goes to the blocked
  * page, which signs the session out (ending it at FabOrchestrator too) and,
@@ -183,7 +188,8 @@ const BLOCK_LOG_INTERVAL_MS = 60_000;
 const MAX_BLOCK_KEYS = 10_000;
 const lastBlockLog = new Map<string, number>();
 
-function logBlocked(req: NextRequest, reason: BlockReason, deviceId: string | undefined, now: number): void {
+/** Also used by the sign-in challenge, which refuses a revoked device each time its sign-in page opens. */
+export function logBlocked(req: NextRequest, reason: BlockReason, deviceId: string | undefined, now: number): void {
   const kind = requestKind(req.nextUrl.pathname);
   if (kind === "asset") return;
   const address = clientAddress(req.headers);

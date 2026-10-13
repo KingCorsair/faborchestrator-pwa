@@ -2,13 +2,16 @@
  * The shell for embedded FabOrchestrator pages.
  *
  * Added to FabOrchestrator's own documents by the gateway
- * (`lib/gateway/html-inject.ts`). It contributes three things:
+ * (`lib/gateway/html-inject.ts`). It contributes four things:
  *
  *   · the single-sign-out watcher, which ends this app's session when
  *     FabOrchestrator ends its own
  *   · the PWA service-worker registration
  *   · for device administrators only, a Devices button that opens this app's
  *     own `/device-admin` (13 October; see "The Devices button" below)
+ *   · on a phone's conversation pages, a Back arrow to FabOrchestrator's
+ *     overview, where FabOrchestrator shows none (13 October; see "Back, on a
+ *     phone's conversation pages" at the end)
  *
  * ── It adds no FabOrchestrator navigation (11 September) ────────────────────
  * From WP6 until 11 September this file also injected navigation — a floating
@@ -20,7 +23,9 @@
  * pages, and a menu button in its own header on the cockpit and Reports. So the
  * controls, the keyboard-shortcut driver and the corner-measuring logic are
  * gone, and this app keeps no navigation of its own. The history is in
- * `docs/STATUS.md`.
+ * `docs/STATUS.md`. That fix lived in the private build; the newer deployment
+ * served since 13 October has no way back on a phone's conversation pages, so
+ * the Back arrow returns there (the end of this file).
  */
 
 (function () {
@@ -326,6 +331,203 @@
         });
       });
     }
+  } catch (_error) {
+    /* Never worth an error on FabOrchestrator's page. */
+  }
+
+  /* ── Back, on a phone's conversation pages (13 October 2026) ─────────────
+   *
+   * Below 768px FabOrchestrator's chat and Master Data Load pages, as the
+   * newer deployment serves them, offer no way back to its overview: the
+   * sidebar that carries "Back to overview" is a closed drawer with nothing
+   * on screen to open it. The private build these pages used to come from
+   * had a phone bar holding the sidebar's own Back (`docs/STATUS.md` v6), and
+   * until 11 September this file drew a Back arrow (v19). So the arrow is back
+   * with v19's label, title, glyph and destination (`/home`), below 768px, on
+   * conversation pages only. It steps aside whenever FabOrchestrator shows a
+   * Back of its own on screen.
+   *
+   * Where it sits: v19 drew it top-right, which on the newer chat covers its
+   * "MCP/DB Health" badge. So it takes the top-left corner, and if
+   * FabOrchestrator draws something there, the top-right. It is placed when a
+   * page opens (again shortly after, once FabOrchestrator has drawn that page)
+   * and on rotation, never while the operator scrolls, so it does not hop
+   * about. Started on `load`, so it never meets FabOrchestrator's hydration.
+   */
+  var BACK_ID = "pwa-fo-back";
+  var BACK_LABEL = "Back to FabOrchestrator overview";
+  var BACK_SIZE = 40;
+  var BACK_GAP = 8;
+  var phoneWidth = null;
+  try {
+    phoneWidth = window.matchMedia ? window.matchMedia("(max-width: 767.98px)") : null;
+  } catch (_error) {
+    phoneWidth = null;
+  }
+  /* The page and width the arrow was last placed for, and when to look again. */
+  var backPlacedFor = "";
+  var backRecheckAt = [];
+
+  function conversationPage() {
+    var p = window.location.pathname || "";
+    return p === "/chat" || p.indexOf("/chat/") === 0 || p.indexOf("/modeling-agent") === 0;
+  }
+
+  /* FabOrchestrator's own Back, visible on screen (not in a closed drawer). */
+  function foShowsItsOwnBack() {
+    var own = document.querySelectorAll('[aria-label="' + BACK_LABEL + '"]');
+    for (var i = 0; i < own.length; i++) {
+      if (own[i].id === BACK_ID) continue;
+      var r = own[i].getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && r.right > 0 && r.left < window.innerWidth) return true;
+    }
+    return false;
+  }
+
+  /* Something of FabOrchestrator's that a person sees or taps at (x, y): a
+   * control, an icon, the letters of a line of text (not the empty rest of
+   * the box that holds them), or a small box with a background, border or
+   * shadow (a badge). Plain layout boxes and page-wide bars do not count. */
+  var INTERACTIVE_ROLES = /^(button|link|tab|switch|checkbox|radio|menuitem|combobox|textbox|option|img)$/;
+
+  function drawn(el, vw, vh, x, y) {
+    var tag = (el.tagName || "").toLowerCase();
+    if (/^(a|button|input|textarea|select|label|img|svg|canvas|video|path|circle|rect|polyline|line|use)$/.test(tag)) return true;
+    var role = el.getAttribute ? el.getAttribute("role") : null;
+    if (role && INTERACTIVE_ROLES.test(role)) return true;
+    for (var n = el.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType !== 3 || !/\S/.test(n.nodeValue) || !document.createRange) continue;
+      var range = document.createRange();
+      range.selectNodeContents(n);
+      var lines = range.getClientRects();
+      for (var k = 0; k < lines.length; k++) {
+        var t = lines[k];
+        if (x >= t.left - 2 && x <= t.right + 2 && y >= t.top - 2 && y <= t.bottom + 2) return true;
+      }
+    }
+    var r = el.getBoundingClientRect();
+    if (r.width < vw * 0.7 && r.height < vh * 0.3) {
+      var cs = window.getComputedStyle(el);
+      var bg = cs.backgroundColor;
+      if (bg && bg !== "transparent" && !/rgba\(\s*0,\s*0,\s*0,\s*0\s*\)/.test(bg)) return true;
+      if (parseFloat(cs.borderTopWidth) > 0 || (cs.boxShadow && cs.boxShadow !== "none")) return true;
+    }
+    return false;
+  }
+
+  /* Is anything of FabOrchestrator's drawn where the arrow would go? */
+  function cornerTaken(left, top) {
+    if (!document.elementsFromPoint) return false;
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var points = [
+      [left + 3, top + 3],
+      [left + BACK_SIZE - 3, top + 3],
+      [left + 3, top + BACK_SIZE - 3],
+      [left + BACK_SIZE - 3, top + BACK_SIZE - 3],
+      [left + BACK_SIZE / 2, top + BACK_SIZE / 2],
+    ];
+    for (var i = 0; i < points.length; i++) {
+      var found = document.elementsFromPoint(points[i][0], points[i][1]);
+      for (var j = 0; j < found.length; j++) {
+        var el = found[j];
+        if (el === document.documentElement || el === document.body) continue;
+        if (el.closest && el.closest("#" + BACK_ID + ",#pwa-devices-link")) continue;
+        if (drawn(el, vw, vh, points[i][0], points[i][1])) return true;
+      }
+    }
+    return false;
+  }
+
+  function makeBackButton() {
+    var b = document.createElement("button");
+    b.id = BACK_ID;
+    b.type = "button";
+    b.title = "Back to overview";
+    b.setAttribute("aria-label", BACK_LABEL);
+    b.innerHTML =
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/>' +
+      '<polyline points="12 19 5 12 12 5"/></svg>';
+    b.style.cssText = [
+      "position:fixed",
+      "top:calc(env(safe-area-inset-top, 0px) + " + BACK_GAP + "px)",
+      "left:calc(env(safe-area-inset-left, 0px) + " + BACK_GAP + "px)",
+      "z-index:40",
+      "display:none",
+      "align-items:center",
+      "justify-content:center",
+      "width:" + BACK_SIZE + "px",
+      "height:" + BACK_SIZE + "px",
+      "padding:0",
+      "border:1px solid rgba(15,23,42,.08)",
+      "border-radius:10px",
+      "background:rgba(255,255,255,.78)",
+      "-webkit-backdrop-filter:blur(8px)",
+      "backdrop-filter:blur(8px)",
+      "color:#475569",
+      "box-shadow:0 2px 8px rgba(16,21,58,.10)",
+      "cursor:pointer",
+      "-webkit-tap-highlight-color:transparent",
+    ].join(";");
+    b.addEventListener("click", function () {
+      // FabOrchestrator's page, not this app's; this script has no Next router.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.assign("/home");
+    });
+    document.body.appendChild(b);
+    return b;
+  }
+
+  /* Top-left, unless FabOrchestrator has something there and not top-right. */
+  function chooseCorner(b) {
+    var top = b.getBoundingClientRect().top;
+    var leftX = BACK_GAP;
+    var rightX = window.innerWidth - BACK_SIZE - BACK_GAP;
+    var useRight = cornerTaken(leftX, top) && !cornerTaken(rightX, top);
+    b.style.left = useRight ? "auto" : "calc(env(safe-area-inset-left, 0px) + " + BACK_GAP + "px)";
+    b.style.right = useRight ? "calc(env(safe-area-inset-right, 0px) + " + BACK_GAP + "px)" : "auto";
+    b.setAttribute("data-corner", useRight ? "top-right" : "top-left");
+  }
+
+  function placeBackButton() {
+    try {
+      var wanted = !!(phoneWidth && phoneWidth.matches) && conversationPage() && !signingOut && !foShowsItsOwnBack();
+      var b = document.getElementById(BACK_ID);
+      if (!wanted) {
+        if (b) b.style.display = "none";
+        backPlacedFor = "";
+        return;
+      }
+      if (!b) b = makeBackButton();
+      b.style.display = "flex";
+      var now = Date.now();
+      var key = window.location.pathname + "|" + window.innerWidth;
+      if (key !== backPlacedFor) {
+        backPlacedFor = key;
+        backRecheckAt = [now + 1200, now + 3000];
+        chooseCorner(b);
+      } else if (backRecheckAt.length && now >= backRecheckAt[0]) {
+        backRecheckAt.shift();
+        chooseCorner(b);
+      }
+    } catch (_error) {
+      /* Never worth an error on FabOrchestrator's page. */
+    }
+  }
+
+  /* FabOrchestrator moves between its pages without reloading, so the page is
+   * looked at twice a second, and at once on Back/Forward and on rotation. */
+  try {
+    window.addEventListener("load", function () {
+      try {
+        setInterval(placeBackButton, 500);
+        window.addEventListener("popstate", placeBackButton);
+        if (phoneWidth && phoneWidth.addEventListener) phoneWidth.addEventListener("change", placeBackButton);
+      } catch (_error) {
+        /* Never worth an error on FabOrchestrator's page. */
+      }
+    });
   } catch (_error) {
     /* Never worth an error on FabOrchestrator's page. */
   }

@@ -43,6 +43,9 @@ describe("content-hashed output is cached forever, in both builds", () => {
     `${PWA_ASSET_PREFIX}/_next/static/chunks/afb8f86568253973.js`,
     `${PWA_ASSET_PREFIX}/_next/static/chunks/3cb1d56768e05794.css`,
     `${PWA_ASSET_PREFIX}/_next/image`,
+    // A FabOrchestrator built as modules (the test environment, 13 October 2026).
+    "/_fab/home/_next/static/chunks/0e1f2a3b4c5d6e7f.js",
+    "/_fab/support-engineer/_next/static/css/a1b2c3d4.css",
   ]) {
     test(p, () => assert.equal(revalidates(p), false, `${p} must not be forced to revalidate`));
   }
@@ -82,5 +85,11 @@ describe("the exclusion is not a loose substring match", () => {
   test("the prefix and the bare path are both covered, and nothing else is", () => {
     assert.equal(revalidates("/pwa-assets/other/file.js"), true);
     assert.equal(revalidates("/_nextfoo/static/x.js"), true);
+  });
+
+  test("a module's build output is covered only at /_fab/<one segment>/_next/static", () => {
+    assert.equal(revalidates("/_fab/home/page"), true);
+    assert.equal(revalidates("/_fab/a/b/_next/static/x.js"), true);
+    assert.equal(revalidates("/chat/_fab/home/_next/static/x.js"), true);
   });
 });

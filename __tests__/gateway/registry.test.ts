@@ -125,6 +125,12 @@ describe("classify with /chat enabled", () => {
       "/api/conversations",
       "/api/conversations/abc",
       "/api/mcp/connections",
+      "/api/mcp/health",
+      "/api/mcp/access",
+      "/api/platform-notice",
+      "/api/client-log",
+      "/api/prompt-chips",
+      "/api/fabinsight/pin-requests",
       "/api/user/models",
       "/api/user/settings",
       "/api/platform-theme",
@@ -140,6 +146,18 @@ describe("classify with /chat enabled", () => {
   test("FabOrchestrator static output is forwarded", () => {
     for (const p of ["/_next/static/chunks/a.js", "/_next/static/media/f.woff2", "/favicon.ico", "/logos/athena-logo.jpg", "/duke_sheets_wasm_bg.wasm"]) {
       assert.equal(classify(p, on), "fo-static", p);
+    }
+  });
+
+  test("a FabOrchestrator built as modules: each module's build output is static output too", () => {
+    for (const p of ["/_fab/home/_next/static/chunks/a.js", "/_fab/support-engineer/_next/static/css/b.css", "/_fab/master-data-load/_next/static/media/f.woff2"]) {
+      assert.equal(classify(p, on), "fo-static", p);
+    }
+  });
+
+  test("message-id writes, administration and invitations stay closed (13 October 2026)", () => {
+    for (const p of ["/api/messages/m1", "/api/messages/m1/version", "/api/admin/dashboards", "/api/admin/dashboard-requests", "/api/auth/accept-invitation", "/api/auth/validate-invitation"]) {
+      assert.equal(classify(p, on), "unknown", p);
     }
   });
 

@@ -24,7 +24,8 @@
  *      endpoints (this app's rate-limited form is the only way in) and FO's
  *      scheduler tick.
  *   5. FabOrchestrator API prefixes the embedded pages call.
- *   6. FabOrchestrator static assets: everything under `/_next/`, and the
+ *   6. FabOrchestrator static assets: everything under `/_next/` (or a
+ *      module's `/_fab/<module>/_next/`), and the
  *      handful of files FO serves from its `public/` (verified 2026-09-08).
  *   7. Anything else is unknown, and unknown is 404. Deny by default.
  *
@@ -207,10 +208,50 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/cmf",
   "/api/platform-theme",
   "/api/health",
+  // ── Called by the FabOrchestrator test environment's pages (13 October 2026) ──
+  // Found by reading the scripts of its home, chat, reports, admin and
+  // Master Data Load pages. All are signed-in reads or the operator's own
+  // writes; FabOrchestrator authorizes each with the injected token.
+  //
+  // The downtime banner every page shows (Admin → Downtime Notices).
+  // Read-only, and public at FabOrchestrator too.
+  "/api/platform-notice",
+  // The pages' browser log records, into FabOrchestrator's server log. It
+  // limits them per browser tab, not per address, so every operator arriving
+  // from this app's one address is fine. Signed in only: an anonymous body is
+  // refused by the gateway.
+  "/api/client-log",
+  // The cockpit's agent status and its "Check now". Without it every agent
+  // card says "Status unknown".
+  "/api/mcp/health",
+  // Which agents and connections the operator may use or change (chat).
+  "/api/mcp/access",
+  // The suggested questions above each agent's composer (chat).
+  "/api/prompt-chips",
+  // "Pin to dashboard" from an answer: a request an administrator approves.
+  "/api/fabinsight/pin-requests",
+  // Deliberately **not** here:
+  //   /api/messages/{id} (delete) and /api/messages/{id}/version: addressed by
+  //     a message id, which cannot be tied to the device that owns its
+  //     conversation (`lib/gateway/seats.ts`), the reason `/api/artifacts` is
+  //     closed. Deleting a message and switching an answer's version do not
+  //     work through this app.
+  //   /api/admin/*: FabOrchestrator's administration, used at a desk. Its
+  //     pages open here but cannot load their data.
+  //   /api/auth/accept-invitation, /api/auth/validate-invitation: account
+  //     creation, which like registration never happens around this app's
+  //     sign-in form.
 ];
 
-/** FabOrchestrator static prefixes. */
-export const FO_STATIC_PREFIXES: readonly string[] = ["/_next", "/logos"];
+/**
+ * FabOrchestrator static prefixes.
+ *
+ * `/_fab` (13 October 2026): the FabOrchestrator test environment is built as
+ * separate modules, and each page loads its build output from
+ * `/_fab/<module>/_next/…` (`home`, `support-engineer`, `admin`,
+ * `master-data-load`) rather than `/_next/…`.
+ */
+export const FO_STATIC_PREFIXES: readonly string[] = ["/_next", "/_fab", "/logos"];
 
 /** Files FabOrchestrator serves from its `public/` in production. */
 export const FO_STATIC_EXACT: readonly string[] = [
@@ -265,6 +306,9 @@ export const IMMUTABLE_ASSET_PREFIXES: readonly string[] = [
   "_next/image",
   `${PWA_ASSET_PREFIX.slice(1)}/_next/static`,
   `${PWA_ASSET_PREFIX.slice(1)}/_next/image`,
+  // A FabOrchestrator built as modules (see `FO_STATIC_PREFIXES`).
+  "_fab/[a-z0-9-]+/_next/static",
+  "_fab/[a-z0-9-]+/_next/image",
 ];
 
 /** The `source` pattern for the revalidate-everything-else cache rule. */

@@ -8,6 +8,11 @@
  * Revoking asks for a second tap on the same row rather than a browser
  * `confirm()`, which blocks the page and which a standalone app on some phones
  * does not show at all.
+ *
+ * On a phone (13 October 2026) the device list is a column of cards rather
+ * than the eight-column table, whose Revoke button sat off-screen to the
+ * right; the page keeps clear of the notch and the home indicator in the
+ * installed app, and its buttons are full width.
  */
 
 import * as React from "react";
@@ -128,7 +133,7 @@ export function DeviceAdmin() {
 
   return (
     <Shell>
-      <section className="fab-card flex flex-col gap-4" style={{ padding: 24 }}>
+      <section className="fab-card flex flex-col gap-4 p-[18px] sm:p-6">
         <Label as="h2">Create device enrollment</Label>
         <p className="m-0 text-[14px]" style={{ color: "var(--text-muted-cool)" }}>
           A one-time QR code that approves one device. Scanning it enrolls the device at once, with no sign-in; it
@@ -139,7 +144,7 @@ export function DeviceAdmin() {
           <Field name="friendlyName" label="Device name (optional)" />
           <Field name="site" label="Site (optional)" />
           <div className="sm:col-span-2">
-            <Button type="submit" variant="primary" disabled={busy}>
+            <Button type="submit" variant="primary" disabled={busy} className="w-full justify-center sm:w-auto">
               {busy ? "Creating…" : "Create Device Enrollment"}
             </Button>
           </div>
@@ -149,7 +154,7 @@ export function DeviceAdmin() {
       </section>
 
       {pending.length > 0 ? (
-        <section className="fab-card flex flex-col gap-3" style={{ padding: 24 }}>
+        <section className="fab-card flex flex-col gap-3 p-[18px] sm:p-6">
           <Label as="h2">Waiting to be used</Label>
           <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[14px]">
             {pending.map((e) => (
@@ -162,7 +167,7 @@ export function DeviceAdmin() {
         </section>
       ) : null}
 
-      <section className="fab-card flex flex-col gap-3" style={{ padding: 24 }}>
+      <section className="fab-card flex flex-col gap-3 p-[18px] sm:p-6">
         <Label as="h2">Devices</Label>
         {problem ? <Notice tone="error">{problem.error}</Notice> : null}
         {devices === null ? (
@@ -170,7 +175,57 @@ export function DeviceAdmin() {
         ) : devices.length === 0 ? (
           <p className="m-0 text-[14px]">No device has been enrolled yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            {/* Phones: one card per device. */}
+            <ul className="m-0 flex list-none flex-col gap-3 p-0 md:hidden">
+              {devices.map((d) => (
+                <li
+                  key={d.deviceId}
+                  className="flex flex-col gap-3 p-[14px]"
+                  style={{ border: "1px solid var(--border-light)", borderRadius: 12 }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 flex-col gap-[3px]">
+                      <strong className="break-words text-[15px]">{d.friendlyName}</strong>
+                      <span className="flex flex-wrap items-center gap-2 text-[13px] font-semibold tabular-nums">
+                        {d.deviceId}
+                        {d.deviceId === current ? <ThisDevice /> : null}
+                      </span>
+                    </div>
+                    <span
+                      className="shrink-0 text-[12px] font-bold"
+                      style={{ color: d.status === "APPROVED" ? "var(--status-green-ink)" : "var(--status-red)" }}
+                    >
+                      {d.status}
+                    </span>
+                  </div>
+                  <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-[5px] text-[12px]">
+                    <Row label="Device">
+                      {d.deviceType} · {d.os} · {d.browser} · {d.context}
+                    </Row>
+                    <Row label="Enrolled">{when(d.createdAt)}</Row>
+                    <Row label="Issued by">{d.createdBy}</Row>
+                    <Row label="Last seen">{when(d.lastSeenAt)}</Row>
+                    {d.status === "REVOKED" ? (
+                      <Row label="Revoked">
+                        {when(d.revokedAt)} by {d.revokedBy}
+                      </Row>
+                    ) : null}
+                    <Row label="Key">{d.keyFingerprint.slice(0, 12)}</Row>
+                  </dl>
+                  {d.status === "APPROVED" ? (
+                    <RevokeButton
+                      confirming={confirming === d.deviceId}
+                      isCurrent={d.deviceId === current}
+                      onClick={() => void revoke(d.deviceId)}
+                      className="w-full justify-center py-[11px]"
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {/* Wider screens: the table. */}
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-left text-[13px]" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--text-subtle)" }}>
@@ -187,14 +242,7 @@ export function DeviceAdmin() {
                     <td className="py-2 pr-3">{d.friendlyName}</td>
                     <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">
                       {d.deviceId}
-                      {d.deviceId === current ? (
-                        <span
-                          className="ml-2 rounded px-[6px] py-[1px] text-[11px] font-bold"
-                          style={{ background: "var(--brand-indigo-bg)", color: "var(--cockpit-indigo)" }}
-                        >
-                          This device
-                        </span>
-                      ) : null}
+                      {d.deviceId === current ? <ThisDevice className="ml-2" /> : null}
                       <span className="block text-[11px] font-normal" style={{ color: "var(--text-subtle)" }} title="Public-key fingerprint">
                         key {d.keyFingerprint.slice(0, 12)}
                       </span>
@@ -217,20 +265,19 @@ export function DeviceAdmin() {
                     <td className="py-2 pr-3">{when(d.lastSeenAt)}</td>
                     <td className="py-2">
                       {d.status === "APPROVED" ? (
-                        <Button variant={confirming === d.deviceId ? "primary" : "secondary"} onClick={() => void revoke(d.deviceId)}>
-                          {confirming === d.deviceId
-                            ? d.deviceId === current
-                              ? "Revoke this device? You will lose access"
-                              : "Confirm revoke"
-                            : "Revoke"}
-                        </Button>
+                        <RevokeButton
+                          confirming={confirming === d.deviceId}
+                          isCurrent={d.deviceId === current}
+                          onClick={() => void revoke(d.deviceId)}
+                        />
                       ) : null}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         )}
       </section>
     </Shell>
@@ -239,24 +286,71 @@ export function DeviceAdmin() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fab min-h-full p-6" style={{ background: "var(--page-surface)" }}>
-      <div className="mx-auto flex max-w-[1100px] flex-col gap-5">
-        {/* Reached from FabOrchestrator's top bar (its "Devices" button); a
-            whole-page link back, since FabOrchestrator is a separate app. */}
+    <div
+      className="fab min-h-full px-4 sm:px-6"
+      style={{
+        background: "var(--page-surface)",
+        // Clear of the notch and the home indicator in the installed app.
+        paddingTop: "calc(env(safe-area-inset-top, 0px) + 12px)",
+        paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)",
+      }}
+    >
+      <div className="mx-auto flex max-w-[1100px] flex-col gap-4 sm:gap-5">
+        {/* Reached from the Devices button on FabOrchestrator's pages; a
+            whole-page link back, since FabOrchestrator is a separate app. A
+            44px row, so it is easy to hit with a thumb. */}
         <a
           href="/home"
-          className="w-fit text-[13px] font-bold no-underline"
+          className="inline-flex min-h-[44px] w-fit items-center text-[14px] font-bold no-underline"
           style={{ color: "var(--cockpit-indigo)" }}
         >
           ← Back to FabOrchestrator
         </a>
-        <header className="flex items-center justify-between gap-4">
+        <header className="flex flex-wrap items-center justify-between gap-3">
           <BrandLockup />
-          <h1 className="m-0 text-[20px]">Approved devices</h1>
+          <h1 className="m-0 text-[18px] sm:text-[20px]">Approved devices</h1>
         </header>
         {children}
       </div>
     </div>
+  );
+}
+
+function ThisDevice({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`rounded px-[6px] py-[1px] text-[11px] font-bold ${className}`}
+      style={{ background: "var(--brand-indigo-bg)", color: "var(--cockpit-indigo)" }}
+    >
+      This device
+    </span>
+  );
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <dt style={{ color: "var(--text-subtle)" }}>{label}</dt>
+      <dd className="m-0 min-w-0 break-words">{children}</dd>
+    </>
+  );
+}
+
+function RevokeButton({
+  confirming,
+  isCurrent,
+  onClick,
+  className,
+}: {
+  confirming: boolean;
+  isCurrent: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <Button variant={confirming ? "primary" : "secondary"} onClick={onClick} className={className}>
+      {confirming ? (isCurrent ? "Revoke this device? You will lose access" : "Confirm revoke") : "Revoke"}
+    </Button>
   );
 }
 
@@ -289,7 +383,7 @@ function IssuedEnrollment({ issued, onDone }: { issued: Issued; onDone: () => vo
   const seconds = Math.floor((left % 60000) / 1000);
 
   return (
-    <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+    <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-center">
       {/* eslint-disable-next-line @next/next/no-img-element -- an inline SVG data URI, nothing to optimise */}
       <img
         src={`data:image/svg+xml;utf8,${encodeURIComponent(issued.qrSvg)}`}
@@ -298,7 +392,7 @@ function IssuedEnrollment({ issued, onDone }: { issued: Issued; onDone: () => vo
         height={220}
         style={{ opacity: left > 0 ? 1 : 0.2 }}
       />
-      <div className="flex min-w-0 flex-col gap-2 text-[14px]">
+      <div className="flex w-full min-w-0 flex-col gap-2 text-[14px] sm:w-auto">
         <span>
           <strong>One-time device enrollment</strong>
           {issued.enrollment.friendlyName ? ` · ${issued.enrollment.friendlyName}` : ""}
@@ -323,7 +417,7 @@ function IssuedEnrollment({ issued, onDone }: { issued: Issued; onDone: () => vo
           for pasting instead:
         </span>
         <code className="break-all text-[12px]">{issued.url}</code>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={() => void navigator.clipboard?.writeText(issued.url).catch(() => {})}>Copy link</Button>
           <Button variant="ghost" onClick={onDone}>
             Hide

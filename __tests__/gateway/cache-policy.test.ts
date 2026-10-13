@@ -43,6 +43,9 @@ describe("content-hashed output is cached forever, in both builds", () => {
     `${PWA_ASSET_PREFIX}/_next/static/chunks/afb8f86568253973.js`,
     `${PWA_ASSET_PREFIX}/_next/static/chunks/3cb1d56768e05794.css`,
     `${PWA_ASSET_PREFIX}/_next/image`,
+    // FabOrchestrator's newer build, each part under its own prefix (13 October 2026).
+    "/_fab/home/_next/static/chunks/ef5de572506be48e.js",
+    "/_fab/support-engineer/_next/static/chunks/06e782539eec59d0.css",
   ]) {
     test(p, () => assert.equal(revalidates(p), false, `${p} must not be forced to revalidate`));
   }
@@ -57,6 +60,10 @@ describe("everything else revalidates", () => {
     "/fabinsight",
     "/chat",
     "/reports",
+    // Under FabOrchestrator's part prefix, but not its hashed output.
+    "/_fab/home",
+    "/_fab/home/some-page",
+    "/_fab/_next/static/chunks/x.js",
     // Unversioned files in `public/`: no hash to bust, so revalidation is the
     // only thing that keeps them current, and a 304 costs nothing.
     "/icon-192.png",

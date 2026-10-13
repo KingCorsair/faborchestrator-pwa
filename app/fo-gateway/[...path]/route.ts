@@ -83,7 +83,7 @@ import {
   rememberFromList,
 } from "@/lib/gateway/ownership";
 import { safeGatewayPath } from "@/lib/gateway/path";
-import { classify, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
+import { classify, foMethodAllowed, GATEWAY_MARKER_HEADER, isForwardable, readRegistry } from "@/lib/gateway/registry";
 import {
   claimCreatedConversation,
   conversationIdInChatBody,
@@ -132,6 +132,13 @@ async function handle(req: NextRequest, ctx: { params: Promise<{ path: string[] 
   if (!pathname) return notFound(null);
   const owner = classify(pathname, readRegistry());
   if (!isForwardable(owner)) return notFound(pathname);
+  // A route admitted for particular methods only (`FO_API_EXACT_METHODS`) is
+  // refused for any other here, before a token is looked at or
+  // FabOrchestrator is asked anything.
+  if (!foMethodAllowed(pathname, req.method)) {
+    logEvent("warn", "gateway_refused", { path: pathname, reason: "method_not_allowed", method: req.method.toUpperCase() });
+    return coded(405, "method_not_allowed", "Method not allowed.");
+  }
 
   // ── The single-login bridge (WP2) ────────────────────────────────────────
   //

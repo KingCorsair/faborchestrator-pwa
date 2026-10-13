@@ -269,5 +269,19 @@ describe("through the gateway route", () => {
       await res.text();
       assert.equal(received.length, 1, "FabOrchestrator answers for itself");
     });
+
+    test("FabOrchestrator's browser log is for signed-in pages only: an anonymous one is refused", async () => {
+      const res = await anonymous("POST", "/api/client-log", chunked(1, 256, () => {}), { "content-type": "application/json" });
+      assert.equal(res.status, 401);
+      await res.text();
+      assert.deepEqual(received, []);
+    });
+
+    test("the downtime banner is public at FabOrchestrator, and forwarded without a session too", async () => {
+      const res = await anonymous("GET", "/api/platform-notice");
+      assert.equal(res.status, 200);
+      await res.text();
+      assert.equal(received.length, 1);
+    });
   });
 });

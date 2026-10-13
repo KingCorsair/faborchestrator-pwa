@@ -209,6 +209,55 @@ export const FO_API_PREFIXES: readonly string[] = [
   "/api/health",
 ];
 
+/**
+ * FabOrchestrator API routes allowed **at exactly this path, with exactly
+ * these methods** (13 October 2026).
+ *
+ * The prefixes above forward every method and every path beneath them, which
+ * is how FabOrchestrator's older routes were admitted. A route added since is
+ * admitted here instead, as narrowly as its page uses it: a path listed here
+ * has no sub-paths, and a method not listed is answered 405 by the gateway
+ * before FabOrchestrator is asked anything (`foMethodAllowed`).
+ *
+ * These four came with FabOrchestrator's newer build (the one this app serves
+ * since 13 October), whose pages call them on every load:
+ *
+ *   /api/mcp/health       GET   the cockpit's agent status; without it every
+ *                               agent shows "Status unknown"
+ *                         POST  its "Check now" button. Signed in only: the
+ *                               gateway refuses an anonymous body to any API.
+ *   /api/mcp/access       GET   whether this user may use, add or edit data
+ *                               connections. The chat page reads it beside the
+ *                               connection list to decide what to offer.
+ *   /api/platform-notice  GET   the downtime banner (Admin → Downtime
+ *                               Notices). Read-only, public at FabOrchestrator.
+ *   /api/client-log       POST  the pages' own browser log records, into
+ *                               FabOrchestrator's server log. Signed in only,
+ *                               by the same anonymous-body rule.
+ *
+ * Each still passes the single-login bridge like any other API call: the
+ * FabOrchestrator token is injected only for a valid session of this app, and
+ * the device gate has already run in `proxy.ts`. None takes a conversation id,
+ * so the per-device conversation rules (`lib/gateway/seats.ts`) have nothing
+ * to decide for them.
+ */
+export const FO_API_EXACT_METHODS: Readonly<Record<string, readonly string[]>> = {
+  "/api/mcp/health": ["GET", "POST"],
+  "/api/mcp/access": ["GET"],
+  "/api/platform-notice": ["GET"],
+  "/api/client-log": ["POST"],
+};
+
+/**
+ * Whether `method` may be forwarded to `pathname`. True for every path that is
+ * not in `FO_API_EXACT_METHODS` (those are governed by the prefix lists alone,
+ * as before); for one that is, only its listed methods.
+ */
+export function foMethodAllowed(pathname: string, method: string): boolean {
+  const allowed = Object.hasOwn(FO_API_EXACT_METHODS, pathname) ? FO_API_EXACT_METHODS[pathname] : undefined;
+  return allowed === undefined || allowed.includes(method.toUpperCase());
+}
+
 /** FabOrchestrator static prefixes. */
 export const FO_STATIC_PREFIXES: readonly string[] = ["/_next", "/logos"];
 
@@ -265,9 +314,18 @@ export const IMMUTABLE_ASSET_PREFIXES: readonly string[] = [
   "_next/image",
   `${PWA_ASSET_PREFIX.slice(1)}/_next/static`,
   `${PWA_ASSET_PREFIX.slice(1)}/_next/image`,
+  // FabOrchestrator's newer build serves each part of itself under its own
+  // prefix: `/_fab/home/_next/static/…`, `/_fab/support-engineer/…` (13 October
+  // 2026). The same content-hashed files, one directory down; without this
+  // every one of them was revalidated on every page load, on a phone.
+  "_fab/[a-z0-9-]+/_next/static",
 ];
 
-/** The `source` pattern for the revalidate-everything-else cache rule. */
+/**
+ * The `source` pattern for the revalidate-everything-else cache rule. The
+ * entries above are regular-expression fragments, matched from the start of
+ * the path.
+ */
 export function revalidateSourcePattern(): string {
   return `/((?!${IMMUTABLE_ASSET_PREFIXES.join("|")}).*)`;
 }
@@ -359,6 +417,9 @@ export function classify(pathname: string, registry: Registry): Owner {
   // 3. FabOrchestrator's API — an explicit allow-list in **both** modes. This
   //    is the half that deliberately does not invert.
   if (FO_API_PREFIXES.some((p) => underPrefix(pathname, p))) return "fo-api";
+  //    …and the routes admitted at one exact path. Which methods they take is
+  //    the gateway's second question (`foMethodAllowed`).
+  if (Object.hasOwn(FO_API_EXACT_METHODS, pathname)) return "fo-api";
   //    Anything else under `/api/` is unknown, whatever the mode. A new
   //    FabOrchestrator endpoint is a decision, not a deployment side effect.
   if (pathname === "/api" || pathname.startsWith("/api/")) return "unknown";

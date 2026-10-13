@@ -2,14 +2,15 @@
  * The shell for embedded FabOrchestrator pages.
  *
  * Added to FabOrchestrator's own documents by the gateway
- * (`lib/gateway/html-inject.ts`). It contributes two things, neither of them
- * visible:
+ * (`lib/gateway/html-inject.ts`). It contributes three things:
  *
  *   · the single-sign-out watcher, which ends this app's session when
  *     FabOrchestrator ends its own
  *   · the PWA service-worker registration
+ *   · for device administrators only, a Devices button that opens this app's
+ *     own `/device-admin` (13 October; see "The Devices button" below)
  *
- * ── It adds no navigation (11 September) ────────────────────────────────────
+ * ── It adds no FabOrchestrator navigation (11 September) ────────────────────
  * From WP6 until 11 September this file also injected navigation — a floating
  * hamburger, then a Back arrow, then both — because below 768px
  * FabOrchestrator hid its sidebar in a closed drawer with nothing on screen to
@@ -199,6 +200,98 @@
 
   try {
     watchSession();
+  } catch (_error) {
+    /* Never worth an error on FabOrchestrator's page. */
+  }
+
+  /* ── The Devices button, for device administrators ──────────────────────
+   *
+   * (13 October 2026.) Approved devices are this app's feature, managed at its
+   * own page, `/device-admin`: enrollment QR codes, the device list,
+   * revocation. FabOrchestrator knows nothing about any of it. The way in used
+   * to be a button patched into a private build of FabOrchestrator's top bar,
+   * which tied this app to that one build of FabOrchestrator's pages; when
+   * FabOrchestrator moved on, the pages and the service behind them no longer
+   * matched (tool results failed to display). The button is this app's, so it
+   * is drawn by this app, here, and FabOrchestrator's pages are served as
+   * FabOrchestrator builds them.
+   *
+   * It is a link and nothing more. Whether to show it is the answer to the
+   * question the old button asked, `GET /api/pwa/device-admin/me`: an approved
+   * device, a valid session of this app and an email on DEVICE_ADMIN_EMAILS,
+   * all checked on the server. Anyone else is answered 403 and sees no
+   * button. Showing it grants nothing: `/device-admin` and every action on it
+   * make the same check again for themselves.
+   *
+   * On FabOrchestrator's overview page only, where the old button was. It is
+   * placed with its own styles and attached to <body>, so it depends on
+   * nothing in FabOrchestrator's markup. */
+  var DEVICES_PAGE = "/device-admin";
+  var DEVICES_SHOWN_ON = ["/home"];
+  var devicesButton = null;
+  var devicesAsked = false;
+
+  function onDevicesPage() {
+    try {
+      return DEVICES_SHOWN_ON.indexOf(window.location.pathname) !== -1;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  /* Attached once the page has a body, re-attached if a re-render drops it,
+   * and shown only on the overview page: FabOrchestrator moves between some
+   * of its pages without a reload. */
+  function placeDevicesButton() {
+    if (!devicesButton) return;
+    try {
+      if (!document.body) return;
+      if (devicesButton.parentNode !== document.body) document.body.appendChild(devicesButton);
+      devicesButton.style.display = onDevicesPage() && !signingOut ? "inline-flex" : "none";
+    } catch (_error) {
+      /* Never worth an error on FabOrchestrator's page. */
+    }
+  }
+
+  function askDevices() {
+    if (devicesAsked || signingOut) return;
+    if (typeof document.createElement !== "function") return;
+    var token = tokenNow();
+    if (token === UNREADABLE || !token) return; // no session yet: the next tick asks
+    devicesAsked = true;
+    fetch(DEVICES_PAGE_CHECK, {
+      headers: { Authorization: "Bearer " + token },
+      credentials: "same-origin",
+      cache: "no-store",
+    })
+      .then(function (res) {
+        // 403: not a device administrator. Asked once per page; no button.
+        if (!res || !res.ok) return;
+        var link = document.createElement("a");
+        link.id = "pwa-devices-link";
+        link.href = DEVICES_PAGE;
+        link.textContent = "Devices";
+        link.setAttribute("aria-label", "Manage approved devices");
+        link.style.cssText =
+          "position:fixed;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));" +
+          "z-index:2147483000;display:none;align-items:center;padding:11px 18px;border-radius:999px;" +
+          "background:#ffffff;color:#3b34c4;border:1px solid #d9dcef;box-shadow:0 6px 20px rgba(16,21,58,.18);" +
+          "font:600 14px/1 system-ui,-apple-system,'Segoe UI',sans-serif;text-decoration:none;";
+        devicesButton = link;
+        placeDevicesButton();
+      })
+      .catch(function () {
+        devicesAsked = false; // the network: ask again on the next tick
+      });
+  }
+  var DEVICES_PAGE_CHECK = "/api/pwa/device-admin/me";
+
+  try {
+    askDevices();
+    setInterval(function () {
+      askDevices();
+      placeDevicesButton();
+    }, 1500);
   } catch (_error) {
     /* Never worth an error on FabOrchestrator's page. */
   }

@@ -223,21 +223,49 @@ export async function enroll(token: string | undefined): Promise<EnrollResult> {
   return { ok: true, deviceId: finish.body.device.deviceId, friendlyName: finish.body.device.friendlyName };
 }
 
+type ChallengeAnswer =
+  | { ok: true; challengeId: string; challenge: string }
+  | { ok: false; reason: "unknown-device" | "revoked" | "unavailable"; detail?: string };
+
+/** The server's sign-in challenge for a device, or why there is none (refused for a revoked device). */
+async function signInChallenge(deviceId: string): Promise<ChallengeAnswer> {
+  const res = await postJson<{ challengeId?: string; challenge?: string; code?: string; error?: string }>("/api/pwa/device-auth/challenge", { deviceId });
+  if (res.status === 404) return { ok: false, reason: "unknown-device" };
+  if (res.status === 403 && res.body.code === "device_revoked") return { ok: false, reason: "revoked", detail: res.body.error };
+  if (res.status !== 200 || !res.body.challenge || !res.body.challengeId) return { ok: false, reason: "unavailable", detail: res.body.error };
+  return { ok: true, challengeId: res.body.challengeId, challenge: res.body.challenge };
+}
+
 export type ProofResult =
   | { ok: true; proof: { deviceId: string; challengeId: string; signature: string } }
-  | { ok: false; reason: "not-enrolled" | "unknown-device" | "unavailable"; detail?: string };
+  | { ok: false; reason: "not-enrolled" | "unknown-device" | "revoked" | "unavailable"; detail?: string };
 
 /** A fresh sign-in proof: the server's challenge for this device, signed with its stored key. */
 export async function signInProof(): Promise<ProofResult> {
   const stored = await storedDevice();
   if (stored.kind !== "enrolled") return { ok: false, reason: "not-enrolled", detail: stored.kind === "none" ? undefined : stored.detail };
   const { deviceId, privateKey } = stored.credential;
-  const challenge = await postJson<{ challengeId?: string; challenge?: string; error?: string }>("/api/pwa/device-auth/challenge", { deviceId });
-  if (challenge.status === 404) return { ok: false, reason: "unknown-device" };
-  if (challenge.status !== 200 || !challenge.body.challenge || !challenge.body.challengeId) {
-    return { ok: false, reason: "unavailable", detail: challenge.body.error };
+  const challenge = await signInChallenge(deviceId);
+  if (!challenge.ok) return challenge;
+  return { ok: true, proof: { deviceId, challengeId: challenge.challengeId, signature: await sign(privateKey, challenge.challenge) } };
+}
+
+/**
+ * Whether the server still approves the device whose key this browser holds.
+ *
+ * The key outlives a revocation (the server cannot reach into this browser to
+ * delete it), so holding one says which device this is, not that it may still
+ * be used. The sign-in page and `/device-blocked` ask this before they say
+ * "approved". Nothing is signed: the challenge it is given simply expires.
+ */
+export async function deviceStatus(deviceId: string): Promise<"approved" | "revoked" | "unknown" | "unavailable"> {
+  try {
+    const answer = await signInChallenge(deviceId);
+    if (answer.ok) return "approved";
+    return answer.reason === "unknown-device" ? "unknown" : answer.reason;
+  } catch {
+    return "unavailable";
   }
-  return { ok: true, proof: { deviceId, challengeId: challenge.body.challengeId, signature: await sign(privateKey, challenge.body.challenge) } };
 }
 
 /** Forget this device's key (it becomes unenrolled). */

@@ -22,7 +22,7 @@ import { submittedCredentials } from "@/lib/credentials";
 import { endClientSession } from "@/lib/end-client-session";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 import { AUTH_TOKEN_KEY, readStored, storeSession, type StoredUser } from "@/lib/stored-session";
-import { signInProof, storedDevice } from "@/lib/devices/keystore";
+import { deviceStatus, signInProof, storedDevice } from "@/lib/devices/keystore";
 
 export interface LoginPageProps {
   /**
@@ -33,8 +33,9 @@ export interface LoginPageProps {
   next?: string;
   /**
    * Whether this deployment requires an approved device (`DEVICE_GATE`,
-   * `lib/devices/gate.ts`). Then the page checks this device's key before it
-   * shows the form, and sends a device without one to `/device-blocked`.
+   * `lib/devices/gate.ts`). Then the page checks this device's key, and asks
+   * the server about it, before it shows the form, and sends a device
+   * without one, or with a revoked one, to `/device-blocked`.
    */
   deviceRequired?: boolean;
 }
@@ -71,18 +72,42 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
    * 2026). The device's key lives in this browser's IndexedDB
    * (`lib/devices/keystore.ts`); without one there is nothing to sign in with,
    * so the form is never shown and the device goes to the device-check page.
-   * `null` while unknown; with the gate off nothing is required and the form
-   * shows at once.
+   * `"checking"` while unknown; with the gate off nothing is required and the
+   * form shows at once.
+   *
+   * A key here says which device this is, **not** that it is still approved:
+   * it outlives a revocation, which only the server knows about. So the page
+   * asks (`deviceStatus`) before it says "Approved device", and a revoked
+   * device goes to the revoked page. Until 8 October 2026 a revoked phone that
+   * reopened the app was shown "Approved device: DEVICE-nnn" and refused only
+   * after it had typed its password. `approved: false` is a key the server
+   * could not be asked about just now: no label, and sign-in checks it anyway.
+   *
+   * While `"checking"` the page shows only "Checking this device…", never the
+   * form (13 October 2026): a revoked or unapproved device goes straight to
+   * its page without first seeing a sign-in screen it cannot use. It stays on
+   * that card while the redirect happens.
    */
-  const [device, setDevice] = React.useState<string | null | "checking">(deviceRequired ? "checking" : null);
+  const [device, setDevice] = React.useState<{ id: string; approved: boolean } | null | "checking">(
+    deviceRequired ? "checking" : null,
+  );
   React.useEffect(() => {
     let cancelled = false;
-    void storedDevice().then((stored) => {
+    void (async () => {
+      const stored = await storedDevice();
       if (cancelled) return;
-      if (stored.kind === "enrolled") setDevice(stored.credential.deviceId);
-      else if (deviceRequired) window.location.replace("/device-blocked");
+      if (stored.kind !== "enrolled") {
+        if (deviceRequired) window.location.replace("/device-blocked");
+        else setDevice(null);
+        return;
+      }
+      const id = stored.credential.deviceId;
+      const status = await deviceStatus(id);
+      if (cancelled) return;
+      if (status === "approved" || status === "unavailable") setDevice({ id, approved: status === "approved" });
+      else if (deviceRequired) window.location.replace(status === "revoked" ? "/device-blocked?reason=revoked" : "/device-blocked");
       else setDevice(null);
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -232,7 +257,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
           if (proof.reason === "unavailable") {
             setError(proof.detail ?? "This device could not be checked just now. Try again shortly.");
           } else {
-            window.location.replace("/device-blocked");
+            window.location.replace(proof.reason === "revoked" ? "/device-blocked?reason=revoked" : "/device-blocked");
           }
           return;
         }
@@ -312,191 +337,213 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
         </p>
       </aside>
 
-      {/* Form */}
+      {/* Form — or, until the server has said this device may sign in, only
+          the device check. */}
       <main className="flex items-center justify-center p-6">
-        <form
-          ref={formRef}
-          onSubmit={onSubmit}
-          /*
-            `method="post"` is a safety net, not a route.
-            
-            The fields carry `name` attributes so the handler can read them with
-            FormData (see `lib/credentials.ts`), and a named field makes the form
-            natively submittable. If a submit ever escapes React — a click landing
-            in the gap before hydration, or a scripting error — the browser
-            performs that submission itself, and a form defaults to GET. That put
-            the **password in the query string**, where it reaches browser
-            history, server logs and referrer headers.
-            
-            POST keeps a stray submission in a body instead. Nothing serves this
-            route, so it fails; it fails without writing the credential anywhere.
-            The real prevention is `hydrated` on the button below.
-          */
-          method="post"
-          className="fab-card flex w-full max-w-[440px] flex-col gap-[18px]"
-          style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
-        >
-          <span
-            className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[12px] font-extrabold tracking-[0.05em]"
-            style={{
-              borderRadius: 20,
-              color: "var(--cockpit-indigo)",
-              background: "var(--brand-indigo-bg)",
-            }}
+        {device === "checking" ? (
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="device-checking"
+            className="fab-card flex w-full max-w-[440px] flex-col gap-[12px]"
+            style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
           >
-            SHOP FLOOR ACCESS
-          </span>
-
-          {/* "PWA", because this is not the FabOrchestrator website and the
-              screen never said so. Same account, different front door — and a
-              visitor who does not know which one they have opened cannot tell
-              from anything else here. */}
-          <h1 className="text-[26px]">Sign in to FabOrchestrator PWA</h1>
-          {device && device !== "checking" ? (
-            <p data-testid="approved-device" className="m-0 -mt-[8px] text-[12px]" style={{ color: "var(--text-muted-cool)" }}>
-              Approved device: <strong>{device}</strong>
+            <span
+              className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[12px] font-extrabold tracking-[0.05em]"
+              style={{ borderRadius: 20, color: "var(--cockpit-indigo)", background: "var(--brand-indigo-bg)" }}
+            >
+              DEVICE CHECK
+            </span>
+            <h1 className="text-[22px]">Checking this device…</h1>
+            <p className="m-0 text-[14px] leading-[1.6]" style={{ color: "var(--text-muted-cool)" }}>
+              FabOrchestrator is confirming that this device is approved.
             </p>
-          ) : null}
-
-          {/*
-            An existing session, surfaced rather than acted on. The two states
-            differ in what the visitor most likely came here to do:
-
-            - no FabOrchestrator session: they are almost certainly here to add
-              one, because that is the only thing this form gives them that they
-              do not already have. Lead with that.
-            - a full session: they may have arrived by habit or by a stale
-              bookmark. Offer to continue, but never take the decision for them.
-
-            Either way the form below stays usable, which is the whole point of
-            the change: signing in as somebody else must always be possible.
-          */}
-          {existing ? (
-            <div
-              className="flex flex-col gap-[10px] px-[15px] py-[13px] text-[13px]"
-              style={{
-                borderRadius: 12,
-                background: existing.faborch ? "var(--brand-indigo-bg)" : "var(--cockpit-warn-bg, #FFF6E5)",
-                color: "var(--text-ink)",
-              }}
-            >
-              <span>
-                {existing.faborch ? (
-                  <>
-                    You are already signed in as <strong>{existing.email}</strong>, with
-                    FabOrchestrator access.
-                  </>
-                ) : (
-                  <>
-                    You are signed in as <strong>{existing.email}</strong>, but this session has
-                    no FabOrchestrator access — agents will not accept a question. Sign in
-                    below with your FabOrchestrator account to add it.
-                  </>
-                )}
-              </span>
-              <button
-                type="button"
-                onClick={() => router.replace(next)}
-                className="w-fit cursor-pointer border-0 bg-transparent p-0 text-[13px] font-bold underline"
-                style={{ color: "var(--cockpit-indigo)" }}
-              >
-                Continue without signing in again
-              </button>
-            </div>
-          ) : null}
-
-          {/*
-            Says which credential to use, on the screen where it is typed.
-
-            There is only one (WP2, 2026-09-01): a FabOrchestrator account. The
-            line stays because the field does not say whose password it wants,
-            and because the demo credential that used to be accepted here is
-            gone; this sentence is what stops somebody looking for it.
-          */}
-          <p
-            className="m-0 -mt-[6px] max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
-            style={{ color: "var(--text-muted-cool)" }}
-          >
-            Use your FabOrchestrator account. You get FabOrchestrator itself: the same
-            agents, chats and dashboards, answering with your tools, your role and your
-            data.
-          </p>
-
-          <label className="flex flex-col gap-[7px]">
-            <Label>Email</Label>
-            <div
-              className="flex items-center gap-[11px] px-[15px] py-[13px]"
-              style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
-            >
-              <input
-                name="email"
-                type="email"
-                autoComplete="username"
-                required
-                className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
-                style={{ border: 0, color: "var(--text-ink)" }}
-              />
-            </div>
-          </label>
-
-          <label className="flex flex-col gap-[7px]">
-            <Label>Password</Label>
-            <div
-              className="flex items-center gap-[11px] px-[15px] py-[13px]"
-              style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
-            >
-              <input
-                name="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                required
-                className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
-                style={{ border: 0, color: "var(--text-ink)" }}
-              />
-              <button
-                type="button"
-                tabIndex={-1}
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-                className="flex-none cursor-pointer border-0 bg-transparent p-0"
-                style={{ color: "var(--text-subtle)" }}
-              >
-                {showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
-              </button>
-            </div>
-          </label>
-
-          {error ? (
-            <p
-              role="alert"
-              className="m-0 px-4 py-[10px] text-[14px]"
-              style={{
-                borderRadius: "var(--r-control)",
-                background: "var(--status-red-bg)",
-                border: "1px solid var(--status-red-border)",
-                color: "var(--status-red)",
-              }}
-            >
-              {error}
-            </p>
-          ) : null}
-
-          <Button
-            type="submit"
-            variant="primary"
+          </div>
+        ) : (
+          <form
+            ref={formRef}
+            onSubmit={onSubmit}
             /*
-              Disabled until React has attached. The form is server-rendered, so
-              it paints and becomes clickable before `onSubmit` exists — and a
-              click in that gap is handled by the browser, not by this component.
-              The window is invisible on localhost and real on a phone.
+              `method="post"` is a safety net, not a route.
+              
+              The fields carry `name` attributes so the handler can read them with
+              FormData (see `lib/credentials.ts`), and a named field makes the form
+              natively submittable. If a submit ever escapes React — a click landing
+              in the gap before hydration, or a scripting error — the browser
+              performs that submission itself, and a form defaults to GET. That put
+              the **password in the query string**, where it reaches browser
+              history, server logs and referrer headers.
+              
+              POST keeps a stray submission in a body instead. Nothing serves this
+              route, so it fails; it fails without writing the credential anywhere.
+              The real prevention is `hydrated` on the button below.
             */
-            disabled={busy || !hydrated || device === "checking"}
-            className="mt-1 w-full justify-center py-[15px] text-[16px]"
-            style={{ borderRadius: 13 }}
+            method="post"
+            className="fab-card flex w-full max-w-[440px] flex-col gap-[18px]"
+            style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
           >
-            {busy ? "Signing in…" : "Sign in"}
-          </Button>
-        </form>
+            <span
+              className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[12px] font-extrabold tracking-[0.05em]"
+              style={{
+                borderRadius: 20,
+                color: "var(--cockpit-indigo)",
+                background: "var(--brand-indigo-bg)",
+              }}
+            >
+              SHOP FLOOR ACCESS
+            </span>
+
+            {/* "PWA", because this is not the FabOrchestrator website and the
+                screen never said so. Same account, different front door — and a
+                visitor who does not know which one they have opened cannot tell
+                from anything else here. */}
+            <h1 className="text-[26px]">Sign in to FabOrchestrator PWA</h1>
+            {device?.approved ? (
+              <p data-testid="approved-device" className="m-0 -mt-[8px] text-[12px]" style={{ color: "var(--text-muted-cool)" }}>
+                Approved device: <strong>{device.id}</strong>
+              </p>
+            ) : null}
+
+            {/*
+              An existing session, surfaced rather than acted on. The two states
+              differ in what the visitor most likely came here to do:
+
+              - no FabOrchestrator session: they are almost certainly here to add
+                one, because that is the only thing this form gives them that they
+                do not already have. Lead with that.
+              - a full session: they may have arrived by habit or by a stale
+                bookmark. Offer to continue, but never take the decision for them.
+
+              Either way the form below stays usable, which is the whole point of
+              the change: signing in as somebody else must always be possible.
+            */}
+            {existing ? (
+              <div
+                className="flex flex-col gap-[10px] px-[15px] py-[13px] text-[13px]"
+                style={{
+                  borderRadius: 12,
+                  background: existing.faborch ? "var(--brand-indigo-bg)" : "var(--cockpit-warn-bg, #FFF6E5)",
+                  color: "var(--text-ink)",
+                }}
+              >
+                <span>
+                  {existing.faborch ? (
+                    <>
+                      You are already signed in as <strong>{existing.email}</strong>, with
+                      FabOrchestrator access.
+                    </>
+                  ) : (
+                    <>
+                      You are signed in as <strong>{existing.email}</strong>, but this session has
+                      no FabOrchestrator access — agents will not accept a question. Sign in
+                      below with your FabOrchestrator account to add it.
+                    </>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => router.replace(next)}
+                  className="w-fit cursor-pointer border-0 bg-transparent p-0 text-[13px] font-bold underline"
+                  style={{ color: "var(--cockpit-indigo)" }}
+                >
+                  Continue without signing in again
+                </button>
+              </div>
+            ) : null}
+
+            {/*
+              Says which credential to use, on the screen where it is typed.
+
+              There is only one (WP2, 2026-09-01): a FabOrchestrator account. The
+              line stays because the field does not say whose password it wants,
+              and because the demo credential that used to be accepted here is
+              gone; this sentence is what stops somebody looking for it.
+            */}
+            <p
+              className="m-0 -mt-[6px] max-w-[var(--measure)] text-[12px] font-normal leading-[1.6]"
+              style={{ color: "var(--text-muted-cool)" }}
+            >
+              Use your FabOrchestrator account. You get FabOrchestrator itself: the same
+              agents, chats and dashboards, answering with your tools, your role and your
+              data.
+            </p>
+
+            <label className="flex flex-col gap-[7px]">
+              <Label>Email</Label>
+              <div
+                className="flex items-center gap-[11px] px-[15px] py-[13px]"
+                style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
+              >
+                <input
+                  name="email"
+                  type="email"
+                  autoComplete="username"
+                  required
+                  className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
+                  style={{ border: 0, color: "var(--text-ink)" }}
+                />
+              </div>
+            </label>
+
+            <label className="flex flex-col gap-[7px]">
+              <Label>Password</Label>
+              <div
+                className="flex items-center gap-[11px] px-[15px] py-[13px]"
+                style={{ background: "var(--field-bg)", borderRadius: "var(--r-control)" }}
+              >
+                <input
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
+                  required
+                  className="w-full min-w-0 bg-transparent text-[16px] font-medium outline-none"
+                  style={{ border: 0, color: "var(--text-ink)" }}
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  className="flex-none cursor-pointer border-0 bg-transparent p-0"
+                  style={{ color: "var(--text-subtle)" }}
+                >
+                  {showPassword ? <EyeOff size={17} aria-hidden="true" /> : <Eye size={17} aria-hidden="true" />}
+                </button>
+              </div>
+            </label>
+
+            {error ? (
+              <p
+                role="alert"
+                className="m-0 px-4 py-[10px] text-[14px]"
+                style={{
+                  borderRadius: "var(--r-control)",
+                  background: "var(--status-red-bg)",
+                  border: "1px solid var(--status-red-border)",
+                  color: "var(--status-red)",
+                }}
+              >
+                {error}
+              </p>
+            ) : null}
+
+            <Button
+              type="submit"
+              variant="primary"
+              /*
+                Disabled until React has attached. The form is server-rendered, so
+                it paints and becomes clickable before `onSubmit` exists — and a
+                click in that gap is handled by the browser, not by this component.
+                The window is invisible on localhost and real on a phone.
+              */
+              disabled={busy || !hydrated}
+              className="mt-1 w-full justify-center py-[15px] text-[16px]"
+              style={{ borderRadius: 13 }}
+            >
+              {busy ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+        )}
       </main>
     </div>
   );

@@ -47,13 +47,16 @@ device, and FabOrchestrator's own permissions decide what it may do.
 | Enroll, 1 | `POST /api/pwa/device-enrollments/start` | Code usable? Then a challenge bound to this enrollment. Checked **before** the device makes a key. |
 | Enroll, 2 | `lib/devices/keystore.ts` | `generateKey(ECDSA P-256, extractable: false)`; the `CryptoKey` stored in IndexedDB and read back; the challenge signed. |
 | Enroll, 3 | `POST /api/pwa/device-enrollments/complete` | Signature checked against the sent public key (proof of possession); the code consumed exactly once (`O_EXCL` marker); DEVICE-nnn created, APPROVED, holding the public key. |
-| Sign in, 1 | `POST /api/pwa/device-auth/challenge` | 32 random bytes, 60 s, single use, bound to DEVICE-nnn and to sign-in. |
+| Sign in, 1 | `POST /api/pwa/device-auth/challenge` | 32 random bytes, 60 s, single use, bound to DEVICE-nnn and to sign-in. Refused for a revoked device (403 `device_revoked`). The sign-in page asks for one **as soon as it opens**, so a revoked device goes to `/device-blocked?reason=revoked` before anyone types a password, and "Approved device: DEVICE-nnn" appears only when the server confirms it. |
 | Sign in, 2 | `POST /api/pwa/auth/login` | With the gate on: no proof, a bad or replayed signature, an unknown or revoked device → 403 **before FabOrchestrator is asked about the password**. Then FabOrchestrator sign-in; the session is bound to DEVICE-nnn (`bound` record, keyed by the FO token's fingerprint, never the token). |
 | Every request | `proxy.ts` → `lib/devices/gate.ts` | A request carrying a session must belong to a session bound to an APPROVED device; otherwise documents go to `/device-blocked?reason=…` (which signs out), APIs get 403. A request without a session reaches nothing of FabOrchestrator's. |
-| Revoke | `POST /api/pwa/devices/{id}/revoke` | Recorded with the admin and time; the device's sessions stop on their next request; its key can still sign, and is refused. |
+| Revoke | `POST /api/pwa/devices/{id}/revoke` | Recorded with the admin and time; the device's sessions stop on their next request. The phone keeps its key (the server cannot delete it), but its sign-in challenge is refused from then on, and a proof it signed earlier is refused at sign-in. |
 
-`/device-blocked` shows what this device holds: an approved key ("Sign in"), a
-revoked device, or nothing ("not approved"), and offers **Scan enrollment QR**
+`/device-blocked` shows what this device holds, as the server reports it on
+arrival rather than what the key or `?reason=` alone suggests: an approved key
+("Sign in"), a revoked device, or nothing ("not approved"). If the server
+cannot be asked, it says so and offers sign-in, which checks the device anyway.
+It offers **Scan enrollment QR**
 (in-page camera, `lib/devices/scanner.ts`, zxing-wasm served by this app) and a
 paste box. Enrolling there puts the key in that page's own storage, which in an
 installed app is the app's.
@@ -127,3 +130,33 @@ installed app is the app's.
   password refused; DEVICE-002 revoked → next tap "has been revoked", sign-in
   refused; WebKit phone enrolled by pasted link, kept its key across restart,
   signed in. 18/18.
+
+## Fixed (8 October 2026): a revoked phone was told it was approved
+
+A revoked phone that reopened the app with no session (for example from the
+app's QR code, after its first refusal had signed it out) landed on sign-in
+showing **"Approved device: DEVICE-nnn"**. The page read that from the key in
+its own storage, which a revocation does not remove. The phone was refused only
+after typing its password. `/device-blocked` reached without `?reason=revoked`
+said "This device is approved" for the same reason.
+
+The fix: the challenge is refused for a revoked device, and both pages ask for
+one before saying anything about approval (`deviceStatus` in
+`lib/devices/keystore.ts`). A revoked id does not count against the sign-in
+limiter, and its refusals are logged at most once a minute per device and
+address (`DEVICE_ACCESS_BLOCKED`, reason `revoked`).
+
+Verified:
+- `npm test` passes: 949 tests, 70 of them in `__tests__/devices/`. `tsc`,
+  `eslint` and `next build` pass.
+- Production build in Edge, gate enforced, stand-in FabOrchestrator, 13/13:
+  - an approved phone still sees "Approved device" and signs in;
+  - after it is revoked, reopening the app lands on the revoked page;
+  - `/device-blocked` with no reason says revoked;
+  - a phone with no key still sees "not approved";
+  - a new QR approves the phone again.
+  - The same run on the unfixed build failed exactly the two revoked-phone
+    checks.
+- With the challenge unreachable: the form still works, shows no label, and
+  reports the failure when Sign in is pressed. `/device-blocked` says "could
+  not be checked", or "revoked" when arriving with `?reason=revoked`.

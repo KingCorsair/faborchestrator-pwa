@@ -22,7 +22,7 @@ import { submittedCredentials } from "@/lib/credentials";
 import { endClientSession } from "@/lib/end-client-session";
 import { DEFAULT_RETURN_PATH } from "@/lib/return-path";
 import { AUTH_TOKEN_KEY, readStored, storeSession, type StoredUser } from "@/lib/stored-session";
-import { deviceStatus, signInProof, storedDevice } from "@/lib/devices/keystore";
+import { attachFromGrant, deviceStatus, signInProof, storedDevice } from "@/lib/devices/keystore";
 
 export interface LoginPageProps {
   /**
@@ -38,6 +38,14 @@ export interface LoginPageProps {
    * without one, or with a revoked one, to `/device-blocked`.
    */
   deviceRequired?: boolean;
+}
+
+/** The device-check page, saying why when the server said why. */
+function blockedPageFor(reason: string): string {
+  if (reason === "revoked") return "/device-blocked?reason=revoked";
+  if (reason === "pending") return "/device-blocked?reason=pending";
+  if (reason === "credential-ended") return "/device-blocked?reason=credential";
+  return "/device-blocked";
 }
 
 export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }: LoginPageProps) {
@@ -87,6 +95,13 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
    * form (13 October 2026): a revoked or unapproved device goes straight to
    * its page without first seeing a sign-in screen it cannot use. It stays on
    * that card while the redirect happens.
+   *
+   * One case gets a key here (9 October 2026): an app just added to the Home
+   * Screen from an approved browser. Its storage is new and empty, but the
+   * cookies iOS copied into it include a one-time install grant, and
+   * `attachFromGrant` uses it to register a key of this app's own under the
+   * browser's `DEVICE-nnn` (`lib/devices/install-grant.ts`). No QR, and the
+   * sign-in form follows as usual.
    */
   const [device, setDevice] = React.useState<{ id: string; approved: boolean } | null | "checking">(
     deviceRequired ? "checking" : null,
@@ -96,16 +111,21 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
     void (async () => {
       const stored = await storedDevice();
       if (cancelled) return;
+      if (stored.kind === "none") {
+        const joined = await attachFromGrant().catch(() => null);
+        if (cancelled) return;
+        if (joined?.ok) return setDevice({ id: joined.deviceId, approved: true });
+      }
       if (stored.kind !== "enrolled") {
         if (deviceRequired) window.location.replace("/device-blocked");
         else setDevice(null);
         return;
       }
       const id = stored.credential.deviceId;
-      const status = await deviceStatus(id);
+      const status = await deviceStatus(stored.credential);
       if (cancelled) return;
       if (status === "approved" || status === "unavailable") setDevice({ id, approved: status === "approved" });
-      else if (deviceRequired) window.location.replace(status === "revoked" ? "/device-blocked?reason=revoked" : "/device-blocked");
+      else if (deviceRequired) window.location.replace(blockedPageFor(status));
       else setDevice(null);
     })();
     return () => {
@@ -249,7 +269,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
       // it made at enrollment. Sent whenever this device has a key (so sessions
       // are bound to their device even before the gate is turned on); required
       // when the gate is on, and the server checks it before the password.
-      let deviceProof: { deviceId: string; challengeId: string; signature: string } | undefined;
+      let deviceProof: { deviceId: string; credentialId: string; challengeId: string; signature: string } | undefined;
       if (device && device !== "checking") {
         const proof = await signInProof();
         if (proof.ok) deviceProof = proof.proof;
@@ -257,7 +277,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
           if (proof.reason === "unavailable") {
             setError(proof.detail ?? "This device could not be checked just now. Try again shortly.");
           } else {
-            window.location.replace(proof.reason === "revoked" ? "/device-blocked?reason=revoked" : "/device-blocked");
+            window.location.replace(blockedPageFor(proof.reason));
           }
           return;
         }
@@ -271,8 +291,21 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        if (data.code === "device_revoked" || data.code === "device_not_approved") {
-          window.location.replace(`/device-blocked${data.code === "device_revoked" ? "?reason=revoked" : ""}`);
+        if (
+          data.code === "device_revoked" ||
+          data.code === "device_pending" ||
+          data.code === "credential_revoked" ||
+          data.code === "device_not_approved"
+        ) {
+          const why =
+            data.code === "device_revoked"
+              ? "?reason=revoked"
+              : data.code === "device_pending"
+                ? "?reason=pending"
+                : data.code === "credential_revoked"
+                  ? "?reason=credential"
+                  : "";
+          window.location.replace(`/device-blocked${why}`);
           return;
         }
         setError(data.error ?? "Sign-in failed");

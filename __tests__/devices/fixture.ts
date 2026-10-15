@@ -43,6 +43,8 @@ export interface FoCall {
   method: string;
   path: string;
   body: string | null;
+  /** The FabOrchestrator token the call carried, if any: which session a logout revoked. */
+  bearer: string | null;
 }
 
 const realFetch = globalThis.fetch;
@@ -53,7 +55,8 @@ export function stubFo(): void {
     const url = new URL(String(input));
     const method = (init.method ?? "GET").toUpperCase();
     const body = typeof init.body === "string" ? init.body : null;
-    foCalls.push({ method, path: url.pathname, body });
+    const bearer = new Headers(init.headers).get("authorization")?.replace(/^Bearer /i, "") ?? null;
+    foCalls.push({ method, path: url.pathname, body, bearer });
     if (url.pathname === "/api/auth/login") {
       const { email, password } = JSON.parse(body ?? "{}") as { email: string; password: string };
       const user = USERS[email];
@@ -155,9 +158,13 @@ export function sessionOf(email: string, foToken = `fo-session-${USERS[email]!.i
   return { bearer: `Bearer ${token}`, foToken, cookies: { [FO_TOKEN_COOKIE]: foToken } as Record<string, string | null> };
 }
 
-/** Bind a session to a device, as a sign-in with that device's proof does. */
-export async function bindSession(foToken: string, deviceId: string): Promise<void> {
-  await deviceStore().bindSession(foFingerprint(foToken), deviceId, Date.now() + 864e5);
+/**
+ * Bind a session to a device, as a sign-in with that device's proof does.
+ * Without `credentialId` the line is written as it was before credentials
+ * existed, which means the device's enrolling key.
+ */
+export async function bindSession(foToken: string, deviceId: string, credentialId?: string): Promise<void> {
+  await deviceStore().bindSession(foFingerprint(foToken), deviceId, Date.now() + 864e5, { credentialId });
 }
 
 export function setCookie(res: NextResponse | Response, name: string): string | undefined {

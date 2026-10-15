@@ -9,11 +9,11 @@ import {
 } from "@/lib/faborch/client";
 import { foFingerprint } from "@/lib/auth";
 import { deviceAudit } from "@/lib/devices/audit";
-import { DEVICE_NOT_APPROVED, deviceGateMode, deviceRevoked } from "@/lib/devices/gate";
+import { credentialRevoked, DEVICE_NOT_APPROVED, deviceGateMode, devicePending, deviceRevoked } from "@/lib/devices/gate";
 import { verifyDeviceSignIn } from "@/lib/devices/proof";
-import { deviceStore, DeviceStoreUnavailableError, type Device } from "@/lib/devices/store";
+import { deviceStore, DeviceStoreUnavailableError, type Credential, type Device } from "@/lib/devices/store";
 import { deviceKeyFrom, newDeviceKey, seatIdFor, setDeviceCookie } from "@/lib/faborch/device";
-import { revokeFoSession, sessionConfigProblems, type SessionEndReason } from "@/lib/faborch/end-session";
+import { forgetFoSession, revokeFoSession, sessionConfigProblems, type SessionEndReason } from "@/lib/faborch/end-session";
 import { clearPasswordChangeMark, passwordChangeMarkedFor } from "@/lib/faborch/password-mark";
 import { foTokenFrom, sessionCookieGraceSeconds, setFoTokenCookie } from "@/lib/faborch/session";
 import { classify, readRegistry } from "@/lib/gateway/registry";
@@ -81,7 +81,10 @@ const NO_STORE = { "Cache-Control": "no-store" };
  *     inactive account, or a forced password change.
  *  3. A new sign-in **ends the session it replaces**: a cookie from an older
  *     sign-in on this browser has its FabOrchestrator token revoked, before
- *     this one is answered, rather than left alive for 30 days.
+ *     this one is answered, rather than left alive for 30 days. Only its own,
+ *     though: a cookie that belongs to a different credential of the device
+ *     (the browser's session, copied by iOS into a newly installed app) is
+ *     overwritten here and left alive for the browser that owns it.
  *  4. This app's session is minted, capped at FabOrchestrator's own expiry.
  *  5. The answer carries `next`: FabOrchestrator's change page when the account
  *     must change its password, which is the only way a phone can reach it.
@@ -161,6 +164,7 @@ export async function POST(req: NextRequest) {
   // about the password. With the gate off, a valid proof is still recorded, so
   // sessions are already bound to their devices when the gate is turned on.
   let device: Device | null = null;
+  let credential: Credential | null = null;
   const gate = deviceGateMode();
   if (parsed.data.device || gate === "enforce") {
     if (!parsed.data.device) {
@@ -171,12 +175,19 @@ export async function POST(req: NextRequest) {
       const proof = await verifyDeviceSignIn(parsed.data.device, deviceStore());
       if (proof.ok) {
         device = proof.device;
+        credential = proof.credential;
       } else if (gate === "enforce") {
-        deviceAudit("DEVICE_LOGIN_REFUSED", { deviceId: proof.deviceId, reason: proof.reason, address });
-        return NextResponse.json(proof.reason === "revoked" ? deviceRevoked(proof.deviceId) : DEVICE_NOT_APPROVED, {
-          status: 403,
-          headers: NO_STORE,
-        });
+        deviceAudit("DEVICE_LOGIN_REFUSED", { deviceId: proof.deviceId, credentialId: proof.credentialId, reason: proof.reason, address });
+        return NextResponse.json(
+          proof.reason === "revoked"
+            ? deviceRevoked(proof.deviceId)
+            : proof.reason === "pending"
+              ? devicePending(proof.deviceId)
+              : proof.reason === "credential_revoked" || proof.reason === "credential_superseded"
+              ? credentialRevoked(proof.deviceId, proof.reason === "credential_superseded")
+              : DEVICE_NOT_APPROVED,
+          { status: 403, headers: NO_STORE },
+        );
       }
     } catch (error) {
       if (!(error instanceof DeviceStoreUnavailableError)) throw error;
@@ -241,7 +252,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const res = await completeSignIn(req, fo, device);
+    const res = await completeSignIn(req, fo, device, credential);
     if (res.status === 200) clearLoginFailures(address);
     return res;
   } catch (error) {
@@ -257,7 +268,12 @@ export async function POST(req: NextRequest) {
 }
 
 /** Steps 2 to 5, once FabOrchestrator has accepted the password. */
-async function completeSignIn(req: NextRequest, fo: FoSession, device: Device | null): Promise<NextResponse> {
+async function completeSignIn(
+  req: NextRequest,
+  fo: FoSession,
+  device: Device | null,
+  credential: Credential | null,
+): Promise<NextResponse> {
   // ── Step 2: the `/me` probe, with the token FO just issued ────────────────
   // FO's login has just set its idle clock, so this extends nothing.
   //  - 403 "no longer active" after a correct password: a coded failure, not
@@ -305,8 +321,21 @@ async function completeSignIn(req: NextRequest, fo: FoSession, device: Device | 
   // ── Step 3: a new sign-in ends the session it replaces ─────────────────────
   // Before this one is answered, and whether or not FabOrchestrator is quick
   // about it (the revoke has its own short limit, and never fails the login).
+  //
+  // **Only a session that is this credential's to end** (9 October 2026). On
+  // an iPhone, adding the app to the Home Screen copies the browser's cookies
+  // into the app, so the app's first sign-in arrives carrying the *browser's*
+  // session cookie. Revoking that would sign the browser out the moment the
+  // app signs in. A cookie bound to a different credential is someone else's
+  // session: it is replaced in this cookie jar and left alone at
+  // FabOrchestrator. One bound to this credential, or to none, is revoked as
+  // before.
   const replaced = foTokenFrom(req);
-  if (replaced && replaced !== fo.token) await revokeFoSession(replaced, "replaced");
+  if (replaced && replaced !== fo.token) {
+    const owner = credential ? await sessionOwner(replaced) : null;
+    if (credential && owner && owner !== credential.credentialId) forgetFoSession(replaced, "replaced_foreign");
+    else await revokeFoSession(replaced, "replaced");
+  }
 
   // ── Step 4: this app's own session, for an operator FO has vouched for ────
   // `fo.expiresAt` caps it at FabOrchestrator's own expiry — see `sessionFor`.
@@ -366,13 +395,33 @@ async function completeSignIn(req: NextRequest, fo: FoSession, device: Device | 
       foFingerprint(fo.token),
       device.deviceId,
       new Date(session.expiresAt).getTime() + sessionCookieGraceSeconds() * 1000,
+      { credentialId: credential?.credentialId },
     );
-    deviceAudit("DEVICE_ACCESS_ALLOWED", { deviceId: device.deviceId, userId: fo.user.id, reason: "sign_in" });
+    deviceAudit("DEVICE_ACCESS_ALLOWED", {
+      deviceId: device.deviceId,
+      credentialId: credential?.credentialId,
+      userId: fo.user.id,
+      reason: "sign_in",
+    });
   }
   // FabOrchestrator no longer holds this user for a change: the mark from an
   // earlier change has done its job.
   if (!forcedChange && passwordChangeMarkedFor(req, fo.user.id)) clearPasswordChangeMark(res);
   return res;
+}
+
+/**
+ * The credential a session cookie's session signed in with, or null when it
+ * is bound to none (or the store cannot say, in which case the old rule
+ * applies and the session is revoked).
+ */
+async function sessionOwner(foToken: string): Promise<string | null> {
+  try {
+    return (await deviceStore().sessionBinding(foFingerprint(foToken)))?.credential.credentialId ?? null;
+  } catch (error) {
+    if (!(error instanceof DeviceStoreUnavailableError)) throw error;
+    return null;
+  }
 }
 
 function notConfigured(

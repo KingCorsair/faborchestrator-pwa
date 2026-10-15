@@ -5,7 +5,8 @@
  *
  *   admin creates a one-time enrollment QR → the device (installed app, or the
  *   browser the QR opened in) generates a non-exportable key pair and registers
- *   the public key → DEVICE-nnn, APPROVED. No email, no password, no cookie.
+ *   the public key → DEVICE-nnn, PENDING until an administrator approves it
+ *   (14 October 2026; `approval.test.ts`). No email, no password, no cookie.
  *
  *   normal use: the sign-in page signs a fresh challenge with the stored key;
  *   the server checks it against the registered public key and the device's
@@ -45,6 +46,7 @@ import { POST as COMPLETE } from "@/app/api/pwa/device-enrollments/complete/rout
 import { GET as LIST_ENROLLMENTS, POST as CREATE_ENROLLMENT } from "@/app/api/pwa/device-enrollments/route";
 import { GET as LIST_DEVICES } from "@/app/api/pwa/devices/route";
 import { POST as REVOKE } from "@/app/api/pwa/devices/[deviceId]/revoke/route";
+import { POST as APPROVE } from "@/app/api/pwa/devices/[deviceId]/approve/route";
 import { POST as CHALLENGE } from "@/app/api/pwa/device-auth/challenge/route";
 import { POST as LOGIN } from "@/app/api/pwa/auth/login/route";
 import { GET as ADMIN_ME } from "@/app/api/pwa/device-admin/me/route";
@@ -133,7 +135,15 @@ async function scanEnrollment(token: string, opts: { key?: PhoneKey; via?: "body
   const res = await COMPLETE(
     request("/api/pwa/device-enrollments/complete", {
       cookies,
-      json: { ...tokenBody, challengeId: s.challengeId, publicKeySpki: key.spki, signature: await signChallenge(key, s.challenge!), installedApp: true },
+      json: {
+        ...tokenBody,
+        challengeId: s.challengeId,
+        publicKeySpki: key.spki,
+        signature: await signChallenge(key, s.challenge!),
+        installedApp: true,
+        timeZone: "America/Los_Angeles",
+        language: "en-US",
+      },
     }),
   );
   const body = (await res.json()) as { device?: { deviceId: string; keyFingerprint: string }; reason?: string; code?: string };
@@ -165,6 +175,11 @@ async function signIn(phone: Phone | null, email: string, password: string, opts
 
 const revoke = (admin: Admin, deviceId: string) =>
   REVOKE(request(`/api/pwa/devices/${deviceId}/revoke`, { cookies: admin.cookies, headers: { authorization: admin.bearer }, json: {} }), {
+    params: Promise.resolve({ deviceId }),
+  });
+
+const approve = (admin: Admin, deviceId: string) =>
+  APPROVE(request(`/api/pwa/devices/${deviceId}/approve`, { cookies: admin.cookies, headers: { authorization: admin.bearer }, json: {} }), {
     params: Promise.resolve({ deviceId }),
   });
 
@@ -264,10 +279,22 @@ describe("enrollment", () => {
     assert.equal(result.deviceId, "DEVICE-002");
     assert.equal(foCalls.length, before, "FabOrchestrator is not asked anything");
     assert.equal(result.res!.headers.get("set-cookie")?.includes("fo_device"), false, "no device cookie");
+    // A request, not an approval (14 October 2026): it waits for an administrator.
     const device = await deviceStore().getDevice("DEVICE-002");
-    assert.equal(device?.status, "APPROVED");
+    assert.equal(device?.status, "PENDING");
+    assert.equal((result.body.device as { status?: string }).status, "PENDING");
     assert.equal(device?.friendlyName, "Phone A");
     assert.equal(await deviceStore().publicKeyOf("DEVICE-002"), result.key.spki, "the server holds the public key");
+    // Where the request came from, for the administrator deciding.
+    assert.match(device?.origin?.ip ?? "", /^10\.9\./);
+    assert.equal(device?.origin?.timeZone, "America/Los_Angeles");
+    assert.equal(device?.origin?.language, "en-US");
+    assert.match(device?.origin?.userAgent ?? "", /iPhone/);
+
+    assert.equal((await approve(admin, "DEVICE-002")).status, 200);
+    const approved = await deviceStore().getDevice("DEVICE-002");
+    assert.equal(approved?.status, "APPROVED");
+    assert.equal(approved?.approvedBy, "admin@plant.example");
   });
 
   test("the link path works too: opening the link moves the code into a cookie, and the page enrolls with it", async () => {
@@ -571,6 +598,16 @@ describe("demo: normal access to the Fly app depends on the enrollment QR", () =
     //    The QR is spent.
     assert.equal((await scanEnrollment(token)).status, 410);
 
+    // 3a. It is a request: until an administrator approves it, Phone A is told
+    //     it is waiting, and cannot sign in.
+    const waiting = await signIn(phoneA, "alice@plant.example", "alice-pass");
+    assert.equal(waiting.res.status, 403);
+    assert.equal(waiting.body.code, "device_pending");
+    assert.equal(foLogins(), 0, "FabOrchestrator is not asked about the password");
+
+    // 3b. The administrator approves DEVICE-002 at /device-admin.
+    assert.equal((await approve(admin, "DEVICE-002")).status, 200);
+
     // 4. Phone A opens the normal FO URL → device proof → normal sign-in → FO.
     const signedIn = await signIn(phoneA, "alice@plant.example", "alice-pass");
     assert.equal(signedIn.res.status, 200);
@@ -588,7 +625,7 @@ describe("demo: normal access to the Fly app depends on the enrollment QR", () =
     assert.equal(again.res.status, 403);
     assert.equal(again.body.code, "device_revoked");
 
-    for (const action of ["DEVICE_ENROLLMENT_CREATED", "DEVICE_ENROLLED", "DEVICE_ACCESS_ALLOWED", "DEVICE_ACCESS_BLOCKED", "DEVICE_REVOKED", "DEVICE_LOGIN_REFUSED"]) {
+    for (const action of ["DEVICE_ENROLLMENT_CREATED", "DEVICE_APPROVAL_REQUESTED", "DEVICE_APPROVED", "DEVICE_ACCESS_ALLOWED", "DEVICE_ACCESS_BLOCKED", "DEVICE_REVOKED", "DEVICE_LOGIN_REFUSED"]) {
       assert.ok(logged.some((l) => l.includes(`"action":"${action}"`)), action);
     }
   });

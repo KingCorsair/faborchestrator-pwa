@@ -13,15 +13,18 @@ export const dynamic = "force-dynamic";
 /**
  * `/device-blocked` — where a device lands when it cannot enter
  * FabOrchestrator: the sign-in page found no device key here, or `proxy.ts`
- * refused a session whose device is revoked (`?reason=revoked`), unbound
- * (`?reason=session`) or could not be checked (`?reason=unavailable`).
+ * refused a session whose device is revoked (`?reason=revoked`), or the
+ * device is waiting for an administrator's approval (`?reason=pending`), whose own
+ * credential was removed or replaced by a newer install (`?reason=credential`),
+ * that is unbound (`?reason=session`), or that could not be checked
+ * (`?reason=unavailable`).
  *
- * It renders no FabOrchestrator data. On arrival it ends whatever session this
- * browser holds (which also revokes it at FabOrchestrator). It then shows what
- * this device holds, and enrolls it **here**, with the in-app scanner or a
- * pasted link: inside the installed app that is the only way to put the key in
- * the app's own storage (on an iPhone, a Camera scan opens Safari, whose
- * storage is separate).
+ * It renders no FabOrchestrator data. On arrival it ends the session this
+ * browser holds, if that session is its to end (`components/devices/
+ * blocked-actions.tsx`). An app added to the Home Screen from an approved
+ * browser joins that browser's device here, with the install grant it was
+ * installed with. Otherwise the page shows what this device holds, and enrolls
+ * it **here**, with the in-app scanner or a pasted link.
  */
 export default async function Page({
   searchParams,
@@ -29,7 +32,10 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { reason } = await searchParams;
-  const why = reason === "revoked" || reason === "session" || reason === "unavailable" ? reason : null;
+  const why =
+    reason === "revoked" || reason === "pending" || reason === "credential" || reason === "session" || reason === "unavailable"
+      ? reason
+      : null;
 
   return (
     <DeviceCard eyebrow="DEVICE CHECK" title={why === "unavailable" ? "This device could not be checked" : "Device check"}>

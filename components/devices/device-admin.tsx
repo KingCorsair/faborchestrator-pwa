@@ -5,6 +5,18 @@
  * see enrolled devices, revoke one. An enrollment names no user: the code
  * authorizes one device, and who uses the device is decided at sign-in.
  *
+ * A device that also has an installed app shows both of its keys under its
+ * row: the browser the QR approved, and the app added to the Home Screen from
+ * it (`lib/devices/install-grant.ts`). Either can be revoked by itself;
+ * revoking the device stops both.
+ *
+ * A device enrolled with a QR waits for approval (14 October 2026): it is
+ * listed under "Waiting for approval" with where the request came from (its
+ * address, the region it reached us through, its time zone and language, its
+ * browser), and an administrator approves it or blocks it. Until then its key
+ * opens nothing. The list refreshes itself, so a request appears here a few
+ * seconds after the phone scans the QR.
+ *
  * Revoking asks for a second tap on the same row rather than a browser
  * `confirm()`, which blocks the page and which a standalone app on some phones
  * does not show at all.
@@ -18,7 +30,7 @@
 import * as React from "react";
 import { BrandLockup } from "@/components/fab/brand";
 import { Button, Label } from "@/components/fab/primitives";
-import type { DeviceView, EnrollmentView } from "@/lib/devices/views";
+import type { CredentialView, DeviceView, EnrollmentView, OriginView } from "@/lib/devices/views";
 import { bearerHeader } from "@/lib/stored-session";
 import { fieldInput, fieldShell, Notice } from "./device-card";
 
@@ -41,6 +53,13 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<{ ok: true
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : "—");
 
+const statusColor = (status: string) =>
+  status === "APPROVED" ? "var(--status-green-ink)" : status === "PENDING" ? "var(--cockpit-indigo)" : "var(--status-red)";
+
+/** An installed app attached within the last day is marked, so an unexpected one is noticed. */
+const RECENT_MS = 24 * 60 * 60 * 1000;
+const isRecent = (c: CredentialView) => c.kind === "APP" && c.createdAt !== null && Date.now() - new Date(c.createdAt).getTime() < RECENT_MS;
+
 export function DeviceAdmin() {
   const [devices, setDevices] = React.useState<DeviceView[] | null>(null);
   const [pending, setPending] = React.useState<EnrollmentView[]>([]);
@@ -50,10 +69,11 @@ export function DeviceAdmin() {
   const [busy, setBusy] = React.useState(false);
   const [confirming, setConfirming] = React.useState<string | null>(null);
   const [current, setCurrent] = React.useState<string | null>(null);
+  const [currentCredential, setCurrentCredential] = React.useState<string | null>(null);
 
   const refresh = React.useCallback(async () => {
     const [list, open] = await Promise.all([
-      call<{ devices: DeviceView[]; currentDeviceId: string | null }>("/api/pwa/devices"),
+      call<{ devices: DeviceView[]; currentDeviceId: string | null; currentCredentialId?: string | null }>("/api/pwa/devices"),
       call<{ enrollments: EnrollmentView[] }>("/api/pwa/device-enrollments"),
     ]);
     if (!list.ok) {
@@ -63,6 +83,7 @@ export function DeviceAdmin() {
     setProblem(null);
     setDevices(list.body.devices);
     setCurrent(list.body.currentDeviceId ?? null);
+    setCurrentCredential(list.body.currentCredentialId ?? null);
     if (open.ok) setPending(open.body.enrollments);
   }, []);
 
@@ -112,6 +133,52 @@ export function DeviceAdmin() {
     void refresh();
   }
 
+  /** Approve a device waiting for it. One tap: approving is what the request asks for. */
+  async function approve(deviceId: string) {
+    setConfirming(null);
+    const result = await call(`/api/pwa/devices/${encodeURIComponent(deviceId)}/approve`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+    if (!result.ok) setProblem(result);
+    void refresh();
+  }
+
+  /** Refuse a device waiting for approval: the revoke route marks it REJECTED. Two taps. */
+  async function block(deviceId: string) {
+    const key = `block:${deviceId}`;
+    if (confirming !== key) {
+      setConfirming(key);
+      return;
+    }
+    setConfirming(null);
+    const result = await call(`/api/pwa/devices/${encodeURIComponent(deviceId)}/revoke`, {
+      method: "POST",
+      body: JSON.stringify({ reason: "request rejected by administrator" }),
+    });
+    if (!result.ok) setProblem(result);
+    void refresh();
+  }
+
+  /** Revoke one key of a device, leaving the device approved. The same two taps as a device. */
+  async function revokeCredential(deviceId: string, credentialId: string) {
+    const key = `${deviceId}/${credentialId}`;
+    if (confirming !== key) {
+      setConfirming(key);
+      return;
+    }
+    setConfirming(null);
+    const result = await call(
+      `/api/pwa/devices/${encodeURIComponent(deviceId)}/credentials/${encodeURIComponent(credentialId)}/revoke`,
+      { method: "POST", body: JSON.stringify({}) },
+    );
+    if (!result.ok) setProblem(result);
+    void refresh();
+  }
+
+  const requests = (devices ?? []).filter((d) => d.status === "PENDING");
+  const decided = (devices ?? []).filter((d) => d.status !== "PENDING");
+
   if (problem && devices === null) {
     return (
       <Shell>
@@ -136,9 +203,10 @@ export function DeviceAdmin() {
       <section className="fab-card flex flex-col gap-4 p-[18px] sm:p-6">
         <Label as="h2">Create device enrollment</Label>
         <p className="m-0 text-[14px]" style={{ color: "var(--text-muted-cool)" }}>
-          A one-time QR code that approves one device. Scanning it enrolls the device at once, with no sign-in; it
-          expires in minutes and works once. Whoever then uses the device still signs in to FabOrchestrator as
-          usual. Business approval for the device must already be in place.
+          A one-time QR code for one device. Scanning it sends that device&rsquo;s request to join, which appears
+          under &ldquo;Waiting for approval&rdquo; below with where it came from; nothing opens until you approve it.
+          The code expires in minutes and works once. Whoever then uses the device still signs in to FabOrchestrator
+          as usual.
         </p>
         <form onSubmit={onCreate} className="grid gap-3 sm:grid-cols-2">
           <Field name="friendlyName" label="Device name (optional)" />
@@ -153,9 +221,60 @@ export function DeviceAdmin() {
         {issued ? <IssuedEnrollment issued={issued} onDone={() => setIssued(null)} /> : null}
       </section>
 
+      {requests.length > 0 ? (
+        <section className="fab-card flex flex-col gap-3 p-[18px] sm:p-6" data-testid="approval-requests">
+          <Label as="h2">Waiting for approval</Label>
+          <p className="m-0 text-[13px]" style={{ color: "var(--text-muted-cool)" }}>
+            These devices scanned an enrollment QR. Approve only a request you expect: check that the place and time
+            zone match the person and device you gave the code to.
+          </p>
+          <ul className="m-0 flex list-none flex-col gap-3 p-0">
+            {requests.map((d) => (
+              <li
+                key={d.deviceId}
+                className="flex flex-col gap-3 p-[14px]"
+                style={{ border: "1px solid var(--border-light)", borderRadius: 12 }}
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <strong className="break-words text-[15px]">
+                    {d.friendlyName} <span className="font-semibold tabular-nums">· {d.deviceId}</span>
+                  </strong>
+                  <span className="text-[12px]" style={{ color: "var(--text-subtle)" }}>
+                    requested {when(d.createdAt)}
+                  </span>
+                </div>
+                <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-[5px] text-[12px]">
+                  <Row label="Device">
+                    {d.deviceType} · {d.os} · {d.browser} · {d.context}
+                  </Row>
+                  <OriginRows origin={d.origin} />
+                  <Row label="QR issued by">
+                    {d.createdBy}
+                    {d.site ? ` · ${d.site}` : ""}
+                  </Row>
+                  <Row label="Key">{d.keyFingerprint.slice(0, 12)}</Row>
+                </dl>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Button variant="primary" className="w-full justify-center py-[11px] sm:w-auto" onClick={() => void approve(d.deviceId)}>
+                    Approve
+                  </Button>
+                  <Button
+                    variant={confirming === `block:${d.deviceId}` ? "primary" : "secondary"}
+                    className="w-full justify-center py-[11px] sm:w-auto"
+                    onClick={() => void block(d.deviceId)}
+                  >
+                    {confirming === `block:${d.deviceId}` ? "Confirm block" : "Block"}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {pending.length > 0 ? (
         <section className="fab-card flex flex-col gap-3 p-[18px] sm:p-6">
-          <Label as="h2">Waiting to be used</Label>
+          <Label as="h2">QR codes not used yet</Label>
           <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[14px]">
             {pending.map((e) => (
               <li key={e.enrollmentId}>
@@ -172,13 +291,13 @@ export function DeviceAdmin() {
         {problem ? <Notice tone="error">{problem.error}</Notice> : null}
         {devices === null ? (
           <p className="m-0 text-[14px]">Loading…</p>
-        ) : devices.length === 0 ? (
-          <p className="m-0 text-[14px]">No device has been enrolled yet.</p>
+        ) : decided.length === 0 ? (
+          <p className="m-0 text-[14px]">No device has been approved yet.</p>
         ) : (
           <>
             {/* Phones: one card per device. */}
             <ul className="m-0 flex list-none flex-col gap-3 p-0 md:hidden">
-              {devices.map((d) => (
+              {decided.map((d) => (
                 <li
                   key={d.deviceId}
                   className="flex flex-col gap-3 p-[14px]"
@@ -192,10 +311,7 @@ export function DeviceAdmin() {
                         {d.deviceId === current ? <ThisDevice /> : null}
                       </span>
                     </div>
-                    <span
-                      className="shrink-0 text-[12px] font-bold"
-                      style={{ color: d.status === "APPROVED" ? "var(--status-green-ink)" : "var(--status-red)" }}
-                    >
+                    <span className="shrink-0 text-[12px] font-bold" style={{ color: statusColor(d.status) }}>
                       {d.status}
                     </span>
                   </div>
@@ -205,14 +321,28 @@ export function DeviceAdmin() {
                     </Row>
                     <Row label="Enrolled">{when(d.createdAt)}</Row>
                     <Row label="Issued by">{d.createdBy}</Row>
+                    {d.approvedBy ? (
+                      <Row label="Approved">
+                        {when(d.approvedAt)} by {d.approvedBy}
+                      </Row>
+                    ) : null}
+                    <OriginRows origin={d.origin} brief />
                     <Row label="Last seen">{when(d.lastSeenAt)}</Row>
-                    {d.status === "REVOKED" ? (
-                      <Row label="Revoked">
+                    {d.status === "REVOKED" || d.status === "REJECTED" ? (
+                      <Row label={d.status === "REJECTED" ? "Rejected" : "Revoked"}>
                         {when(d.revokedAt)} by {d.revokedBy}
                       </Row>
                     ) : null}
                     <Row label="Key">{d.keyFingerprint.slice(0, 12)}</Row>
                   </dl>
+                  {d.credentials.length > 1 ? (
+                    <CredentialList
+                      device={d}
+                      confirming={confirming}
+                      currentCredential={currentCredential}
+                      onRevoke={(credentialId) => void revokeCredential(d.deviceId, credentialId)}
+                    />
+                  ) : null}
                   {d.status === "APPROVED" ? (
                     <RevokeButton
                       confirming={confirming === d.deviceId}
@@ -237,42 +367,64 @@ export function DeviceAdmin() {
                 </tr>
               </thead>
               <tbody>
-                {devices.map((d) => (
-                  <tr key={d.deviceId} style={{ borderTop: "1px solid var(--border-light)" }}>
-                    <td className="py-2 pr-3">{d.friendlyName}</td>
-                    <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">
-                      {d.deviceId}
-                      {d.deviceId === current ? <ThisDevice className="ml-2" /> : null}
-                      <span className="block text-[11px] font-normal" style={{ color: "var(--text-subtle)" }} title="Public-key fingerprint">
-                        key {d.keyFingerprint.slice(0, 12)}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-3">
-                      {d.deviceType} · {d.os} · {d.browser} · {d.context}
-                    </td>
-                    <td className="py-2 pr-3">
-                      <span style={{ color: d.status === "APPROVED" ? "var(--status-green-ink)" : "var(--status-red)" }}>
-                        {d.status}
-                      </span>
-                      {d.status === "REVOKED" ? (
-                        <span className="block text-[12px]" style={{ color: "var(--text-subtle)" }}>
-                          {when(d.revokedAt)} by {d.revokedBy}
+                {decided.map((d) => (
+                  <React.Fragment key={d.deviceId}>
+                    <tr style={{ borderTop: "1px solid var(--border-light)" }}>
+                      <td className="py-2 pr-3">{d.friendlyName}</td>
+                      <td className="whitespace-nowrap py-2 pr-3 font-semibold tabular-nums">
+                        {d.deviceId}
+                        {d.deviceId === current ? <ThisDevice className="ml-2" /> : null}
+                        <span className="block text-[11px] font-normal" style={{ color: "var(--text-subtle)" }} title="Public-key fingerprint">
+                          key {d.keyFingerprint.slice(0, 12)}
                         </span>
-                      ) : null}
-                    </td>
-                    <td className="py-2 pr-3">{when(d.createdAt)}</td>
-                    <td className="py-2 pr-3">{d.createdBy}</td>
-                    <td className="py-2 pr-3">{when(d.lastSeenAt)}</td>
-                    <td className="py-2">
-                      {d.status === "APPROVED" ? (
-                        <RevokeButton
-                          confirming={confirming === d.deviceId}
-                          isCurrent={d.deviceId === current}
-                          onClick={() => void revoke(d.deviceId)}
-                        />
-                      ) : null}
-                    </td>
-                  </tr>
+                      </td>
+                      <td className="py-2 pr-3">
+                        {d.deviceType} · {d.os} · {d.browser} · {d.context}
+                        {d.origin?.ip || d.origin?.edgeLocation ? (
+                          <span className="block text-[11px]" style={{ color: "var(--text-subtle)" }}>
+                            from {[d.origin.ip, d.origin.edgeLocation].filter(Boolean).join(" · ")}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span style={{ color: statusColor(d.status) }}>{d.status}</span>
+                        {d.approvedBy ? (
+                          <span className="block text-[12px]" style={{ color: "var(--text-subtle)" }}>
+                            approved by {d.approvedBy}
+                          </span>
+                        ) : null}
+                        {d.status === "REVOKED" || d.status === "REJECTED" ? (
+                          <span className="block text-[12px]" style={{ color: "var(--text-subtle)" }}>
+                            {when(d.revokedAt)} by {d.revokedBy}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pr-3">{when(d.createdAt)}</td>
+                      <td className="py-2 pr-3">{d.createdBy}</td>
+                      <td className="py-2 pr-3">{when(d.lastSeenAt)}</td>
+                      <td className="py-2">
+                        {d.status === "APPROVED" ? (
+                          <RevokeButton
+                            confirming={confirming === d.deviceId}
+                            isCurrent={d.deviceId === current}
+                            onClick={() => void revoke(d.deviceId)}
+                          />
+                        ) : null}
+                      </td>
+                    </tr>
+                    {d.credentials.length > 1 ? (
+                      <tr data-testid={`credentials-${d.deviceId}`}>
+                        <td colSpan={8} className="pb-3 pr-3">
+                          <CredentialList
+                            device={d}
+                            confirming={confirming}
+                            currentCredential={currentCredential}
+                            onRevoke={(credentialId) => void revokeCredential(d.deviceId, credentialId)}
+                          />
+                        </td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
                 ))}
               </tbody>
             </table>
@@ -324,6 +476,92 @@ function ThisDevice({ className = "" }: { className?: string }) {
     >
       This device
     </span>
+  );
+}
+
+/**
+ * A device's keys, when it has more than one: the browser the QR approved, and
+ * the app added to the Home Screen from it. Either can be removed by itself.
+ */
+function CredentialList({
+  device: d,
+  confirming,
+  currentCredential,
+  onRevoke,
+}: {
+  device: DeviceView;
+  confirming: string | null;
+  currentCredential: string | null;
+  onRevoke: (credentialId: string) => void;
+}) {
+  return (
+    <ul className="m-0 flex list-none flex-col gap-[6px] p-0 pl-4 text-[12px]" style={{ color: "var(--text-muted-cool)" }}>
+      {d.credentials.map((c) => {
+        const key = `${d.deviceId}/${c.credentialId}`;
+        return (
+          <li key={c.credentialId} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              <strong style={{ color: "var(--text-ink)" }}>
+                {c.kind === "ROOT" ? "Browser (enrolled by QR)" : "Installed app (added from the browser)"}
+              </strong>{" "}
+              · key {c.credentialId.slice(0, 12)} · {c.kind === "ROOT" ? "enrolled" : "added"} {when(c.createdAt)}
+              {c.kind === "APP" && (c.origin?.ip || c.origin?.edgeLocation)
+                ? ` · from ${[c.origin.ip, c.origin.edgeLocation].filter(Boolean).join(" · ")}`
+                : ""}
+            </span>
+            <span style={{ color: c.status === "ACTIVE" ? "var(--status-green-ink)" : "var(--status-red)" }}>
+              {c.status}
+              {c.status !== "ACTIVE" ? ` ${when(c.endedAt)}${c.endedBy ? ` by ${c.endedBy}` : ""}` : ""}
+            </span>
+            {isRecent(c) && c.status === "ACTIVE" ? (
+              <span className="rounded px-[6px] py-[1px] text-[11px] font-bold" style={{ background: "var(--brand-indigo-bg)", color: "var(--cockpit-indigo)" }}>
+                New
+              </span>
+            ) : null}
+            {c.credentialId === currentCredential ? (
+              <span className="rounded px-[6px] py-[1px] text-[11px] font-bold" style={{ background: "var(--brand-indigo-bg)", color: "var(--cockpit-indigo)" }}>
+                You are here
+              </span>
+            ) : null}
+            {c.status === "ACTIVE" && d.status === "APPROVED" ? (
+              <Button variant={confirming === key ? "primary" : "ghost"} onClick={() => onRevoke(c.credentialId)}>
+                {confirming === key
+                  ? c.credentialId === currentCredential
+                    ? "Remove this one? You will lose access here"
+                    : "Confirm remove"
+                  : c.kind === "ROOT"
+                    ? "Remove browser only"
+                    : "Remove app only"}
+              </Button>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * Where a request came from (`lib/devices/origin.ts`). Each line is what the
+ * server saw or what the device said; none of it is proof. `brief`: the
+ * address and region only, for a device already decided.
+ */
+function OriginRows({ origin, brief = false }: { origin: OriginView | null; brief?: boolean }) {
+  if (!origin) return brief ? null : <Row label="From">Not recorded</Row>;
+  return (
+    <>
+      <Row label="IP address">{origin.ip ?? "—"}</Row>
+      <Row label="Reached us via">{origin.edgeLocation ?? "—"}</Row>
+      {brief ? null : (
+        <>
+          <Row label="Time zone">{origin.timeZone ?? "—"}</Row>
+          <Row label="Language">{origin.language ?? "—"}</Row>
+          <Row label="Browser">
+            <span className="break-all">{origin.userAgent ?? "—"}</span>
+          </Row>
+        </>
+      )}
+    </>
   );
 }
 

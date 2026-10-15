@@ -19,7 +19,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { SessionPayload } from "@/lib/auth";
 import { requireAuth } from "@/lib/auth-middleware";
 import { requireApprovedDevice } from "./gate";
-import { normaliseEmail, type Device } from "./store";
+import { normaliseEmail, type Credential, type Device } from "./store";
 
 export const DEVICE_ADMIN_ENV = "DEVICE_ADMIN_EMAILS";
 
@@ -34,7 +34,7 @@ export function deviceAdminEmails(env: Record<string, string | undefined> = proc
 
 export async function requireDeviceAdmin(
   req: NextRequest,
-): Promise<{ admin: SessionPayload; device: Device | null } | NextResponse> {
+): Promise<{ admin: SessionPayload; device: Device | null; credential: Credential | null } | NextResponse> {
   const device = await requireApprovedDevice(req);
   if (device instanceof NextResponse) return device;
   const auth = await requireAuth(req);
@@ -45,5 +45,5 @@ export async function requireDeviceAdmin(
       { status: 403, headers: { "Cache-Control": "no-store" } },
     );
   }
-  return { admin: auth.user, device: device.device };
+  return { admin: auth.user, device: device.device, credential: device.credential };
 }

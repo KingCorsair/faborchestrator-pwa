@@ -2,7 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { deviceAudit } from "@/lib/devices/audit";
 import { verifyProof } from "@/lib/devices/challenges";
 import { clearEnrollmentCookie, pendingEnrollmentToken } from "@/lib/devices/credential";
+import { enrollmentNeedsApproval } from "@/lib/devices/enrollment";
 import { describeDevice } from "@/lib/devices/metadata";
+import { requestOrigin } from "@/lib/devices/origin";
 import { deviceStore, DeviceStoreUnavailableError } from "@/lib/devices/store";
 import { checkLoginAllowed, clientAddress, recordLoginFailure } from "@/lib/rate-limit";
 import { reportError } from "@/lib/report-error";
@@ -23,11 +25,14 @@ const NO_STORE = { "Cache-Control": "no-store" };
  *     it holds the private key (the challenge is bound to this enrollment and
  *     spent whatever the outcome).
  *  2. The store consumes the code **exactly once** (`completeEnrollment`, an
- *     `O_EXCL` marker per enrollment) and creates `DEVICE-nnn`, APPROVED,
- *     holding that public key.
- *  3. The answer is the device id. Nothing secret is issued: the device's
- *     secret is its private key, which never leaves it. No session is created
- *     and nobody is signed in.
+ *     `O_EXCL` marker per enrollment) and creates `DEVICE-nnn` holding that
+ *     public key: PENDING an administrator's approval (14 October 2026,
+ *     `DEVICE_ENROLLMENT_APPROVAL`), with where the request came from
+ *     (`lib/devices/origin.ts`) for the administrator deciding; or APPROVED at
+ *     once where approval is not required.
+ *  3. The answer is the device id and its status. Nothing secret is issued:
+ *     the device's secret is its private key, which never leaves it. No
+ *     session is created and nobody is signed in.
  */
 export async function POST(req: NextRequest) {
   if (sameOriginVerdict(req.headers, publicOrigin()) === "cross-site") {
@@ -79,11 +84,13 @@ export async function POST(req: NextRequest) {
       token,
       publicKeySpki: parsed.data.publicKeySpki,
       metadata: describeDevice(req.headers.get("user-agent"), parsed.data.installedApp === true),
+      requireApproval: enrollmentNeedsApproval(),
+      origin: requestOrigin(req, parsed.data),
     });
     if (result.kind !== "enrolled") return unusable(req, `link_${result.kind}`, address);
 
     const { device } = result;
-    deviceAudit("DEVICE_ENROLLED", {
+    deviceAudit(device.status === "PENDING" ? "DEVICE_APPROVAL_REQUESTED" : "DEVICE_ENROLLED", {
       deviceId: device.deviceId,
       enrollmentId: device.enrollmentId,
       site: device.site,
@@ -91,7 +98,10 @@ export async function POST(req: NextRequest) {
       address,
     });
     const res = NextResponse.json(
-      { ok: true, device: { deviceId: device.deviceId, friendlyName: device.friendlyName, keyFingerprint: device.keyFingerprint } },
+      {
+        ok: true,
+        device: { deviceId: device.deviceId, friendlyName: device.friendlyName, keyFingerprint: device.keyFingerprint, status: device.status },
+      },
       { headers: NO_STORE },
     );
     clearEnrollmentCookie(req, res);

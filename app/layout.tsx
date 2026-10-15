@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import { RegisterServiceWorker } from "@/components/register-sw";
+import { InstallGrantKeeper } from "@/components/devices/install-grant-keeper";
 import { IOSInstallHint } from "@/components/fab/ios-install-hint";
 import "./globals.css";
 
@@ -129,6 +130,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: CHUNK_RECOVERY }} />
         {children}
         <RegisterServiceWorker />
+        <InstallGrantKeeper />
         {/* Renders nothing except on an iOS device that has not installed the
             app and has not already dismissed it. See the component header for
             why Safari needs this and Chrome does not. */}

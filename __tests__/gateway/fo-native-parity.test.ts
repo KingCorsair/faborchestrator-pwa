@@ -161,8 +161,32 @@ describe("FO's idle expiry ends this app's session (fo-shell.js)", () => {
   });
 
   test("it signs out once, however many times it notices", async () => {
+    const page = loadShell();
+    await page.advance(4_000);
+    page.foClearsItsToken();
+    await page.advance(20_000);
+    assert.deepEqual(page.posts, ["/api/pwa/auth/logout"]);
+  });
+
+  test("a page that never had a bearer forgets the cookie and ends nobody's session (9 October 2026)", async () => {
+    // A newly installed iPhone Home Screen app: iOS copied the browser's
+    // session cookie into it and nothing else. Signing out here revoked the
+    // browser's session; the cookie is forgotten in this context instead.
     const page = loadShell({ tokenPresent: false });
     await page.advance(20_000);
+    assert.deepEqual(page.posts, ["/api/pwa/auth/forget"], "forgotten once, and never signed out");
+    assert.deepEqual(page.navigations, ["/login"]);
+    assert.deepEqual(page.bodies, [JSON.stringify({ reason: "fo_token_missing" })]);
+  });
+
+  test("a bearer that arrives after load and then goes is this page's own session: signed out", async () => {
+    const page = loadShell({ tokenPresent: false });
+    await page.advance(1_000);
+    page.store.set("llmatscale_auth_token", "pwa-bearer-1"); // FabOrchestrator finishes booting
+    await page.advance(5_000);
+    assert.deepEqual(page.posts, []);
+    page.foClearsItsToken();
+    await page.advance(1_500);
     assert.deepEqual(page.posts, ["/api/pwa/auth/logout"]);
   });
 

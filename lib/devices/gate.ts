@@ -9,11 +9,17 @@
  * does so **at sign-in**, before FabOrchestrator is asked about the password:
  *
  *   device proof (sign-in page + `/api/pwa/auth/login`)
- *     → FabOrchestrator sign-in → the session is bound to DEVICE-nnn on the
- *       server (`DeviceStore.bindSession`)
+ *     → FabOrchestrator sign-in → the session is bound, on the server, to
+ *       DEVICE-nnn and to the credential that proved itself
+ *       (`DeviceStore.bindSession`)
  *     → every later request on that session: this file checks that the
- *       session's device is still APPROVED
+ *       session's device is still APPROVED and its credential still ACTIVE
  *     → FabOrchestrator's own authorization → FabOrchestrator
+ *
+ * A device may hold more than one credential (its browser's key, and an
+ * installed app's: `lib/devices/install-grant.ts`). Each signs in for itself,
+ * so the browser's sessions and the app's are told apart, and revoking one
+ * credential stops that one's sessions only. Revoking the device stops all.
  *
  * A request without a session reaches nothing of FabOrchestrator's: documents
  * are sent to sign-in by the session gate in `proxy.ts`, where the device check
@@ -42,10 +48,12 @@ import { foTokenFrom } from "@/lib/faborch/session";
 import { clientAddress } from "@/lib/rate-limit";
 import { reportError } from "@/lib/report-error";
 import { deviceAudit } from "./audit";
+import { INSTALL_GRANT_PATH } from "./install-grant";
 import {
   deviceStore,
   DeviceStoreNotConfiguredError,
   DeviceStoreUnavailableError,
+  type Credential,
   type Device,
   type DeviceStore,
 } from "./store";
@@ -82,6 +90,14 @@ const EXEMPT_EXACT = new Set([
   "/login",
   "/api/pwa/auth/login",
   "/api/pwa/auth/logout",
+  // Dropping a session cookie this browser context cannot use (a cookie iOS
+  // copied into a newly installed app). Clears a cookie; returns nothing.
+  "/api/pwa/auth/forget",
+  // An installed app joining its device: it has no session of its own yet, and
+  // a copied one must not decide whether it may present its grant.
+  `${INSTALL_GRANT_PATH}/grant`,
+  `${INSTALL_GRANT_PATH}/attach/start`,
+  `${INSTALL_GRANT_PATH}/attach/complete`,
   "/offline",
   "/sw.js",
   "/manifest.webmanifest",
@@ -104,11 +120,13 @@ export type BlockReason =
   /** The session's device is no longer in the store. */
   | "unknown_device"
   | "revoked"
+  /** The device is approved, but the credential this session signed in with was revoked or superseded. */
+  | "credential_ended"
   | "not_configured"
   | "store_unavailable";
 
 export type DeviceCheck =
-  | { ok: true; device: Device }
+  | { ok: true; device: Device; credential: Credential }
   | { ok: false; reason: BlockReason; deviceId?: string }
   /** No session on the request: nothing to check here; sign-in will ask for a proof. */
   | { ok: "no-session" };
@@ -118,10 +136,12 @@ export async function checkSessionDevice(req: NextRequest, store?: DeviceStore):
   const foToken = foTokenFrom(req);
   if (!foToken) return { ok: "no-session" };
   try {
-    const device = await (store ?? deviceStore()).sessionDevice(foFingerprint(foToken));
-    if (!device) return { ok: false, reason: "unbound_session" };
+    const binding = await (store ?? deviceStore()).sessionBinding(foFingerprint(foToken));
+    if (!binding) return { ok: false, reason: "unbound_session" };
+    const { device, credential } = binding;
     if (device.status !== "APPROVED") return { ok: false, reason: "revoked", deviceId: device.deviceId };
-    return { ok: true, device };
+    if (credential.status !== "ACTIVE") return { ok: false, reason: "credential_ended", deviceId: device.deviceId };
+    return { ok: true, device, credential };
   } catch (error) {
     if (error instanceof DeviceStoreUnavailableError) {
       reportError("devices/gate", error);
@@ -147,6 +167,32 @@ export const DEVICE_NOT_APPROVED = {
 /** The refusal for a revoked device: sign-in and its challenge word it the same. */
 export function deviceRevoked(deviceId: string) {
   return { code: "device_revoked", error: `This device (${deviceId}) has been revoked. Contact your administrator.` } as const;
+}
+
+/** The refusal for a device waiting for an administrator's approval (14 October 2026). */
+export function devicePending(deviceId: string) {
+  return {
+    code: "device_pending",
+    error: `This device (${deviceId}) is waiting for an administrator to approve it.`,
+  } as const;
+}
+
+/** The refusal for whatever a device's status is, when it is not APPROVED. A rejected request reads as revoked. */
+export function deviceRefusal(device: { deviceId: string; status: string }) {
+  return device.status === "PENDING" ? devicePending(device.deviceId) : deviceRevoked(device.deviceId);
+}
+
+/**
+ * The refusal for one installed app's credential on a device that is still
+ * approved: removed by an administrator, or replaced by a newer install.
+ */
+export function credentialRevoked(deviceId: string, superseded: boolean) {
+  return {
+    code: "credential_revoked",
+    error: superseded
+      ? `This app was replaced by a newer install on ${deviceId}. Use the app you added most recently.`
+      : `This app's approval on ${deviceId} has been removed. Contact your administrator.`,
+  } as const;
 }
 
 /**
@@ -176,7 +222,9 @@ export function deviceBlockedResponse(req: NextRequest, reason: BlockReason): Ne
   // from here (their callers are API routes).
   const url = req.nextUrl.clone();
   url.pathname = DEVICE_BLOCKED_PAGE;
-  url.search = `?reason=${unavailable ? "unavailable" : reason === "revoked" ? "revoked" : "session"}`;
+  url.search = `?reason=${
+    unavailable ? "unavailable" : reason === "revoked" ? "revoked" : reason === "credential_ended" ? "credential" : "session"
+  }`;
   const res = NextResponse.redirect(url, 307);
   res.headers.set("Cache-Control", "no-store");
   return res;
@@ -231,8 +279,10 @@ export async function deviceGate(req: NextRequest, now: number = Date.now()): Pr
  * `device` is null. A request with no session is refused: the routes that call
  * this need one.
  */
-export async function requireApprovedDevice(req: NextRequest): Promise<{ device: Device | null } | NextResponse> {
-  if (deviceGateMode() === "off") return { device: null };
+export async function requireApprovedDevice(
+  req: NextRequest,
+): Promise<{ device: Device | null; credential: Credential | null } | NextResponse> {
+  if (deviceGateMode() === "off") return { device: null, credential: null };
   const check = await checkSessionDevice(req);
   if (check.ok === "no-session") {
     return NextResponse.json(DEVICE_NOT_APPROVED, { status: 403, headers: { "Cache-Control": "no-store" } });
@@ -241,5 +291,5 @@ export async function requireApprovedDevice(req: NextRequest): Promise<{ device:
     logBlocked(req, check.reason, check.deviceId, Date.now());
     return deviceBlockedResponse(req, check.reason);
   }
-  return { device: check.device };
+  return { device: check.device, credential: check.credential };
 }

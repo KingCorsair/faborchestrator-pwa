@@ -16,6 +16,12 @@ import { MAX_REQUEST_BODY_BYTES } from "./gateway/body-limit";
 export const DeviceProofSchema = z
   .object({
     deviceId: z.string().regex(/^DEVICE-\d{3,9}$/),
+    /**
+     * Which of the device's keys is proving itself: the key's fingerprint.
+     * Absent from pages loaded before 9 October 2026, which means the key the
+     * device enrolled with.
+     */
+    credentialId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
     challengeId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
     signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
   })
@@ -271,12 +277,36 @@ export const CompleteEnrollmentSchema = z
     signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
     /** Whether the page was opened in the installed app (display-mode: standalone). Descriptive only. */
     installedApp: z.boolean().optional(),
+    /** The device's own time zone and language, shown to the administrator approving it. Descriptive only. */
+    timeZone: z.string().trim().max(64).optional(),
+    language: z.string().trim().max(35).optional(),
   })
   .strict();
 
 export const DeviceChallengeSchema = z
   .object({
     deviceId: z.string().regex(/^DEVICE-\d{3,9}$/),
+    credentialId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
+    /** `sign-in` unless said otherwise. `grant`: the device's enrolling key asking for an install grant. */
+    purpose: z.enum(["sign-in", "grant"]).optional(),
+  })
+  .strict();
+
+/**
+ * An installed app using an install grant (`lib/devices/install-grant.ts`):
+ * its new public key and its signature over the attach challenge. The grant
+ * itself is in an httpOnly cookie, never in the body.
+ */
+export const AttachCredentialSchema = z
+  .object({
+    challengeId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
+    publicKeySpki: z.string().regex(/^[A-Za-z0-9_-]{80,400}$/),
+    signature: z.string().regex(/^[A-Za-z0-9_-]{80,100}$/),
+    /** Whether the page is running as an installed app. Descriptive only. */
+    installedApp: z.boolean().optional(),
+    /** The device's own time zone and language, kept with the attachment. Descriptive only. */
+    timeZone: z.string().trim().max(64).optional(),
+    language: z.string().trim().max(35).optional(),
   })
   .strict();
 

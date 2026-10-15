@@ -2,10 +2,12 @@
  * The shell for embedded FabOrchestrator pages.
  *
  * Added to FabOrchestrator's own documents by the gateway
- * (`lib/gateway/html-inject.ts`). It contributes four things:
+ * (`lib/gateway/html-inject.ts`). It contributes five things:
  *
  *   · the single-sign-out watcher, which ends this app's session when
  *     FabOrchestrator ends its own
+ *   · the install grant an approved browser keeps ready, so that an app added
+ *     to the Home Screen from one of these pages joins the same device
  *   · the PWA service-worker registration
  *   · for device administrators only, a Devices button that opens this app's
  *     own `/device-admin` (13 October; see "The Devices button" below)
@@ -103,6 +105,26 @@
    * token mean sign-out. A replacement counts from the moment this runs. */
   var booted = false;
 
+  /* ── A cookie this page never had the bearer for is forgotten, not ended ──
+   *
+   * (9 October 2026.) On an iPhone, "Add to Home Screen" copies the browser's
+   * cookies into the new app and nothing else. The app then opens here with
+   * the browser's session cookie and **no bearer in its storage at all**: a
+   * session it never signed in with. Calling sign-out for it revoked that
+   * session at FabOrchestrator, so opening the installed app signed the
+   * browser out.
+   *
+   * The two cases are told apart by what this page has seen. `known` is the
+   * bearer this page loaded with or has since seen. If there has never been
+   * one, the cookie was not this context's: it is forgotten here
+   * (`/api/pwa/auth/forget` clears the cookie and revokes nothing) and the
+   * operator goes to sign-in. If there was one and it is now gone, that is a
+   * real end of this context's own session, and it is ended as before. */
+  function tokenGone() {
+    if (known) endSession("/api/pwa/auth/logout", "fo_signed_out");
+    else endSession("/api/pwa/auth/forget", "fo_token_missing");
+  }
+
   /* One look at the token: gone → sign out; replaced → reload; else remember. */
   function checkToken() {
     var token = tokenNow();
@@ -111,7 +133,7 @@
       // A page already on its way to a reload posts no sign-out: the token it
       // sees missing may be FO's wrapper reacting to this page's own stale
       // request, and the reloaded page will judge for itself (RP2-D14).
-      if (booted && !reloading) endSession();
+      if (booted && !reloading) tokenGone();
       return;
     }
     if (known && token !== known) return reloadForNewSession();
@@ -148,17 +170,18 @@
   /* The plan's client order (RP2 `endClientSession`, mirrored from
    * `lib/end-client-session.ts`): tell the server, forget this device's
    * session, then a whole-document navigation to sign-in. Nothing waits on the
-   * network: the request is `keepalive`, so it survives the navigation. */
-  function endSession() {
+   * network: the request is `keepalive`, so it survives the navigation.
+   * `path` is sign-out, or forget for a cookie that was never this page's. */
+  function endSession(path, reason) {
     if (signingOut) return;
     signingOut = true;
     try {
-      fetch("/api/pwa/auth/logout", {
+      fetch(path, {
         method: "POST",
         keepalive: true,
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "fo_signed_out" }),
+        body: JSON.stringify({ reason: reason }),
       }).catch(function () {});
     } catch (_error) {
       /* the navigation below still happens */
@@ -184,7 +207,7 @@
     window.addEventListener("storage", function (e) {
       if (e.key !== FO_TOKEN_KEY) return;
       if (!e.newValue) {
-        if (booted && !reloading) endSession();
+        if (booted && !reloading) tokenGone();
         return;
       }
       if (known && e.newValue !== known) reloadForNewSession();
@@ -205,6 +228,202 @@
 
   try {
     watchSession();
+  } catch (_error) {
+    /* Never worth an error on FabOrchestrator's page. */
+  }
+
+  /* ── An install grant, kept ready on FabOrchestrator's pages too ────────
+   *
+   * (9 October 2026; `lib/devices/install-grant.ts`.) On an iPhone the app
+   * added to the Home Screen gets storage of its own, without the device key
+   * its browser enrolled with, and used to need a second enrollment QR. iOS
+   * does copy the browser's cookies into the new app, so an approved browser
+   * keeps a one-time **install grant** among them, and the app uses it to
+   * register a key of its own under the same device.
+   *
+   * Nothing announces "Add to Home Screen", so the grant has to be there
+   * already, and an operator is on one of FabOrchestrator's pages when they
+   * tap it. This is `keepInstallGrant` from `lib/devices/keystore.ts`, by
+   * hand, because that module is not on these pages: read this browser's
+   * device key from the same IndexedDB record, sign the server's `grant`
+   * challenge with it, and let the server set the grant in an httpOnly cookie
+   * this code never sees. A test holds the two copies' constants together.
+   *
+   * It does nothing unless this is a browser tab an app would be installed
+   * from with separate storage, a device key is stored here, and the grant
+   * last obtained is close to running out. A page returning to the foreground
+   * always asks (`force`): an app may have used the grant meanwhile, and the
+   * server then issues the next one. The server gives a grant only to the key
+   * the device was enrolled with, whatever this page claims. */
+  var GRANT_UNTIL_KEY = "fo_install_grant_until";
+  var GRANT_RENEW_BELOW_MS = 30 * 24 * 60 * 60 * 1000;
+  var GRANT_CHECK_EVERY_MS = 60 * 1000;
+  var grantBusy = false;
+  var grantStopped = false;
+
+  function mayInstallSeparately() {
+    try {
+      var ua = String(navigator.userAgent || "");
+      var standalone =
+        (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches) ||
+        navigator.standalone === true;
+      if (standalone) return false;
+      if (/iPhone|iPad|iPod/.test(ua)) return true;
+      if (!/Macintosh/.test(ua)) return false;
+      if ((navigator.maxTouchPoints || 0) > 1) return true;
+      return /Safari\//.test(ua) && !/Chrome|Chromium|Edg\//.test(ua);
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  function toB64url(buffer) {
+    var bytes = new Uint8Array(buffer);
+    var text = "";
+    for (var i = 0; i < bytes.length; i += 1) text += String.fromCharCode(bytes[i]);
+    return btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function fromB64url(text) {
+    var bin = atob(String(text).replace(/-/g, "+").replace(/_/g, "/"));
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i += 1) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  /* This browser's device key record, or null. Opened the way keystore.ts
+   * opens it, so a first touch here leaves the database in the same shape. */
+  function readDeviceKey() {
+    return new Promise(function (resolve) {
+      var request;
+      try {
+        request = indexedDB.open("fo-device", 1);
+      } catch (_error) {
+        resolve(null);
+        return;
+      }
+      request.onupgradeneeded = function () {
+        if (!request.result.objectStoreNames.contains("credential")) {
+          request.result.createObjectStore("credential", { keyPath: "id" });
+        }
+      };
+      request.onerror = function () {
+        resolve(null);
+      };
+      request.onblocked = function () {
+        resolve(null);
+      };
+      request.onsuccess = function () {
+        var db = request.result;
+        try {
+          var get = db.transaction("credential", "readonly").objectStore("credential").get("device");
+          get.onsuccess = function () {
+            db.close();
+            resolve(get.result || null);
+          };
+          get.onerror = function () {
+            db.close();
+            resolve(null);
+          };
+        } catch (_error) {
+          db.close();
+          resolve(null);
+        }
+      };
+    });
+  }
+
+  function postJson(path, body) {
+    return fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function (res) {
+      return res
+        .json()
+        .catch(function () {
+          return {};
+        })
+        .then(function (json) {
+          return { status: res.status, body: json || {} };
+        });
+    });
+  }
+
+  function keepInstallGrant(force) {
+    if (grantBusy || grantStopped || signingOut || document.hidden) return;
+    if (!mayInstallSeparately()) return;
+    if (typeof indexedDB === "undefined" || typeof crypto === "undefined" || !crypto.subtle) return;
+    var until = 0;
+    try {
+      until = Number(window.localStorage.getItem(GRANT_UNTIL_KEY)) || 0;
+    } catch (_error) {
+      /* unreadable: ask, and the server keeps a grant that is still fresh */
+    }
+    if (force !== true && until - Date.now() > GRANT_RENEW_BELOW_MS) return;
+
+    grantBusy = true;
+    readDeviceKey()
+      .then(function (record) {
+        if (!record || !record.deviceId || !record.privateKey || typeof record.publicKeySpki !== "string") return null;
+        return crypto.subtle.digest("SHA-256", fromB64url(record.publicKeySpki)).then(function (digest) {
+          var bytes = new Uint8Array(digest);
+          var credentialId = "";
+          for (var i = 0; i < 16; i += 1) credentialId += ("0" + bytes[i].toString(16)).slice(-2);
+          var who = { deviceId: record.deviceId, credentialId: credentialId };
+          return postJson("/api/pwa/device-auth/challenge", { deviceId: who.deviceId, credentialId: credentialId, purpose: "grant" }).then(
+            function (challenge) {
+              // Refused: not the enrolling key, or no longer approved. Stop asking.
+              if (challenge.status === 403 || challenge.status === 404) {
+                grantStopped = true;
+                return null;
+              }
+              if (challenge.status !== 200 || !challenge.body.challenge || !challenge.body.challengeId) return null;
+              return crypto.subtle
+                .sign({ name: "ECDSA", hash: "SHA-256" }, record.privateKey, fromB64url(challenge.body.challenge))
+                .then(function (signature) {
+                  return postJson("/api/pwa/device-credentials/grant", {
+                    deviceId: who.deviceId,
+                    credentialId: credentialId,
+                    challengeId: challenge.body.challengeId,
+                    signature: toB64url(signature),
+                  });
+                })
+                .then(function (grant) {
+                  if (grant.status === 403 || grant.status === 404) {
+                    grantStopped = true;
+                    return null;
+                  }
+                  if (grant.status !== 200 || !grant.body.expiresAt) return null;
+                  try {
+                    window.localStorage.setItem(GRANT_UNTIL_KEY, String(new Date(grant.body.expiresAt).getTime()));
+                  } catch (_error) {
+                    /* the next page asks again */
+                  }
+                  return null;
+                });
+            },
+          );
+        });
+      })
+      .catch(function () {
+        /* the network, or storage: the next tick tries again */
+      })
+      .then(function () {
+        grantBusy = false;
+      });
+  }
+
+  try {
+    keepInstallGrant(false);
+    document.addEventListener("visibilitychange", function () {
+      keepInstallGrant(true);
+    });
+    setInterval(function () {
+      keepInstallGrant(false);
+    }, GRANT_CHECK_EVERY_MS);
   } catch (_error) {
     /* Never worth an error on FabOrchestrator's page. */
   }

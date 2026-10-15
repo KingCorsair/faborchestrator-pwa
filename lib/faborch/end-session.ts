@@ -18,6 +18,18 @@
  *     fingerprint prefix, never the token. A failed revoke is not retried:
  *     FabOrchestrator's own idle rule refuses the token on any later use.
  *
+ * ── Forgetting is not ending (9 October 2026) ───────────────────────────────
+ * One case is deliberately **not** an exit: a browser context that holds a
+ * session cookie it never signed in with. On an iPhone, adding the app to the
+ * Home Screen copies the browser's cookies into the new app, so the app opens
+ * holding the browser's FabOrchestrator cookie and nothing else of that
+ * session (no bearer, no device key). Ending that session would sign the
+ * browser out because its owner opened the app. `forgetServerSession` clears
+ * the cookie from the context that cannot use it and leaves the session alive
+ * for the one that can. Nothing is lost by it: the cookie alone opens no
+ * FabOrchestrator data (the gateway needs the matching bearer beside it), and
+ * a session nobody uses is ended by FabOrchestrator's own idle rule.
+ *
  * Kept apart from `lib/faborch/session.ts` on purpose: that file is imported by
  * `proxy.ts` for the cookie name, and the proxy has no business loading the
  * FabOrchestrator client.
@@ -54,6 +66,20 @@ export type SessionEndReason =
   /** The device is not (or no longer) approved: its blocked page ends the session. */
   | "device_blocked";
 
+/** Why a context dropped a session cookie without ending the session (`forgetServerSession`). */
+export type SessionForgetReason =
+  /** A page loaded with a session cookie and no bearer in its storage: the cookie was not this context's. */
+  | "token_missing"
+  /** The same, seen on one of FabOrchestrator's own pages. */
+  | "fo_token_missing"
+  /** The device-check page, for a session that is healthy and belongs to a credential this context did not prove. */
+  | "device_blocked"
+  /** A sign-in overwrote a cookie that belongs to a different credential of the device. */
+  | "replaced_foreign";
+
+/** The reasons a client may name when it asks the server to forget a cookie. */
+export const CLIENT_FORGET_REASONS: ReadonlySet<SessionForgetReason> = new Set(["token_missing", "fo_token_missing"]);
+
 /** The reasons a client may name when it asks the server to end a session. */
 export const CLIENT_END_REASONS: ReadonlySet<SessionEndReason> = new Set([
   "user",
@@ -73,6 +99,20 @@ export const CLIENT_END_REASONS: ReadonlySet<SessionEndReason> = new Set([
 export function endServerSession(res: NextResponse, foToken: string | null, reason: SessionEndReason): void {
   clearFoTokenCookie(res);
   if (foToken && !recentlyRevoked(foToken)) afterResponse(() => revokeFoSession(foToken, reason));
+}
+
+/**
+ * Clear the session cookie from this browser context **without** revoking the
+ * session at FabOrchestrator. See "Forgetting is not ending" above.
+ */
+export function forgetServerSession(res: NextResponse, foToken: string | null, reason: SessionForgetReason): void {
+  clearFoTokenCookie(res);
+  if (foToken) forgetFoSession(foToken, reason);
+}
+
+/** The log line for a forgotten cookie: the fingerprint prefix, never the token. Nothing is revoked. */
+export function forgetFoSession(foToken: string, reason: SessionForgetReason): void {
+  logEvent("info", "session_forgotten", { reason, sessionFp: foFingerprint(foToken).slice(0, 8) });
 }
 
 /**

@@ -10,7 +10,7 @@
  *  - 32 bytes from `crypto.randomBytes`, valid for `CHALLENGE_TTL_MS`;
  *  - usable **once**: taken out of the map before anything is checked, so a
  *    failed attempt spends it too and a replayed signature is refused;
- *  - bound to one purpose (`enroll` or `sign-in`) and one subject (the
+ *  - bound to one purpose and one subject (`ChallengePurpose`, below: the
  *    enrollment being used, or the device signing in), so a proof for one
  *    cannot be spent on another.
  *
@@ -27,7 +27,19 @@ import { createHash, createPublicKey, randomBytes, verify, type KeyObject } from
 export const CHALLENGE_TTL_MS = 60_000;
 const MAX_OPEN = 5_000;
 
-export type ChallengePurpose = "enroll" | "sign-in";
+/**
+ * What a challenge may be spent on, and what it is bound to (its subject):
+ *
+ *   enroll   the enrollment being used          signed by the new device key
+ *   sign-in  the credential signing in          signed by that credential's key
+ *   grant    the ROOT credential asking for an  signed by that ROOT's key
+ *            install grant
+ *   attach   the install grant being used       signed by the new app key
+ */
+export type ChallengePurpose = "enroll" | "sign-in" | "grant" | "attach";
+
+/** A credential's id: its public key's fingerprint (`keyFingerprint`). */
+export const CREDENTIAL_ID = /^[0-9a-f]{32}$/;
 
 interface OpenChallenge {
   bytes: Buffer;

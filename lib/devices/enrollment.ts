@@ -18,6 +18,23 @@ import { DEVICE_ENROLL_PAGE } from "./gate";
 
 export const ENROLLMENT_TTL_ENV = "DEVICE_ENROLLMENT_TTL_MINUTES";
 
+export const ENROLLMENT_APPROVAL_ENV = "DEVICE_ENROLLMENT_APPROVAL";
+
+/**
+ * Whether a device enrolled with a QR waits for an administrator's approval
+ * (14 October 2026). Unset or `manual`: it does; the device is PENDING until
+ * approved on `/device-admin`. `auto`: the QR approves it on its own, as
+ * before. Anything else throws rather than being guessed at. Enrollments the
+ * bootstrap CLI issues are approved by being used either way
+ * (`BOOTSTRAP_ISSUER`, `lib/devices/store.ts`).
+ */
+export function enrollmentNeedsApproval(env: Record<string, string | undefined> = process.env): boolean {
+  const raw = (env[ENROLLMENT_APPROVAL_ENV] ?? "").trim().toLowerCase();
+  if (raw === "" || raw === "manual") return true;
+  if (raw === "auto") return false;
+  throw new Error(`${ENROLLMENT_APPROVAL_ENV} must be "manual" or "auto".`);
+}
+
 /** Ten minutes unless configured; 1 to 60. An unsound value throws rather than being guessed at. */
 export function enrollmentTtlMs(env: Record<string, string | undefined> = process.env): number {
   const raw = env[ENROLLMENT_TTL_ENV]?.trim();

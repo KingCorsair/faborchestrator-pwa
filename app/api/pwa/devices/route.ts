@@ -14,11 +14,20 @@ export async function GET(req: NextRequest) {
   const auth = await requireDeviceAdmin(req);
   if (auth instanceof NextResponse) return auth;
   try {
-    const devices = await deviceStore().listDevices();
+    const store = deviceStore();
+    const devices = await store.listDevices();
+    // Each device with its credentials: the browser's key, and an installed
+    // app's if one was attached (`lib/devices/install-grant.ts`).
+    const views = await Promise.all(devices.map(async (d) => deviceView(d, await store.credentialsOf(d.deviceId))));
     // Which row is the device asking, so the page can mark it and warn before
-    // an administrator revokes the device they are using (7 October 2026).
+    // an administrator revokes the device they are using (7 October 2026), and
+    // which of its credentials this session signed in with.
     return NextResponse.json(
-      { devices: devices.map(deviceView), currentDeviceId: auth.device?.deviceId ?? null },
+      {
+        devices: views,
+        currentDeviceId: auth.device?.deviceId ?? null,
+        currentCredentialId: auth.credential?.credentialId ?? null,
+      },
       { headers: NO_STORE },
     );
   } catch (error) {

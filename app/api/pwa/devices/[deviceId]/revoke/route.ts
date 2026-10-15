@@ -18,6 +18,9 @@ const NO_STORE = { "Cache-Control": "no-store" };
  * FabOrchestrator session is ended when the phone next opens anything, by the
  * blocked page's sign-out (see `app/device-blocked`).
  *
+ * A device still waiting for approval is refused instead: REJECTED (14
+ * October 2026), and its page tells the person so.
+ *
  * Idempotent: revoking a revoked device answers 200 and keeps the first
  * revocation's time and administrator.
  */
@@ -57,7 +60,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ deviceId: 
       return NextResponse.json({ code: "not_found", error: "No such device." }, { status: 404, headers: NO_STORE });
     }
     if (result.changed) {
-      deviceAudit("DEVICE_REVOKED", {
+      // A PENDING device revoked is a refused request: REJECTED.
+      deviceAudit(result.device.status === "REJECTED" ? "DEVICE_REJECTED" : "DEVICE_REVOKED", {
         deviceId,
         site: result.device.site,
         actor: auth.admin.email,

@@ -117,7 +117,7 @@ describe("sessions bound to devices", () => {
   test("a bound session names its device while the binding lasts; unknown or expired sessions name nothing", async () => {
     const { device } = await enroll();
     const now = Date.now();
-    await store.bindSession(SESSION_FP, device.deviceId, now + 60_000, now);
+    await store.bindSession(SESSION_FP, device.deviceId, now + 60_000, { now });
     assert.equal((await store.sessionDevice(SESSION_FP, now))?.deviceId, device.deviceId);
     assert.equal(await store.sessionDevice(SESSION_FP, now + 60_001), null);
     assert.equal(await store.sessionDevice("ZzZzZzZzZzZzZzZzZzZzZz", now), null);

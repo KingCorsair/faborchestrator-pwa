@@ -48,6 +48,27 @@ function blockedPageFor(reason: string): string {
   return "/device-blocked";
 }
 
+/** How long after taking a signed-in visitor on by itself the page shows the form instead. */
+const AUTO_CONTINUE_WINDOW_MS = 30_000;
+const AUTO_CONTINUE_KEY = "pwa-login-auto-continued-at";
+
+/**
+ * Whether the sign-in page may take a signed-in visitor on by itself now: at
+ * most once in `AUTO_CONTINUE_WINDOW_MS`, so a destination that ever sent them
+ * straight back here gets the form rather than a loop. Storage that cannot be
+ * used answers no; the form is the safe default.
+ */
+function mayAutoContinue(now: number = Date.now()): boolean {
+  try {
+    const last = Number(window.sessionStorage.getItem(AUTO_CONTINUE_KEY) ?? 0);
+    if (last && now - last < AUTO_CONTINUE_WINDOW_MS) return false;
+    window.sessionStorage.setItem(AUTO_CONTINUE_KEY, String(now));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }: LoginPageProps) {
   const router = useRouter();
   /*
@@ -134,15 +155,36 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
   }, [deviceRequired]);
 
   /**
-   * Whether a session already exists on this device, once checked.
-   * `null` while unknown — the notice must not flash before we know.
+   * True once a working session has been found and the page is taking the
+   * visitor on into FabOrchestrator (below); the form is not shown meanwhile.
    */
-  const [existing, setExisting] = React.useState<{ email: string; faborch: boolean } | null>(null);
+  const [continuing, setContinuing] = React.useState(false);
 
   /**
-   * A visitor who already holds a session is **told**, never bounced.
+   * A session that already works goes straight in; nothing asks
+   * (16 October 2026).
    *
-   * ── The defect this replaces ────────────────────────────────────────────────
+   * Until then a visitor holding a session was shown "You are already signed
+   * in … Continue without signing in again". People met it right after signing
+   * in and read it as a second sign-in step, so it is gone. What replaced it
+   * acts only on the server's answer, never on a token merely being present,
+   * which is what made the silent redirect described below unsafe:
+   *
+   *   401                      stale, expired or another app's token: ended,
+   *                            and the form is the clean sign-in it looks like
+   *   200 with `faborch: true` the session is valid **and** FabOrchestrator's
+   *                            cookie is attached — exactly what the proxy's
+   *                            gate lets through — so the visitor continues to
+   *                            where they were going and lands there
+   *   200, `faborch: false`    half a session (trap 2 below): ended, form shown
+   *   anything else, offline   says nothing about the session: form shown
+   *
+   * It waits for the device check, so a device that may not sign in is sent
+   * to its own page rather than on into the app; and it continues at most once
+   * in `AUTO_CONTINUE_WINDOW_MS`, so if the destination ever sent the visitor
+   * back here, the form would show instead of a loop.
+   *
+   * ── The defect the old notice replaced ──────────────────────────────────────
    * This used to be `if (localStorage.getItem(AUTH_TOKEN_KEY)) router.replace(next)`
    * — a silent redirect away from the form the moment any token was present.
    * Three ways that trapped somebody, all of them reported as "sign-in does not
@@ -163,14 +205,15 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
    *     destination bounced them back here, and the form vanished again.
    *
    * The guard's intent was sound — do not show a sign-in form to somebody who
-   * does not need one — but a silent redirect is the wrong shape for it: it is
-   * invisible, it cannot be argued with, and it fails closed on the one person
-   * who needs the form most. Now the form always works, and an existing session
-   * is surfaced as a notice offering to continue.
+   * does not need one — and the answer above keeps that intent without the
+   * traps: each of the three is a case the server answers 401 or
+   * `faborch: false`, and neither continues.
    */
   React.useEffect(() => {
+    if (device === "checking") return;
+    if (deviceRequired && device === null) return;
     // Storage that throws (site data blocked, some private modes) holds no
-    // session to surface; the form below still works and says why if a
+    // session to continue with; the form below still works and says why if a
     // sign-in cannot be kept. Guard ported from the chetan branch (e843b9c).
     const token = readStored(AUTH_TOKEN_KEY);
     if (!token) return;
@@ -199,16 +242,19 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
           return;
         }
         // Anything else (the server unwell) says nothing about the session:
-        // show no notice, and keep what is stored.
+        // keep what is stored, and the form works.
         if (!res.ok) return;
-        const data = (await res.json()) as {
-          user?: { email?: string };
-          faborch?: boolean;
-        };
-        setExisting({
-          email: data.user?.email ?? "this device",
-          faborch: data.faborch === true,
-        });
+        const data = (await res.json()) as { faborch?: boolean };
+        if (cancelled || readStored(AUTH_TOKEN_KEY) !== token) return;
+        if (data.faborch !== true) {
+          // A session of this app's with no FabOrchestrator token beside it
+          // reaches nothing; end it so the form is a clean sign-in.
+          endClientSession("pwa_expired", { navigate: false });
+          return;
+        }
+        if (!mayAutoContinue()) return;
+        setContinuing(true);
+        router.replace(next);
       } catch {
         // Offline, or the server is down. Say nothing rather than claim a
         // session state we could not check; the form still works.
@@ -218,7 +264,7 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [device, deviceRequired, next, router]);
 
   const formRef = React.useRef<HTMLFormElement>(null);
 
@@ -371,25 +417,28 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
       </aside>
 
       {/* Form — or, until the server has said this device may sign in, only
-          the device check. */}
-      <main className="flex items-center justify-center p-6">
-        {device === "checking" ? (
+          the device check; or, for a visitor already signed in, only the note
+          that FabOrchestrator is opening. */}
+      <main className="flex items-center justify-center px-4 py-6 sm:p-6">
+        {device === "checking" || continuing ? (
           <div
             role="status"
             aria-live="polite"
-            data-testid="device-checking"
-            className="fab-card flex w-full max-w-[440px] flex-col gap-[12px]"
-            style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
+            data-testid={continuing ? "continuing" : "device-checking"}
+            className="fab-card flex w-full max-w-[440px] flex-col gap-[12px] px-[22px] py-[28px] sm:px-[38px] sm:py-[40px]"
+            style={{ boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
           >
             <span
               className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[12px] font-extrabold tracking-[0.05em]"
               style={{ borderRadius: 20, color: "var(--cockpit-indigo)", background: "var(--brand-indigo-bg)" }}
             >
-              DEVICE CHECK
+              {continuing ? "SIGNED IN" : "DEVICE CHECK"}
             </span>
-            <h1 className="text-[22px]">Checking this device…</h1>
+            <h1 className="text-[22px]">{continuing ? "Opening FabOrchestrator…" : "Checking this device…"}</h1>
             <p className="m-0 text-[14px] leading-[1.6]" style={{ color: "var(--text-muted-cool)" }}>
-              FabOrchestrator is confirming that this device is approved.
+              {continuing
+                ? "You are already signed in on this device."
+                : "FabOrchestrator is confirming that this device is approved."}
             </p>
           </div>
         ) : (
@@ -412,8 +461,8 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
               The real prevention is `hydrated` on the button below.
             */
             method="post"
-            className="fab-card flex w-full max-w-[440px] flex-col gap-[18px]"
-            style={{ padding: "40px 38px", boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
+            className="fab-card flex w-full max-w-[440px] flex-col gap-[18px] px-[22px] py-[28px] sm:px-[38px] sm:py-[40px]"
+            style={{ boxShadow: "0 24px 60px rgba(16,21,58,.16)" }}
           >
             <span
               className="inline-flex w-fit items-center gap-2 px-[13px] py-[7px] text-[12px] font-extrabold tracking-[0.05em]"
@@ -430,59 +479,14 @@ export function LoginPage({ next = DEFAULT_RETURN_PATH, deviceRequired = false }
                 screen never said so. Same account, different front door — and a
                 visitor who does not know which one they have opened cannot tell
                 from anything else here. */}
-            <h1 className="text-[26px]">Sign in to FabOrchestrator PWA</h1>
+            <h1 className="text-[24px] leading-[1.15] sm:text-[26px]">Sign in to FabOrchestrator PWA</h1>
             {device?.approved ? (
               <p data-testid="approved-device" className="m-0 -mt-[8px] text-[12px]" style={{ color: "var(--text-muted-cool)" }}>
                 Approved device: <strong>{device.id}</strong>
               </p>
             ) : null}
 
-            {/*
-              An existing session, surfaced rather than acted on. The two states
-              differ in what the visitor most likely came here to do:
 
-              - no FabOrchestrator session: they are almost certainly here to add
-                one, because that is the only thing this form gives them that they
-                do not already have. Lead with that.
-              - a full session: they may have arrived by habit or by a stale
-                bookmark. Offer to continue, but never take the decision for them.
-
-              Either way the form below stays usable, which is the whole point of
-              the change: signing in as somebody else must always be possible.
-            */}
-            {existing ? (
-              <div
-                className="flex flex-col gap-[10px] px-[15px] py-[13px] text-[13px]"
-                style={{
-                  borderRadius: 12,
-                  background: existing.faborch ? "var(--brand-indigo-bg)" : "var(--cockpit-warn-bg, #FFF6E5)",
-                  color: "var(--text-ink)",
-                }}
-              >
-                <span>
-                  {existing.faborch ? (
-                    <>
-                      You are already signed in as <strong>{existing.email}</strong>, with
-                      FabOrchestrator access.
-                    </>
-                  ) : (
-                    <>
-                      You are signed in as <strong>{existing.email}</strong>, but this session has
-                      no FabOrchestrator access — agents will not accept a question. Sign in
-                      below with your FabOrchestrator account to add it.
-                    </>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => router.replace(next)}
-                  className="w-fit cursor-pointer border-0 bg-transparent p-0 text-[13px] font-bold underline"
-                  style={{ color: "var(--cockpit-indigo)" }}
-                >
-                  Continue without signing in again
-                </button>
-              </div>
-            ) : null}
 
             {/*
               Says which credential to use, on the screen where it is typed.

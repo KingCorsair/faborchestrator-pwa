@@ -65,10 +65,39 @@ export function IOSInstallHint() {
     }
   };
 
+  /*
+    Room for the hint at the foot of the page, while it shows (16 October 2026).
+
+    It is fixed over the bottom of the screen, and pages end at the bottom of
+    the screen: on a phone it covered the last controls of whatever page was
+    open — the Sign in button's lower edge, and on the device-check page the
+    enrollment-link field and its button, with no way to scroll them clear. So
+    the body's bottom padding becomes the hint's height (which includes the
+    home-indicator inset the body otherwise reserves) and goes back when the
+    hint is dismissed; every page can then scroll its last control above it.
+  */
+  const panel = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (!show) return;
+    const body = document.body;
+    const fit = () => {
+      const height = panel.current?.offsetHeight ?? 0;
+      // The hint's own height already includes the home-indicator inset.
+      body.style.paddingBottom = `${height}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => {
+      window.removeEventListener("resize", fit);
+      body.style.paddingBottom = "";
+    };
+  }, [show]);
+
   if (!show) return null;
 
   return (
     <div
+      ref={panel}
       // `fab` so the design tokens resolve — this renders from the root layout,
       // outside the `.fab` subtree every screen sits in.
       className="fab fixed inset-x-0 bottom-0 z-40 flex justify-center px-3"

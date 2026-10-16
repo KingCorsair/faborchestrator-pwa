@@ -2,7 +2,7 @@
  * The shell for embedded FabOrchestrator pages.
  *
  * Added to FabOrchestrator's own documents by the gateway
- * (`lib/gateway/html-inject.ts`). It contributes five things:
+ * (`lib/gateway/html-inject.ts`). It contributes six things:
  *
  *   · the single-sign-out watcher, which ends this app's session when
  *     FabOrchestrator ends its own
@@ -11,9 +11,12 @@
  *   · the PWA service-worker registration
  *   · for device administrators only, a Devices button that opens this app's
  *     own `/device-admin` (13 October; see "The Devices button" below)
- *   · on a phone's conversation pages, a Back arrow to FabOrchestrator's
- *     overview, where FabOrchestrator shows none (13 October; see "Back, on a
- *     phone's conversation pages" at the end)
+ *   · on a phone's conversation pages, a small bar with a menu button that
+ *     opens FabOrchestrator's own sidebar and a Back arrow to its overview,
+ *     where FabOrchestrator shows neither (13 and 16 October; see "Phone
+ *     navigation on conversation pages")
+ *   · on a phone, a composer "+" menu whose Connectors submenu stays on screen
+ *     and answers a tap (16 October; see "The composer's '+' menu")
  *
  * ── It adds no FabOrchestrator navigation (11 September) ────────────────────
  * From WP6 until 11 September this file also injected navigation — a floating
@@ -26,8 +29,8 @@
  * controls, the keyboard-shortcut driver and the corner-measuring logic are
  * gone, and this app keeps no navigation of its own. The history is in
  * `docs/STATUS.md`. That fix lived in the private build; the newer deployment
- * served since 13 October has no way back on a phone's conversation pages, so
- * the Back arrow returns there (the end of this file).
+ * served since 13 October has neither on a phone's conversation pages, so the
+ * menu button and the Back arrow return there (near the end of this file).
  */
 
 (function () {
@@ -554,49 +557,64 @@
     /* Never worth an error on FabOrchestrator's page. */
   }
 
-  /* ── Back, on a phone's conversation pages (13 October 2026) ─────────────
+  /* ── Phone navigation on conversation pages: menu and Back ───────────────
    *
-   * Below 768px FabOrchestrator's chat and Master Data Load pages, as the
-   * newer deployment serves them, offer no way back to its overview: the
-   * sidebar that carries "Back to overview" is a closed drawer with nothing
-   * on screen to open it. The private build these pages used to come from
-   * had a phone bar holding the sidebar's own Back (`docs/STATUS.md` v6), and
-   * until 11 September this file drew a Back arrow (v19). So the arrow is back
-   * with v19's label, title, glyph and destination (`/home`), below 768px, on
-   * conversation pages only. It steps aside whenever FabOrchestrator shows a
-   * Back of its own on screen.
+   * (13 October 2026, the menu added 16 October.) Below 768px the newer
+   * deployment's chat and Master Data Load pages keep their sidebar — the
+   * agent's chats, New chat, Projects, FO Overview, Agents, Settings — in a
+   * closed drawer with nothing on screen to open it, and offer no way back to
+   * the overview. The private build these pages used to come from had a phone
+   * bar for both (`docs/STATUS.md` v6); until 11 September this file drew a
+   * hamburger and a Back arrow (v20). Both are back, side by side in one small
+   * bar:
    *
-   * Where it sits: v19 drew it top-right, which on the newer chat covers its
-   * "MCP/DB Health" badge. So it takes the top-left corner, and if
-   * FabOrchestrator draws something there, the top-right. It is placed when a
-   * page opens (again shortly after, once FabOrchestrator has drawn that page)
-   * and on rotation, never while the operator scrolls, so it does not hop
-   * about. Started on `load`, so it never meets FabOrchestrator's hydration.
+   *   menu  opens FabOrchestrator's own drawer by its own shortcut (Ctrl+B,
+   *         which its sidebar toggles on, and which on a phone opens the
+   *         drawer). Nothing of FabOrchestrator's is reached into or copied;
+   *         shown only where the page has that sidebar (data-slot
+   *         "sidebar-wrapper").
+   *   Back  v19's label, title, glyph and destination (`/home`).
+   *
+   * The bar steps aside whenever FabOrchestrator shows a Back of its own on
+   * screen, which is also the case while the drawer is open.
+   *
+   * Where it sits: top-right covers the newer chat's "MCP/DB Health" badge, so
+   * the top-left corner, and if FabOrchestrator draws something there, the
+   * top-right. It is placed when a page opens (again shortly after, once
+   * FabOrchestrator has drawn that page) and on rotation, never while the
+   * operator scrolls, so it does not hop about. Started on `load`, so it never
+   * meets FabOrchestrator's hydration.
    */
+  var NAV_ID = "pwa-fo-nav";
+  var MENU_ID = "pwa-fo-sidebar-toggle";
   var BACK_ID = "pwa-fo-back";
   var BACK_LABEL = "Back to FabOrchestrator overview";
-  var BACK_SIZE = 40;
-  var BACK_GAP = 8;
+  var NAV_GAP = 8;
   var phoneWidth = null;
   try {
     phoneWidth = window.matchMedia ? window.matchMedia("(max-width: 767.98px)") : null;
   } catch (_error) {
     phoneWidth = null;
   }
-  /* The page and width the arrow was last placed for, and when to look again. */
-  var backPlacedFor = "";
-  var backRecheckAt = [];
+  /* The page and width the bar was last placed for, and when to look again. */
+  var navPlacedFor = "";
+  var navRecheckAt = [];
 
   function conversationPage() {
     var p = window.location.pathname || "";
     return p === "/chat" || p.indexOf("/chat/") === 0 || p.indexOf("/modeling-agent") === 0;
   }
 
+  /* FabOrchestrator's own sidebar is on this page (open or not). */
+  function pageHasSidebar() {
+    return !!document.querySelector('[data-slot="sidebar-wrapper"]');
+  }
+
   /* FabOrchestrator's own Back, visible on screen (not in a closed drawer). */
   function foShowsItsOwnBack() {
     var own = document.querySelectorAll('[aria-label="' + BACK_LABEL + '"]');
     for (var i = 0; i < own.length; i++) {
-      if (own[i].id === BACK_ID) continue;
+      if (own[i].closest && own[i].closest("#" + NAV_ID)) continue;
       var r = own[i].getBoundingClientRect();
       if (r.width > 0 && r.height > 0 && r.right > 0 && r.left < window.innerWidth) return true;
     }
@@ -634,105 +652,245 @@
     return false;
   }
 
-  /* Is anything of FabOrchestrator's drawn where the arrow would go? */
-  function cornerTaken(left, top) {
+  /* Is anything of FabOrchestrator's drawn in the box the bar would take? */
+  function cornerTaken(left, top, width, height) {
     if (!document.elementsFromPoint) return false;
     var vw = window.innerWidth;
     var vh = window.innerHeight;
     var points = [
       [left + 3, top + 3],
-      [left + BACK_SIZE - 3, top + 3],
-      [left + 3, top + BACK_SIZE - 3],
-      [left + BACK_SIZE - 3, top + BACK_SIZE - 3],
-      [left + BACK_SIZE / 2, top + BACK_SIZE / 2],
+      [left + width - 3, top + 3],
+      [left + 3, top + height - 3],
+      [left + width - 3, top + height - 3],
+      [left + width / 2, top + height / 2],
     ];
     for (var i = 0; i < points.length; i++) {
       var found = document.elementsFromPoint(points[i][0], points[i][1]);
       for (var j = 0; j < found.length; j++) {
         var el = found[j];
         if (el === document.documentElement || el === document.body) continue;
-        if (el.closest && el.closest("#" + BACK_ID + ",#pwa-devices-link")) continue;
+        if (el.closest && el.closest("#" + NAV_ID + ",#pwa-devices-link")) continue;
         if (drawn(el, vw, vh, points[i][0], points[i][1])) return true;
       }
     }
     return false;
   }
 
-  function makeBackButton() {
+  function navButton(id, label, title, svg) {
     var b = document.createElement("button");
-    b.id = BACK_ID;
+    b.id = id;
     b.type = "button";
-    b.title = "Back to overview";
-    b.setAttribute("aria-label", BACK_LABEL);
-    b.innerHTML =
-      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/>' +
-      '<polyline points="12 19 5 12 12 5"/></svg>';
+    b.title = title;
+    b.setAttribute("aria-label", label);
+    b.innerHTML = svg;
     b.style.cssText = [
-      "position:fixed",
-      "top:calc(env(safe-area-inset-top, 0px) + " + BACK_GAP + "px)",
-      "left:calc(env(safe-area-inset-left, 0px) + " + BACK_GAP + "px)",
-      "z-index:40",
-      "display:none",
+      "display:flex",
       "align-items:center",
       "justify-content:center",
-      "width:" + BACK_SIZE + "px",
-      "height:" + BACK_SIZE + "px",
+      "width:44px",
+      "height:40px",
+      "margin:0",
       "padding:0",
-      "border:1px solid rgba(15,23,42,.08)",
-      "border-radius:10px",
-      "background:rgba(255,255,255,.78)",
-      "-webkit-backdrop-filter:blur(8px)",
-      "backdrop-filter:blur(8px)",
-      "color:#475569",
-      "box-shadow:0 2px 8px rgba(16,21,58,.10)",
+      "border:0",
+      "background:transparent",
+      "color:#334155",
       "cursor:pointer",
       "-webkit-tap-highlight-color:transparent",
     ].join(";");
-    b.addEventListener("click", function () {
+    return b;
+  }
+
+  /* Opens FabOrchestrator's drawer the way its own shortcut does. */
+  function openSidebar() {
+    try {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "b", code: "KeyB", ctrlKey: true, bubbles: true, cancelable: true }),
+      );
+    } catch (_error) {
+      /* Never worth an error on FabOrchestrator's page. */
+    }
+  }
+
+  function makeNav() {
+    var nav = document.createElement("div");
+    nav.id = NAV_ID;
+    nav.setAttribute("role", "navigation");
+    nav.setAttribute("aria-label", "FabOrchestrator");
+    nav.style.cssText = [
+      "position:fixed",
+      "top:calc(env(safe-area-inset-top, 0px) + " + NAV_GAP + "px)",
+      "left:calc(env(safe-area-inset-left, 0px) + " + NAV_GAP + "px)",
+      "z-index:40",
+      "display:none",
+      "align-items:center",
+      "height:40px",
+      "border:1px solid rgba(15,23,42,.08)",
+      "border-radius:12px",
+      "background:rgba(255,255,255,.86)",
+      "-webkit-backdrop-filter:blur(8px)",
+      "backdrop-filter:blur(8px)",
+      "box-shadow:0 2px 10px rgba(16,21,58,.10)",
+      "overflow:hidden",
+    ].join(";");
+    var menu = navButton(
+      MENU_ID,
+      "Open menu",
+      "Menu",
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+        'stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+    );
+    menu.addEventListener("click", openSidebar);
+    var divider = document.createElement("span");
+    divider.setAttribute("aria-hidden", "true");
+    divider.setAttribute("data-pwa-nav-divider", "");
+    divider.style.cssText = "width:1px;height:20px;background:rgba(15,23,42,.12);flex:none";
+    var back = navButton(
+      BACK_ID,
+      BACK_LABEL,
+      "Back to overview",
+      '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/>' +
+        '<polyline points="12 19 5 12 12 5"/></svg>',
+    );
+    back.addEventListener("click", function () {
       // FabOrchestrator's page, not this app's; this script has no Next router.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.assign("/home");
     });
-    document.body.appendChild(b);
-    return b;
+    nav.appendChild(menu);
+    nav.appendChild(divider);
+    nav.appendChild(back);
+    document.body.appendChild(nav);
+    return nav;
   }
 
   /* Top-left, unless FabOrchestrator has something there and not top-right. */
-  function chooseCorner(b) {
-    var top = b.getBoundingClientRect().top;
-    var leftX = BACK_GAP;
-    var rightX = window.innerWidth - BACK_SIZE - BACK_GAP;
-    var useRight = cornerTaken(leftX, top) && !cornerTaken(rightX, top);
-    b.style.left = useRight ? "auto" : "calc(env(safe-area-inset-left, 0px) + " + BACK_GAP + "px)";
-    b.style.right = useRight ? "calc(env(safe-area-inset-right, 0px) + " + BACK_GAP + "px)" : "auto";
-    b.setAttribute("data-corner", useRight ? "top-right" : "top-left");
+  function chooseCorner(nav) {
+    var r = nav.getBoundingClientRect();
+    var leftX = NAV_GAP;
+    var rightX = window.innerWidth - r.width - NAV_GAP;
+    var useRight = cornerTaken(leftX, r.top, r.width, r.height) && !cornerTaken(rightX, r.top, r.width, r.height);
+    nav.style.left = useRight ? "auto" : "calc(env(safe-area-inset-left, 0px) + " + NAV_GAP + "px)";
+    nav.style.right = useRight ? "calc(env(safe-area-inset-right, 0px) + " + NAV_GAP + "px)" : "auto";
+    nav.setAttribute("data-corner", useRight ? "top-right" : "top-left");
   }
 
-  function placeBackButton() {
+  function placeNav() {
     try {
       var wanted = !!(phoneWidth && phoneWidth.matches) && conversationPage() && !signingOut && !foShowsItsOwnBack();
-      var b = document.getElementById(BACK_ID);
+      var nav = document.getElementById(NAV_ID);
       if (!wanted) {
-        if (b) b.style.display = "none";
-        backPlacedFor = "";
+        if (nav) nav.style.display = "none";
+        navPlacedFor = "";
         return;
       }
-      if (!b) b = makeBackButton();
-      b.style.display = "flex";
+      if (!nav) nav = makeNav();
+      var withMenu = pageHasSidebar();
+      var menu = document.getElementById(MENU_ID);
+      var divider = nav.querySelector("[data-pwa-nav-divider]");
+      if (menu) menu.style.display = withMenu ? "flex" : "none";
+      if (divider) divider.style.display = withMenu ? "block" : "none";
+      nav.style.display = "flex";
       var now = Date.now();
-      var key = window.location.pathname + "|" + window.innerWidth;
-      if (key !== backPlacedFor) {
-        backPlacedFor = key;
-        backRecheckAt = [now + 1200, now + 3000];
-        chooseCorner(b);
-      } else if (backRecheckAt.length && now >= backRecheckAt[0]) {
-        backRecheckAt.shift();
-        chooseCorner(b);
+      var key = window.location.pathname + "|" + window.innerWidth + "|" + withMenu;
+      if (key !== navPlacedFor) {
+        navPlacedFor = key;
+        navRecheckAt = [now + 1200, now + 3000];
+        chooseCorner(nav);
+      } else if (navRecheckAt.length && now >= navRecheckAt[0]) {
+        navRecheckAt.shift();
+        chooseCorner(nav);
       }
     } catch (_error) {
       /* Never worth an error on FabOrchestrator's page. */
     }
+  }
+
+  /* ── The composer's menus, usable with a thumb (16 October 2026) ─────────
+   *
+   * Two of the newer deployment's composer menus have a submenu that cannot
+   * be used on a phone: the "+" menu's **Connectors** and the model picker's
+   * **More models**. Both are built the same way:
+   *
+   *   1. The row opens its submenu on hover (onMouseEnter) *and* toggles it on
+   *      tap (onClick). A tap delivers both: Chrome on Android opens the
+   *      submenu and closes it again within the same tap; Safari takes the
+   *      hover as the whole tap, so it opens and the row cannot close it.
+   *   2. The submenu is pinned beside its menu (`left-full`), off the side of a
+   *      phone's screen.
+   *
+   * So touch-made hover never reaches those two menus (their rows answer the
+   * tap alone, as buttons do; a mouse still hovers as before), and below
+   * 768px a stylesheet places each submenu above the row that opens it, inside
+   * the screen, with the "+" menu's rows 44px tall. A tap anywhere on a
+   * connector's row flips its switch, not only on the switch itself. Matched
+   * by FabOrchestrator's own class names and switch ids; where they are
+   * absent, nothing here does anything.
+   */
+  var PLUS_MENU = '[class~="bottom-full"][class~="w-[220px]"]';
+  var MODEL_MENU = '[class~="bottom-full"][class~="right-0"][class~="w-[260px]"]';
+  var CONNECTOR_SWITCH = 'button[role="switch"][id^="mcp-plus-"]';
+  var MOBILE_STYLE_ID = "pwa-fo-mobile-style";
+  var MOBILE_CSS =
+    "@media (max-width: 767.98px) {" +
+    // Connectors: above its row, from the "+" menu's left edge.
+    '[class~="left-full"][class~="w-[300px]"][class~="ml-1"]{' +
+    "left:0!important;right:auto!important;bottom:calc(100% + 6px)!important;margin-left:0!important;" +
+    "width:min(300px,calc(100vw - 72px))!important}" +
+    // More models: above its row, from the model picker's right edge.
+    '[class~="left-full"][class~="top-0"][class~="w-[260px]"][class~="ml-1"]{' +
+    "left:auto!important;right:0!important;top:auto!important;bottom:calc(100% + 6px)!important;" +
+    "margin-left:0!important;width:min(260px,calc(100vw - 32px))!important}" +
+    PLUS_MENU + ">button," + PLUS_MENU + '>div[class~="relative"]>button{min-height:44px}' +
+    "}";
+
+  function addMobileStyle() {
+    if (document.getElementById(MOBILE_STYLE_ID) || !document.head) return;
+    var style = document.createElement("style");
+    style.id = MOBILE_STYLE_ID;
+    style.textContent = MOBILE_CSS;
+    document.head.appendChild(style);
+  }
+
+  var lastPointerType = "";
+  var lastPointerAt = 0;
+
+  function touchJustNow() {
+    return lastPointerType === "touch" && Date.now() - lastPointerAt < 1000;
+  }
+
+  try {
+    window.addEventListener(
+      "pointerdown",
+      function (e) {
+        lastPointerType = e.pointerType || "";
+        lastPointerAt = Date.now();
+      },
+      true,
+    );
+    ["mouseover", "mouseout"].forEach(function (type) {
+      window.addEventListener(
+        type,
+        function (e) {
+          var t = e.target;
+          if (touchJustNow() && t && t.closest && t.closest(PLUS_MENU + "," + MODEL_MENU)) e.stopPropagation();
+        },
+        true,
+      );
+    });
+    document.addEventListener("click", function (e) {
+      var t = e.target;
+      if (!t || !t.closest || t.closest('[role="switch"]')) return;
+      for (var el = t, depth = 0; el && depth < 4; el = el.parentElement, depth++) {
+        var sw = el.querySelector && el.querySelector(":scope > " + CONNECTOR_SWITCH);
+        if (sw) {
+          sw.click();
+          return;
+        }
+      }
+    });
+  } catch (_error) {
+    /* Never worth an error on FabOrchestrator's page. */
   }
 
   /* FabOrchestrator moves between its pages without reloading, so the page is
@@ -740,9 +898,10 @@
   try {
     window.addEventListener("load", function () {
       try {
-        setInterval(placeBackButton, 500);
-        window.addEventListener("popstate", placeBackButton);
-        if (phoneWidth && phoneWidth.addEventListener) phoneWidth.addEventListener("change", placeBackButton);
+        addMobileStyle();
+        setInterval(placeNav, 500);
+        window.addEventListener("popstate", placeNav);
+        if (phoneWidth && phoneWidth.addEventListener) phoneWidth.addEventListener("change", placeNav);
       } catch (_error) {
         /* Never worth an error on FabOrchestrator's page. */
       }

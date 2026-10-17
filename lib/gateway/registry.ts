@@ -235,6 +235,17 @@ export const FO_API_PREFIXES: readonly string[] = [
  *                               FabOrchestrator's server log. Signed in only,
  *                               by the same anonymous-body rule.
  *
+ * And one admitted on 17 October 2026, once its page code had been read:
+ *
+ *   /api/fabinsight/pin-requests
+ *                         POST  the "Pin" dialog on a dashboard preview: the
+ *                               title, the dashboard, the message it came
+ *                               from, and how it refreshes. FabOrchestrator
+ *                               decides who may pin and what happens to the
+ *                               request. Nothing on these pages reads the
+ *                               route or its sub-paths, so nothing else is
+ *                               admitted. Signed in only, as above.
+ *
  * Each still passes the single-login bridge like any other API call: the
  * FabOrchestrator token is injected only for a valid session of this app, and
  * the device gate has already run in `proxy.ts`. None takes a conversation id,
@@ -246,6 +257,7 @@ export const FO_API_EXACT_METHODS: Readonly<Record<string, readonly string[]>> =
   "/api/mcp/access": ["GET"],
   "/api/platform-notice": ["GET"],
   "/api/client-log": ["POST"],
+  "/api/fabinsight/pin-requests": ["POST"],
 };
 
 /**

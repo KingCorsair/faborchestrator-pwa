@@ -24,12 +24,13 @@ const HANDLERS = { GET, POST, PUT, DELETE } as const;
 type Method = keyof typeof HANDLERS;
 
 describe("the registry admits the newer routes narrowly", () => {
-  test("exactly four paths, each with only the methods its page uses", () => {
+  test("exactly five paths, each with only the methods its page uses", () => {
     assert.deepEqual(FO_API_EXACT_METHODS, {
       "/api/mcp/health": ["GET", "POST"],
       "/api/mcp/access": ["GET"],
       "/api/platform-notice": ["GET"],
       "/api/client-log": ["POST"],
+      "/api/fabinsight/pin-requests": ["POST"],
     });
     for (const path of Object.keys(FO_API_EXACT_METHODS)) {
       assert.equal(classify(path, WHOLE), "fo-api", path);
@@ -46,7 +47,8 @@ describe("the registry admits the newer routes narrowly", () => {
       "/api/client-log/dump",
       "/api/mcp",
       "/api/mcp/servers",
-      "/api/fabinsight/pin-requests",
+      "/api/fabinsight/pin-requests/abc",
+      "/api/fabinsight/pin-requests/abc/approve",
       "/api/admin/dashboards/bulk-delete",
     ]) {
       assert.equal(classify(path, WHOLE), "unknown", path);
@@ -62,6 +64,9 @@ describe("the registry admits the newer routes narrowly", () => {
     assert.equal(foMethodAllowed("/api/mcp/access", "PUT"), false);
     assert.equal(foMethodAllowed("/api/platform-notice", "POST"), false);
     assert.equal(foMethodAllowed("/api/client-log", "GET"), false);
+    assert.equal(foMethodAllowed("/api/fabinsight/pin-requests", "POST"), true);
+    assert.equal(foMethodAllowed("/api/fabinsight/pin-requests", "GET"), false);
+    assert.equal(foMethodAllowed("/api/fabinsight/pin-requests", "DELETE"), false);
     // Paths governed by the prefix lists are not this function's business.
     for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE"]) {
       assert.equal(foMethodAllowed("/api/conversations/abc", method), true);
@@ -133,6 +138,7 @@ describe("the gateway forwards them for those methods only", () => {
       ["GET", "/api/mcp/access", undefined],
       ["GET", "/api/platform-notice", undefined],
       ["POST", "/api/client-log", '{"level":"error","message":"x"}'],
+      ["POST", "/api/fabinsight/pin-requests", '{"title":"Top lots","type":"static"}'],
     ] as const) {
       const res = await call(method, path, { body });
       assert.equal(res.status, 200, `${method} ${path}`);
@@ -140,7 +146,14 @@ describe("the gateway forwards them for those methods only", () => {
     }
     assert.deepEqual(
       forwarded.map((f) => `${f.method} ${f.path}`),
-      ["GET /api/mcp/health", "POST /api/mcp/health", "GET /api/mcp/access", "GET /api/platform-notice", "POST /api/client-log"],
+      [
+        "GET /api/mcp/health",
+        "POST /api/mcp/health",
+        "GET /api/mcp/access",
+        "GET /api/platform-notice",
+        "POST /api/client-log",
+        "POST /api/fabinsight/pin-requests",
+      ],
     );
     for (const f of forwarded) assert.equal(f.authorization, `Bearer ${FO_TOKEN}`, `${f.method} ${f.path}`);
   });
@@ -154,6 +167,8 @@ describe("the gateway forwards them for those methods only", () => {
       ["DELETE", "/api/platform-notice"],
       ["GET", "/api/client-log"],
       ["PUT", "/api/client-log"],
+      ["GET", "/api/fabinsight/pin-requests"],
+      ["DELETE", "/api/fabinsight/pin-requests"],
     ] as const) {
       const res = await call(method, path, { body: method === "GET" || method === "DELETE" ? undefined : "{}" });
       assert.equal(res.status, 405, `${method} ${path}`);
@@ -164,7 +179,7 @@ describe("the gateway forwards them for those methods only", () => {
   });
 
   test("a sub-path or an unadmitted neighbour is not found here, and not forwarded", async () => {
-    for (const path of ["/api/mcp/access/users", "/api/mcp/health/x", "/api/fabinsight/pin-requests", "/api/mcp/servers"]) {
+    for (const path of ["/api/mcp/access/users", "/api/mcp/health/x", "/api/fabinsight/pin-requests/abc", "/api/mcp/servers"]) {
       const res = await call("GET", path);
       assert.equal(res.status, 404, path);
       await res.text();
@@ -173,7 +188,7 @@ describe("the gateway forwards them for those methods only", () => {
   });
 
   test("without a session: a write is refused by the gateway, and a read carries no token", async () => {
-    for (const path of ["/api/mcp/health", "/api/client-log"]) {
+    for (const path of ["/api/mcp/health", "/api/client-log", "/api/fabinsight/pin-requests"]) {
       const res = await call("POST", path, { signedIn: false, body: "{}" });
       assert.equal(res.status, 401, path);
       await res.text();

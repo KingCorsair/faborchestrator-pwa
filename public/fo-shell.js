@@ -652,18 +652,18 @@
     return false;
   }
 
-  /* Is anything of FabOrchestrator's drawn in the box the bar would take? */
+  /* Is anything of FabOrchestrator's drawn in the box the bar would take?
+   * Sampled on a grid across the whole box (three rows, seven columns), so a
+   * heading that only reaches into its lower edge still counts. */
   function cornerTaken(left, top, width, height) {
     if (!document.elementsFromPoint) return false;
     var vw = window.innerWidth;
     var vh = window.innerHeight;
-    var points = [
-      [left + 3, top + 3],
-      [left + width - 3, top + 3],
-      [left + 3, top + height - 3],
-      [left + width - 3, top + height - 3],
-      [left + width / 2, top + height / 2],
-    ];
+    var points = [];
+    var rows = [top + 3, top + height / 2, top + height - 3];
+    for (var ri = 0; ri < rows.length; ri++) {
+      for (var ci = 0; ci <= 6; ci++) points.push([left + 3 + ((width - 6) * ci) / 6, rows[ri]]);
+    }
     for (var i = 0; i < points.length; i++) {
       var found = document.elementsFromPoint(points[i][0], points[i][1]);
       for (var j = 0; j < found.length; j++) {
@@ -792,7 +792,9 @@
       if (divider) divider.style.display = withMenu ? "block" : "none";
       nav.style.display = "flex";
       var now = Date.now();
-      var key = window.location.pathname + "|" + window.innerWidth + "|" + withMenu;
+      // The query too: FabOrchestrator switches between a chat and its reports
+      // on the same path (`?view=dashboards`, `&d=`), and those pages differ.
+      var key = window.location.pathname + window.location.search + "|" + window.innerWidth + "|" + withMenu;
       if (key !== navPlacedFor) {
         navPlacedFor = key;
         navRecheckAt = [now + 1200, now + 3000];
@@ -829,6 +831,11 @@
    */
   var PLUS_MENU = '[class~="bottom-full"][class~="w-[220px]"]';
   var MODEL_MENU = '[class~="bottom-full"][class~="right-0"][class~="w-[260px]"]';
+  /* The reports list's header row, which ends in the time-zone picker. */
+  var REPORTS_HEAD = '[class~="mb-[18px]"][class~="items-center"][class~="gap-[11px]"]:has(>[class~="ml-auto"])';
+  /* A report page's title block, beside its Refresh / Download / Remove. */
+  var REPORT_TITLE =
+    '[class~="mb-[18px]"][class~="flex-wrap"][class~="items-end"]>[class~="min-w-0"][class~="flex-1"]';
   var CONNECTOR_SWITCH = 'button[role="switch"][id^="mcp-plus-"]';
   var MOBILE_STYLE_ID = "pwa-fo-mobile-style";
   var MOBILE_CSS =
@@ -842,6 +849,16 @@
     "left:auto!important;right:0!important;top:auto!important;bottom:calc(100% + 6px)!important;" +
     "margin-left:0!important;width:min(260px,calc(100vw - 32px))!important}" +
     PLUS_MENU + ">button," + PLUS_MENU + '>div[class~="relative"]>button{min-height:44px}' +
+    // A report's header (its title, then Refresh / Download / Remove): the
+    // title block takes the whole first line and the buttons wrap below it,
+    // and a long title wraps instead of ending in "…".
+    REPORT_TITLE + "{flex:1 1 100%!important}" +
+    // The reports list's header ("Recent Reports", N PINNED, the time-zone
+    // picker) wraps, and the picker takes a line of its own.
+    REPORTS_HEAD + "{flex-wrap:wrap!important;row-gap:10px}" +
+    REPORTS_HEAD + '>[class~="ml-auto"]{flex:1 1 100%!important;margin-left:0!important}' +
+    REPORT_TITLE + '>h1[class~="truncate"]{white-space:normal!important;overflow:visible!important;' +
+    "text-overflow:clip!important;overflow-wrap:anywhere}" +
     "}";
 
   function addMobileStyle() {

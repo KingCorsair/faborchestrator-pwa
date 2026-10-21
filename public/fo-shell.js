@@ -831,6 +831,10 @@
    */
   var PLUS_MENU = '[class~="bottom-full"][class~="w-[220px]"]';
   var MODEL_MENU = '[class~="bottom-full"][class~="right-0"][class~="w-[260px]"]';
+  /* FabOrchestrator's Settings window: a 240px menu column beside the content. */
+  var SETTINGS = '[class~="max-w-[820px]"][class~="h-[min(640px,88vh)]"]';
+  var SETTINGS_MENU = SETTINGS + '>[class~="w-[240px]"]';
+  var SETTINGS_BODY = SETTINGS + '>[class~="min-w-0"]';
   /* The reports list's header row, which ends in the time-zone picker. */
   var REPORTS_HEAD = '[class~="mb-[18px]"][class~="items-center"][class~="gap-[11px]"]:has(>[class~="ml-auto"])';
   /* A report page's title block, beside its Refresh / Download / Remove. */
@@ -857,6 +861,24 @@
     // picker) wraps, and the picker takes a line of its own.
     REPORTS_HEAD + "{flex-wrap:wrap!important;row-gap:10px}" +
     REPORTS_HEAD + '>[class~="ml-auto"]{flex:1 1 100%!important;margin-left:0!important}' +
+    // The Settings window: the menu becomes one row of tabs across the top
+    // (swiped sideways when it is wider than the screen), the content takes
+    // the full width below it, and the close button sits in the window's
+    // top-right corner.
+    SETTINGS + "{flex-direction:column!important;position:relative!important;height:min(88dvh,720px)!important}" +
+    SETTINGS_MENU + "{width:auto!important;flex:none!important;border-right:0!important;" +
+    "border-bottom:1px solid var(--border,rgba(15,23,42,.1))!important;padding:12px 12px 8px!important}" +
+    SETTINGS_MENU + ">h2{margin:0 0 8px!important;padding:4px 44px 0 4px!important}" +
+    SETTINGS_MENU + ">nav{flex-direction:row!important;overflow-x:auto!important;gap:6px!important;" +
+    "scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}" +
+    SETTINGS_MENU + ">nav::-webkit-scrollbar{display:none}" +
+    SETTINGS_MENU + ">nav>button{flex:none!important;white-space:nowrap!important;padding:8px 12px!important}" +
+    // Stacked, the content must be allowed to be shorter than what it holds,
+    // so it scrolls inside the window instead of running out of its bottom.
+    SETTINGS + "{overflow:hidden!important}" +
+    SETTINGS_BODY + "{min-height:0!important}" +
+    SETTINGS_BODY + '>[class~="justify-end"]{position:absolute!important;top:8px;right:8px;padding:0!important;z-index:1}' +
+    SETTINGS_BODY + '>[class~="overflow-y-auto"]{padding:12px 16px 16px!important}' +
     REPORT_TITLE + '>h1[class~="truncate"]{white-space:normal!important;overflow:visible!important;' +
     "text-overflow:clip!important;overflow-wrap:anywhere}" +
     "}";
@@ -910,13 +932,42 @@
     /* Never worth an error on FabOrchestrator's page. */
   }
 
+  /* Settings opened from the user menu at the foot of the drawer leaves the
+   * drawer open on top of it, and the drawer takes every tap until it is
+   * closed. So on a phone the drawer is closed (by FabOrchestrator's own
+   * shortcut again) as soon as the Settings window is up. */
+  var closingDrawer = false;
+  function closeDrawerOverSettings() {
+    try {
+      if (closingDrawer || !(phoneWidth && phoneWidth.matches)) return;
+      if (!document.querySelector(SETTINGS)) return;
+      if (!document.querySelector('[data-sidebar="sidebar"][data-mobile="true"][data-state="open"]')) return;
+      closingDrawer = true;
+      openSidebar(); // the shortcut toggles: open → closed
+      setTimeout(function () {
+        closingDrawer = false;
+      }, 800);
+    } catch (_error) {
+      /* Never worth an error on FabOrchestrator's page. */
+    }
+  }
+
   /* FabOrchestrator moves between its pages without reloading, so the page is
    * looked at twice a second, and at once on Back/Forward and on rotation. */
   try {
     window.addEventListener("load", function () {
       try {
         addMobileStyle();
-        setInterval(placeNav, 500);
+        setInterval(function () {
+          placeNav();
+          closeDrawerOverSettings();
+        }, 500);
+        // Promptly, too, when a menu item is chosen (the user menu's Settings).
+        document.addEventListener("click", function (e) {
+          if (e.target && e.target.closest && e.target.closest('[role="menuitem"]')) {
+            setTimeout(closeDrawerOverSettings, 150);
+          }
+        });
         window.addEventListener("popstate", placeNav);
         if (phoneWidth && phoneWidth.addEventListener) phoneWidth.addEventListener("change", placeNav);
       } catch (_error) {
